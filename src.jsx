@@ -82,7 +82,18 @@ const visibleCoins = filteredCoins.slice(
 );
 
                const markets=base.map((x)=>({...x,price:prices[x.symbol]?.usd||x.price,change:prices[x.symbol]?.usd_24h_change??x.change}));
- const selected =
+ const selectedCoin = allCoins.find(
+  x => x.symbol.toUpperCase() === coin
+);
+
+const selected = selectedCoin
+  ? {
+      ...selectedCoin,
+      price: selectedCoin.current_price ?? 0,
+      change: selectedCoin.price_change_percentage_24h ?? 0,
+      color: "#16c79a"
+    }
+  : (markets.find(x => x.symbol === coin) || markets[0]);
   allCoins.find(
     x => x.symbol.toUpperCase() === coin
   )
