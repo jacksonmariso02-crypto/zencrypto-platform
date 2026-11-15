@@ -51,7 +51,7 @@ def amount_minor(value):
   if not d.is_finite() or d<=0 or scaled!=scaled.to_integral_value() or scaled>100000000000: raise ValueError()
   return int(scaled)
  except (InvalidOperation,ValueError): raise HTTPException(422,'Invalid amount: positive value with at most 2 decimal places required')
-def require_user(authorization: str|None=Header(default=None)):
+def require_user(authorization: str | None = Header(default=None, alias="X-Session-Token")):
  if not authorization or not authorization.startswith('Bearer '): raise HTTPException(401,'Authentication required')
  try: sid=TOKEN.loads(authorization[7:],max_age=3600)
  except (BadSignature,SignatureExpired): raise HTTPException(401,'Invalid or expired session')
