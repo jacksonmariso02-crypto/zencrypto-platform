@@ -63,34 +63,7 @@ async function fetch1000Coins() {
   return allResults.slice(0, COIN_LIMIT);
 }
 
-  const pageCount = Math.ceil(COIN_LIMIT / 250);
-
-  const requests = Array.from(
-    { length: pageCount },
-    async (_, index) => {
-      const page = index + 1;
-
-      const response = await fetch(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
-      );
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error("CoinGecko rate limit. Please try again later.");
-        }
-
-        throw new Error(`CoinGecko API error: ${response.status}`);
-      }
-
-      return await response.json();
-    }
-  );
-
-  const pages = await Promise.all(requests);
-
-  return pages.flat().slice(0, COIN_LIMIT);
-}
-
+  
 
 
 function App(){const [allCoins, setAllCoins] = useState([]);
