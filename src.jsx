@@ -34,24 +34,7 @@ async function fetch1000Coins() {
 
   return await response.json();
 }
-() {
-  const allCoins = [];
 
-  for (let page = 1; page <= 4; page++) {
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch coins");
-    }
-
-    const coins = await response.json();
-    allCoins.push(...coins);
-  }
-
-  return allCoins.slice(0, COIN_LIMIT);
-}
 
 function App(){const [allCoins, setAllCoins] = useState([]);
 const [coinSearch, setCoinSearch] = useState("");
