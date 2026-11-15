@@ -94,27 +94,9 @@ const selected = selectedCoin
       color: "#16c79a"
     }
   : (markets.find(x => x.symbol === coin) || markets[0]);
-  allCoins.find(
-    x => x.symbol.toUpperCase() === coin
-  )
-    ? {
-        ...allCoins.find(
-          x => x.symbol.toUpperCase() === coin
-        ),
-        price: allCoins.find(
-          x => x.symbol.toUpperCase() === coin
-        price: allCoins.find(
-  x => x.symbol.toUpperCase() === coin
-).current_price ?? 0,
-
-change: allCoins.find(
-  x => x.symbol.toUpperCase() === coin
-).price_change_percentage_24h ?? 0,
-
-color: "#16c79a"
-        color: "#16c79a"
-      }
-    : markets.find(x => x.symbol === coin) || markets[0];const data=Array.from({length:48},(_,i)=>{const trend=Math.sin(i/5)*.014+Math.cos(i/9)*.009+(i/48-.5)*.026;return {time:`${String(Math.floor(i/2)).padStart(2,'0')}:00`,price:Math.round(selected.price*(1+trend)*100)/100}});
+  
+        
+    const data=Array.from({length:48},(_,i)=>{const trend=Math.sin(i/5)*.014+Math.cos(i/9)*.009+(i/48-.5)*.026;return {time:`${String(Math.floor(i/2)).padStart(2,'0')}:00`,price:Math.round(selected.price*(1+trend)*100)/100}});
 const nav=[['dashboard',LayoutDashboard],['trade',ChartCandlestick],['wallet',Wallet],['deposit',ArrowDownToLine],['withdraw',ArrowUpFromLine],['admin',Shield]];
 function placeOrder(e){e.preventDefault();let n=Number(amount);if(!Number.isFinite(n)||n<=0||n>1000000){setError(lang==='zh'?'请输入 0 至 1,000,000 之间的有效金额':'Enter a valid amount between 0 and 1,000,000');return}setError('');setOrders(o=>[{id:crypto.randomUUID(),time:new Date().toLocaleString(),coin,side,amount:n,price:selected.price},...o]);setTab('trade')}
 return <div className="app"><aside className={mobile?'sidebar open':'sidebar'}><div className="brand"><div className="brandmark">Z</div><span>Zen<span className="accent">Crypto</span></span></div><div className="navlabel">PLATFORM</div><nav>{nav.map(([key,Icon])=><button key={key} className={tab===key?'nav active':'nav'} onClick={()=>{setTab(key);setMobile(false)}}><Icon size={19}/>{t[key]}</button>)}</nav><div className="sidebarfoot"><span className="dot"/> {t.operational}<p>ZenCrypto v1.0 · Prototype</p></div></aside><main><header><button className="hamburger" onClick={()=>setMobile(!mobile)}><Menu size={23}/></button><div className="headerleft"><span className="breadcrumb">ZenCrypto / {t[tab]}</span><h1>{t[tab]}</h1></div><div className="headeractions"><span className="live"><span className="dot"/> MARKET DATA</span><button className="lang" onClick={()=>setLang(lang==='en'?'zh':'en')}><Globe size={16}/> {lang==='en'?'中文':'English'}</button><div className="avatar">Z</div></div></header><div className="content"><div className="warning"><Shield size={18}/><div><strong>{t.demo}</strong><p>{t.notice}</p></div></div>
