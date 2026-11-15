@@ -92,7 +92,15 @@ const visibleCoins = filteredCoins.slice(
         ),
         price: allCoins.find(
           x => x.symbol.toUpperCase() === coin
-        ).current_price ?? 0,
+        price: allCoins.find(
+  x => x.symbol.toUpperCase() === coin
+).current_price ?? 0,
+
+change: allCoins.find(
+  x => x.symbol.toUpperCase() === coin
+).price_change_percentage_24h ?? 0,
+
+color: "#16c79a"
         color: "#16c79a"
       }
     : markets.find(x => x.symbol === coin) || markets[0];const data=Array.from({length:48},(_,i)=>{const trend=Math.sin(i/5)*.014+Math.cos(i/9)*.009+(i/48-.5)*.026;return {time:`${String(Math.floor(i/2)).padStart(2,'0')}:00`,price:Math.round(selected.price*(1+trend)*100)/100}});
