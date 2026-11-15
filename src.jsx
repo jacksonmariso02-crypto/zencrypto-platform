@@ -2,23 +2,38 @@ import React,{useState,useEffect} from 'react';import{createRoot}from'react-dom/
 const dict={en:{dashboard:'Overview',trade:'Trade',wallet:'Assets',deposit:'Deposit',withdraw:'Withdraw',admin:'Admin',markets:'Markets',balance:'Total portfolio value',volume:'24h Volume',change:'24h Change',order:'Place order',buy:'Buy',sell:'Sell',amount:'Amount (USDT)',price:'Reference price',submit:'Submit simulated order',history:'Recent simulated orders',noorders:'No orders yet',demo:'DEMO MODE — No real funds or orders',notice:'Real-money deposits, withdrawals and order execution are disabled until licensed integrations and security controls are complete.',depositMsg:'Deposits are disabled. No wallet addresses are issued.',withdrawMsg:'Withdrawals are disabled. No funds can be transferred.',adminMsg:'Admin dashboard preview only. Production access requires server-side authentication and role controls.',asset:'Asset',quantity:'Quantity',value:'Estimated value',status:'System status',operational:'Frontend operational',welcome:'Digital asset markets, clearly presented',market:'Market',last:'Last price',action:'Action',view:'View',pair:'Trading pair',type:'Side',time:'Time',adminOnly:'Demo analytics — not production data'},zh:{dashboard:'总览',trade:'交易',wallet:'资产',deposit:'充值',withdraw:'提现',admin:'后台管理',markets:'市场行情',balance:'资产总估值',volume:'24小时成交额',change:'24小时涨跌',order:'提交订单',buy:'买入',sell:'卖出',amount:'金额（USDT）',price:'参考价格',submit:'提交模拟订单',history:'近期模拟订单',noorders:'暂无订单',demo:'演示模式 — 不涉及真实资金或订单',notice:'真实资金充值、提现及订单执行尚未启用，需先完成合规集成和安全控制。',depositMsg:'充值功能尚未开放，不提供钱包地址。',withdrawMsg:'提现功能尚未开放，不会转移任何资金。',adminMsg:'后台管理仅为界面预览。正式上线需要服务端身份验证及权限控制。',asset:'资产',quantity:'数量',value:'估算价值',status:'系统状态',operational:'前端运行正常',welcome:'清晰掌握数字资产市场',market:'市场',last:'最新价格',action:'操作',view:'查看',pair:'交易对',type:'方向',time:'时间',adminOnly:'演示分析数据，非真实生产数据'}};
 const base=[{symbol:'BTC',name:'Bitcoin',price:96342.15,change:2.84,volume:'$28.4B',color:'#f59e0b'},{symbol:'ETH',name:'Ethereum',price:3218.44,change:1.56,volume:'$14.2B',color:'#818cf8'},{symbol:'SOL',name:'Solana',price:142.82,change:-0.78,volume:'$3.1B',color:'#a78bfa'},{symbol:'BNB',name:'BNB',price:614.27,change:0.92,volume:'$1.9B',color:'#eab308'},{symbol:'XRP',name:'XRP',price:2.18,change:-1.12,volume:'$2.6B',color:'#94a3b8'}];
 const fmt=(n,d=2)=>Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-const COIN_LIMIT = 50;
+const COIN_LIMIT = 1000;
 const COINS_PER_PAGE = 50;
 
 
+
 async function fetch1000Coins() {
-  const response = await fetch(
-    "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false"
+  const pageCount = Math.ceil(COIN_LIMIT / 250);
+
+  const requests = Array.from(
+    { length: pageCount },
+    async (_, index) => {
+      const page = index + 1;
+
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
+      );
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("CoinGecko rate limit. Please try again later.");
+        }
+
+        throw new Error(`CoinGecko API error: ${response.status}`);
+      }
+
+      return await response.json();
+    }
   );
 
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new Error("CoinGecko rate limit. Please try again later.");
-    }
-    throw new Error(`CoinGecko API error: ${response.status}`);
-  }
+  const pages = await Promise.all(requests);
 
-  return await response.json();
+  return pages.flat().slice(0, COIN_LIMIT);
 }
 
 
