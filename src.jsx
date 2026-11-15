@@ -7,7 +7,62 @@ const COINS_PER_PAGE = 50;
 
 
 
+
 async function fetch1000Coins() {
+  const pageCount = Math.ceil(COIN_LIMIT / 250);
+  const allResults = [];
+
+  const sleep = (ms) =>
+    new Promise(resolve => setTimeout(resolve, ms));
+
+  for (let page = 1; page <= pageCount; page++) {
+    let success = false;
+    let retries = 0;
+
+    while (!success && retries < 4) {
+      try {
+        const response = await fetch(
+          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
+        );
+
+        if (response.status === 429) {
+          throw new Error("RATE_LIMIT");
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            `CoinGecko API error: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        allResults.push(...data);
+        success = true;
+
+      } catch (error) {
+        retries++;
+
+        if (retries >= 4) {
+          throw error;
+        }
+
+        const delay = error.message === "RATE_LIMIT"
+          ? 30000 * Math.pow(2, retries - 1)
+          : 10000;
+
+        await sleep(delay);
+      }
+    }
+
+    if (page < pageCount) {
+      await sleep(15000);
+    }
+  }
+
+  return allResults.slice(0, COIN_LIMIT);
+}
+
   const pageCount = Math.ceil(COIN_LIMIT / 250);
 
   const requests = Array.from(
