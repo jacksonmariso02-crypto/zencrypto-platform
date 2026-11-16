@@ -112,8 +112,8 @@ useEffect(() => {
 
   function connect() {
     ws = new WebSocket(
-      "wss://stream.binance.com:443/ws/!ticker@arr"
-    );
+  "wss://stream.binance.com:443/ws/!ticker_1d@arr"
+);
 ws.onopen = () => {
   console.log("[ZenCrypto] Binance connected:", ws.url);
 };
