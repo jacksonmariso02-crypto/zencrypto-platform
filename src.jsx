@@ -129,6 +129,12 @@ ws.onopen = () => {
           tickers.forEach((t) => {
             if (!t.s || !t.s.endsWith("USDT")) return;
 
+            console.log(
+  "[ZenCrypto] Received:",
+  tickers.length,
+  "USDT pairs:",
+  tickers.filter(t => t.s && t.s.endsWith("USDT")).length
+);
             const symbol = t.s.slice(0, -4);
 
             next[symbol] = {
