@@ -114,8 +114,11 @@ useEffect(() => {
     ws = new WebSocket(
       "wss://stream.binance.com:443/ws/!ticker@arr"
     );
-
+ws.onopen = () => {
+  console.log("[ZenCrypto] Binance connected:", ws.url);
+};
     ws.onmessage = (event) => {
+      console.log("[ZenCrypto] Message received:", event.data.slice(0, 200));
       try {
         const tickers = JSON.parse(event.data);
         if (!Array.isArray(tickers)) return;
