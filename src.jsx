@@ -105,6 +105,62 @@ useEffect(() => {
 
                useEffect(()=>{let cancelled=false;async function refresh(){try{let r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin,ripple&vs_currencies=usd&include_24hr_change=true');if(!r.ok)throw Error();let x=await r.json();if(!cancelled)setPrices({BTC:x.bitcoin,ETH:x.ethereum,SOL:x.solana,BNB:x.binancecoin,XRP:x.ripple})}catch{}}refresh();let id=setInterval(refresh,90000);return()=>{cancelled=true;clearInterval(id)}},[]);
 
+useEffect(() => {
+  let ws;
+  let reconnectTimer;
+  let stopped = false;
+
+  function connect() {
+    ws = new WebSocket(
+      "wss://stream.binance.com:443/ws/!ticker@arr"
+    );
+
+    ws.onmessage = (event) => {
+      try {
+        const tickers = JSON.parse(event.data);
+        if (!Array.isArray(tickers)) return;
+
+        setPrices((prev) => {
+          const next = { ...prev };
+
+          tickers.forEach((t) => {
+            if (!t.s || !t.s.endsWith("USDT")) return;
+
+            const symbol = t.s.slice(0, -4);
+
+            next[symbol] = {
+              ...(prev[symbol] || {}),
+              usd: Number(t.c),
+              usd_24h_change: Number(t.P),
+              usd_24h_vol: Number(t.q)
+            };
+          });
+
+          return next;
+        });
+      } catch (error) {
+        console.error("WebSocket data error:", error);
+      }
+    };
+
+    ws.onclose = () => {
+      if (!stopped) {
+        reconnectTimer = setTimeout(connect, 5000);
+      }
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  connect();
+
+  return () => {
+    stopped = true;
+    clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+  };
+}, []);
+
 const filteredCoins = allCoins.filter((coin) => {
   const keyword = coinSearch.toLowerCase().trim();
 
