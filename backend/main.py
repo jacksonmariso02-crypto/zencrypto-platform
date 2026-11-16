@@ -3,6 +3,7 @@ import os, sqlite3, secrets, hashlib, hmac, time, json
 from decimal import Decimal, InvalidOperation
 from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -10,6 +11,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 DB=os.getenv('DATABASE_PATH','zencrypto.db')
 SECRET=os.getenv('APP_SECRET') or secrets.token_urlsafe(48)
 TOKEN=URLSafeTimedSerializer(SECRET, salt='zencrypto-session-v1')
+bearer_scheme = HTTPBearer(auto_error=False)
 app=FastAPI(title='ZenCrypto API — sandbox only',version='0.1.0')
 app.add_middleware(CORSMiddleware,allow_origins=os.getenv('CORS_ORIGINS','http://localhost:5173').split(','),allow_credentials=False,allow_methods=['GET','POST'],allow_headers=['Authorization','Content-Type'])
 @contextmanager
@@ -51,14 +53,25 @@ def amount_minor(value):
   if not d.is_finite() or d<=0 or scaled!=scaled.to_integral_value() or scaled>100000000000: raise ValueError()
   return int(scaled)
  except (InvalidOperation,ValueError): raise HTTPException(422,'Invalid amount: positive value with at most 2 decimal places required')
-def require_user(authorization: str | None = Header(default=None, alias="Authorization")):
- if not authorization or not authorization.startswith('Bearer '): raise HTTPException(401,'Authentication required')
- try: sid=TOKEN.loads(authorization[7:],max_age=3600)
- except (BadSignature,SignatureExpired): raise HTTPException(401,'Invalid or expired session')
- with db() as c:
-  u=c.execute('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.id=? AND s.revoked=0 AND s.expires_at>?',(sid,int(time.time()))).fetchone()
-  if not u: raise HTTPException(401,'Session expired')
-  return dict(u)|{'session_id':sid}
+
+
+
+def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    if credentials is None:
+        raise HTTPException(401, 'Authentication required')
+    try:
+        sid = TOKEN.loads(credentials.credentials, max_age=3600)
+    except (BadSignature, SignatureExpired):
+        raise HTTPException(401, 'Invalid or expired session')
+    with db() as c:
+        u = c.execute(
+            'SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.id=? AND s.revoked=0 AND s.expires_at>?',
+            (sid, int(time.time()))
+        ).fetchone()
+        if not u:
+            raise HTTPException(401, 'Session expired')
+        return dict(u) | {'session_id': sid}
+
 class Register(BaseModel):
  email:str=Field(min_length=5,max_length=254)
  password:str=Field(min_length=12,max_length=128)
