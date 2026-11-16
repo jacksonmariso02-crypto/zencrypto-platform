@@ -146,13 +146,22 @@ ws.onopen = () => {
       }
     };
 
-    ws.onclose = () => {
-      if (!stopped) {
-        reconnectTimer = setTimeout(connect, 5000);
-      }
-    };
+    ws.onclose = (event) => {
+  console.log(
+    "[ZenCrypto] WebSocket closed:",
+    event.code,
+    event.reason
+  );
 
-    ws.onerror = () => ws.close();
+  if (!stopped) {
+    reconnectTimer = setTimeout(connect, 5000);
+  }
+};
+
+ws.onerror = (event) => {
+  console.error("[ZenCrypto] WebSocket error:", event);
+  ws.close();
+};
   }
 
   connect();
