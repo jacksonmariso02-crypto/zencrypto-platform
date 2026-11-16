@@ -103,7 +103,7 @@ useEffect(() => {
   };
 }, []);
 
-               useEffect(()=>{let cancelled=false;async function refresh(){try{let r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin,ripple&vs_currencies=usd&include_24hr_change=true');if(!r.ok)throw Error();let x=await r.json();if(!cancelled)setPrices({BTC:x.bitcoin,ETH:x.ethereum,SOL:x.solana,BNB:x.binancecoin,XRP:x.ripple})}catch{}}refresh();let id=setInterval(refresh,90000);return()=>{cancelled=true;clearInterval(id)}},[]);
+
 
 useEffect(() => {
   let ws;
@@ -188,8 +188,11 @@ const visibleCoins = filteredCoins.slice(
 const selected = selectedCoin
   ? {
       ...selectedCoin,
-      price: selectedCoin.current_price ?? 0,
-      change: selectedCoin.price_change_percentage_24h ?? 0,
+      price: prices[selectedCoin.symbol.toUpperCase()]?.usd
+  ?? selectedCoin.current_price ?? 0,
+
+change: prices[selectedCoin.symbol.toUpperCase()]?.usd_24h_change
+  ?? selectedCoin.price_change_percentage_24h ?? 0,
       color: "#16c79a"
     }
   : (markets.find(x => x.symbol === coin) || markets[0]);
@@ -204,9 +207,13 @@ markets={visibleCoins.map(c => ({
  id: c.id,
 symbol: c.symbol.toUpperCase(),
   name: c.name,
-  price: c.current_price ?? 0,
-  change: c.price_change_percentage_24h ?? 0,
-  volume: c.total_volume ?? 0,
+  price: prices[c.symbol.toUpperCase()]?.usd ?? c.current_price ?? 0,
+
+change: prices[c.symbol.toUpperCase()]?.usd_24h_change
+  ?? c.price_change_percentage_24h ?? 0,
+
+volume: prices[c.symbol.toUpperCase()]?.usd_24h_vol
+  ?? c.total_volume ?? 0,
   color: '#16c79a'
 }))}
  
