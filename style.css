@@ -188,3 +188,58 @@ background:
 .zc-hero::before {
   display: none !important;
 }
+
+/* ZENCRYPTO - FULL PAGE SUPERCAR BACKGROUND */
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background:
+    linear-gradient(
+      rgba(3, 7, 18, 0.55),
+      rgba(3, 7, 18, 0.65)
+    ),
+    url('/zencrypto-platform/supercar.gif')
+    center center / cover fixed no-repeat !important;
+
+  background-color: #030712 !important;
+}
+
+/* Main application */
+.app,
+main,
+.content {
+  background: transparent !important;
+}
+
+/* Sidebar */
+.sidebar {
+  background: rgba(8, 16, 30, 0.72) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Header */
+header {
+  background: rgba(8, 16, 30, 0.48) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* Homepage hero */
+.zc-hero {
+  background: rgba(3, 7, 18, 0.20) !important;
+  backdrop-filter: blur(2px);
+}
+
+.zc-hero::before {
+  display: none !important;
+}
+
+/* Transparent market cards */
+.panel,
+.zc-market-card {
+  background: rgba(12, 23, 41, 0.78) !important;
+  backdrop-filter: blur(10px);
+}
