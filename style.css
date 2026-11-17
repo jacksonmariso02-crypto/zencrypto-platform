@@ -10,11 +10,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  background:
-    radial-gradient(ellipse at 75% 20%, rgba(37,99,235,.30), transparent 55%),
-    radial-gradient(ellipse at 15% 85%, rgba(14,165,233,.14), transparent 50%),
-    linear-gradient(135deg,#030712,#0b1224 55%,#050816);
+ text-align: left;
+background-position: center;
+  
+background:
+  linear-gradient(
+    90deg,
+    rgba(3,7,18,.88) 0%,
+    rgba(3,7,18,.58) 48%,
+    rgba(3,7,18,.20) 100%
+  ),
+  url('/zencrypto-platform/supercar.gif') center / cover no-repeat;
+
   border: 1px solid #1e293b;
   border-radius: 20px;
   margin-bottom: 28px;
