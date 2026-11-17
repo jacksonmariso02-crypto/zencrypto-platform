@@ -177,3 +177,14 @@ background:
     width: 100%;
   }
 }
+
+/* ZenCrypto - Supercar Only Background */
+
+.zc-hero {
+  background: url('/zencrypto-platform/supercar.gif')
+    center center / cover no-repeat !important;
+}
+
+.zc-hero::before {
+  display: none !important;
+}
