@@ -243,3 +243,74 @@ header {
   background: rgba(12, 23, 41, 0.78) !important;
   backdrop-filter: blur(10px);
 }
+
+/* ZENCRYPTO - FULL SCREEN SUPERCAR BACKGROUND */
+
+html {
+  min-height: 100%;
+  background: #030712 !important;
+}
+
+body {
+  min-height: 100vh;
+  isolation: isolate;
+  background: transparent !important;
+}
+
+/* Fixed full-screen animated car background */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      rgba(3, 7, 18, 0.42),
+      rgba(3, 7, 18, 0.55)
+    ),
+    url('/zencrypto-platform/supercar.gif')
+    center center / cover no-repeat;
+}
+
+/* Keep all page content above background */
+.app {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+}
+
+main,
+.content {
+  background: transparent !important;
+}
+
+/* Transparent hero - no separate image */
+.zc-hero {
+  background: rgba(3, 7, 18, 0.12) !important;
+}
+
+.zc-hero::before {
+  display: none !important;
+}
+
+/* Semi-transparent navigation */
+.sidebar {
+  background: rgba(8, 16, 30, 0.68) !important;
+}
+
+/* Semi-transparent trading panels */
+.panel,
+.zc-market-card {
+  background: rgba(12, 23, 41, 0.76) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Mobile background */
+@media (max-width: 750px) {
+  body::before {
+    background-position: center center;
+    background-size: cover;
+  }
+}
