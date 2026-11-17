@@ -220,7 +220,73 @@ change: prices[selectedCoin.symbol.toUpperCase()]?.usd_24h_change
 const nav=[['dashboard',LayoutDashboard],['trade',ChartCandlestick],['wallet',Wallet],['deposit',ArrowDownToLine],['withdraw',ArrowUpFromLine],['admin',Shield]];
 function placeOrder(e){e.preventDefault();let n=Number(amount);if(!Number.isFinite(n)||n<=0||n>1000000){setError(lang==='zh'?'请输入 0 至 1,000,000 之间的有效金额':'Enter a valid amount between 0 and 1,000,000');return}setError('');setOrders(o=>[{id:crypto.randomUUID(),time:new Date().toLocaleString(),coin,side,amount:n,price:selected.price},...o]);setTab('trade')}
 return <div className="app"><aside className={mobile?'sidebar open':'sidebar'}><div className="brand"><div className="brandmark">Z</div><span>Zen<span className="accent">Crypto</span></span></div><div className="navlabel">PLATFORM</div><nav>{nav.map(([key,Icon])=><button key={key} className={tab===key?'nav active':'nav'} onClick={()=>{setTab(key);setMobile(false)}}><Icon size={19}/>{t[key]}</button>)}</nav><div className="sidebarfoot"><span className="dot"/> {t.operational}<p>ZenCrypto v1.0 · Prototype</p></div></aside><main><header><button className="hamburger" onClick={()=>setMobile(!mobile)}><Menu size={23}/></button><div className="headerleft"><span className="breadcrumb">ZenCrypto / {t[tab]}</span><h1>{t[tab]}</h1></div><div className="headeractions"><span className="live"><span className="dot"/> MARKET DATA</span><button className="lang" onClick={()=>setLang(lang==='en'?'zh':'en')}><Globe size={16}/> {lang==='en'?'中文':'English'}</button><div className="avatar">Z</div></div></header><div className="content"><div className="warning"><Shield size={18}/><div><strong>{t.demo}</strong><p>{t.notice}</p></div></div>
-{tab==='dashboard'&&<><div className="hero"><div><span className="eyebrow">ZENCRYPTO EXCHANGE</span><h2>{t.welcome}</h2><p>Bitcoin · Ethereum · Solana · Global markets</p><button onClick={()=>setTab('trade')}>{t.trade} →</button></div><div className="heroicon">₿</div></div><div className="stats"><div className="panel stat"><span>{t.balance}</span><strong>$0.00</strong><small>Demo account · No deposited assets</small></div><div className="panel stat"><span>{t.volume}</span><strong>$28.4B</strong><small>Illustrative BTC volume</small></div><div className="panel stat"><span>{t.status}</span><strong className="green">● Online</strong><small>{t.operational}</small></div></div><MarketTable 
+
+{tab==='dashboard'&&<>
+  <section className="zc-hero">
+    <div className="zc-hero-content">
+      <div className="zc-eyebrow">
+        ZENCRYPTO DIGITAL ASSET PLATFORM
+      </div>
+      <h2 className="zc-hero-title">
+        Trade Smarter.
+        <br/>
+        <span>Move Faster.</span>
+      </h2>
+      <p className="zc-hero-description">
+        Explore live cryptocurrency markets, follow market
+        movements, and experience modern demo trading.
+      </p>
+      <div className="zc-hero-buttons">
+        <button
+          className="zc-btn zc-btn-primary"
+          onClick={() => document.getElementById('zc-markets')?.scrollIntoView({behavior:'smooth'})}
+        >
+          Explore Markets
+        </button>
+        <button
+          className="zc-btn zc-btn-secondary"
+          onClick={() => setTab('trade')}
+        >
+          Start Demo Trading
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div className="zc-market-strip">
+    {['BTC','ETH','SOL'].map(symbol => {
+      const item = prices[symbol];
+      const value = item?.usd;
+      const change = item?.usd_24h_change;
+      return (
+        <div className="zc-market-card" key={symbol}>
+          <div className="zc-market-symbol">
+            {symbol}/USD
+          </div>
+          <div className="zc-market-price">
+            {typeof value === 'number'
+              ? '$' + fmt(value)
+              : 'Loading...'}
+          </div>
+          <div className={
+            'zc-market-change ' +
+            (change >= 0 ? 'zc-positive' : 'zc-negative')
+          }>
+            {typeof change === 'number'
+              ? (change >= 0 ? '+' : '') + change.toFixed(2) + '%'
+              : '—'}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <h2 className="zc-section-title" id="zc-markets">
+    Live Cryptocurrency Markets
+  </h2>
+
+  <MarketTable
+
 markets={visibleCoins.map(c => ({
  id: c.id,
 symbol: c.symbol.toUpperCase(),
