@@ -77,6 +77,7 @@ const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('e
   localStorage.getItem('zencrypto_token') || ''
 );
   const [authEmail, setAuthEmail] = useState('');
+  const [authOpen, setAuthOpen] = useState(false);             
   const [authPassword, setAuthPassword] = useState('');
   const [authMessage, setAuthMessage] = useState('');
 
@@ -117,6 +118,7 @@ const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('e
   localStorage.setItem('zencrypto_token', data.access_token);
   setAuthPassword('');
   setAuthMessage('Login successful.');
+       setAuthOpen(false);
 }
        
       
@@ -271,38 +273,71 @@ change: prices[selectedCoin.symbol.toUpperCase()]?.usd_24h_change
         
     const data=Array.from({length:48},(_,i)=>{const trend=Math.sin(i/5)*.014+Math.cos(i/9)*.009+(i/48-.5)*.026;return {time:`${String(Math.floor(i/2)).padStart(2,'0')}:00`,price:Math.round(selected.price*(1+trend)*100)/100}});
 const nav=[['dashboard',LayoutDashboard],['trade',ChartCandlestick],['wallet',Wallet],['deposit',ArrowDownToLine],['withdraw',ArrowUpFromLine],['admin',Shield]];
-function placeOrder(e){e.preventDefault();let n=Number(amount);if(!Number.isFinite(n)||n<=0||n>1000000){setError(lang==='zh'?'请输入 0 至 1,000,000 之间的有效金额':'Enter a valid amount between 0 and 1,000,000');return}setError('');setOrders(o=>[{id:crypto.randomUUID(),time:new Date().toLocaleString(),coin,side,amount:n,price:selected.price},...o]);setTab('trade')}
-if (!authToken) return (
-  <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#07111f',color:'white'}}>
-    <form onSubmit={handleAuth} style={{background:'#142238',padding:'40px',borderRadius:'16px',width:'340px'}}>
+return <div className="app">{!authToken ? (
+  <button
+    onClick={() => setAuthOpen(true)}
+    style={{
+      position:'fixed',
+      top:'20px',
+      right:'80px',
+      zIndex:9999,
+      padding:'10px 24px',
+      background:'#2563eb',
+      color:'white',
+      border:0,
+      borderRadius:'8px',
+      cursor:'pointer'
+    }}
+  >
+    Login
+  </button>
+) : (
+  <button
+    onClick={() => {
+      localStorage.removeItem('zencrypto_token');
+      setAuthToken('');
+    }}
+    style={{position:'fixed',top:'20px',right:'80px',zIndex:9999}}
+  >
+    Logout
+  </button>
+)}
+
+{authOpen && (
+  <div style={{
+    position:'fixed',inset:0,zIndex:10000,
+    background:'rgba(0,0,0,0.75)',
+    display:'flex',alignItems:'center',
+    justifyContent:'center'
+  }}>
+    <form onSubmit={handleAuth}
+      style={{background:'#142238',padding:'30px',
+      borderRadius:'16px',width:'340px',color:'white'}}>
+      <button type="button"
+        onClick={() => setAuthOpen(false)}
+        style={{float:'right'}}>✕</button>
       <h2>ZenCrypto</h2>
-      <h3>{authMode === 'login' ? 'Welcome Back' : 'Create Account'}</h3>
-      <input
-        type="email"
-        placeholder="Email Address"
+      <h3>{authMode === 'login' ? 'Login' : 'Register'}</h3>
+      <input type="email" placeholder="Email"
         value={authEmail}
         onChange={e=>setAuthEmail(e.target.value)}
-        required
-        style={{width:'100%',padding:'13px',marginBottom:'15px'}}
-      />
-      <input
-        type="password"
-        placeholder="Password"
+        required />
+      <input type="password" placeholder="Password"
         value={authPassword}
         onChange={e=>setAuthPassword(e.target.value)}
-        required
-        style={{width:'100%',padding:'13px',marginBottom:'15px'}}
-      />
-      <button type="submit" style={{width:'100%',padding:'13px',background:'#2563eb',color:'white',border:0,borderRadius:'8px'}}>
+        required />
+      <button type="submit">
         {authMode === 'login' ? 'Login' : 'Register'}
       </button>
-      <p onClick={()=>setAuthMode(authMode === 'login' ? 'register' : 'login')} style={{cursor:'pointer',textAlign:'center'}}>
-        {authMode === 'login' ? 'Create an account' : 'Back to Login'}
+      <p onClick={() => setAuthMode(
+        authMode === 'login' ? 'register' : 'login'
+      )}>
+        {authMode === 'login' ? 'Create Account' : 'Back to Login'}
       </p>
       <p>{authMessage}</p>
     </form>
   </div>
-);return <div className="app"><aside className={mobile?'sidebar open':'sidebar'}><div className="brand"><div className="brandmark">Z</div><span>Zen<span className="accent">Crypto</span></span></div><div className="navlabel">PLATFORM</div><nav>{nav.map(([key,Icon])=><button key={key} className={tab===key?'nav active':'nav'} onClick={()=>{setTab(key);setMobile(false)}}><Icon size={19}/>{t[key]}</button>)}</nav><div className="sidebarfoot"><span className="dot"/> {t.operational}<p>ZenCrypto v1.0 · Prototype</p></div></aside><main><header><button className="hamburger" onClick={()=>setMobile(!mobile)}><Menu size={23}/></button><div className="headerleft"><span className="breadcrumb">ZenCrypto / {t[tab]}</span><h1>{t[tab]}</h1></div><div className="headeractions"><span className="live"><span className="dot"/> MARKET DATA</span><button className="lang" onClick={()=>setLang(lang==='en'?'zh':'en')}><Globe size={16}/> {lang==='en'?'中文':'English'}</button><div className="avatar">Z</div></div></header><div className="content"><div className="warning"><Shield size={18}/><div><strong>{t.demo}</strong><p>{t.notice}</p></div></div>
+)}<aside className={mobile?'sidebar open':'sidebar'}><div className="brand"><div className="brandmark">Z</div><span>Zen<span className="accent">Crypto</span></span></div><div className="navlabel">PLATFORM</div><nav>{nav.map(([key,Icon])=><button key={key} className={tab===key?'nav active':'nav'} onClick={()=>{setTab(key);setMobile(false)}}><Icon size={19}/>{t[key]}</button>)}</nav><div className="sidebarfoot"><span className="dot"/> {t.operational}<p>ZenCrypto v1.0 · Prototype</p></div></aside><main><header><button className="hamburger" onClick={()=>setMobile(!mobile)}><Menu size={23}/></button><div className="headerleft"><span className="breadcrumb">ZenCrypto / {t[tab]}</span><h1>{t[tab]}</h1></div><div className="headeractions"><span className="live"><span className="dot"/> MARKET DATA</span><button className="lang" onClick={()=>setLang(lang==='en'?'zh':'en')}><Globe size={16}/> {lang==='en'?'中文':'English'}</button><div className="avatar">Z</div></div></header><div className="content"><div className="warning"><Shield size={18}/><div><strong>{t.demo}</strong><p>{t.notice}</p></div></div>
 
 {tab==='dashboard'&&<>
   <section className="zc-hero">
