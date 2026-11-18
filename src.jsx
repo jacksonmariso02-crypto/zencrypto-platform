@@ -72,6 +72,57 @@ const [coinPage, setCoinPage] = useState(1);
 const [coinsLoading, setCoinsLoading] = useState(false);
 const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('en'),[tab,setTab]=useState('dashboard'),[coin,setCoin]=useState('BTC'),[side,setSide]=useState('buy'),[amount,setAmount]=useState('100'),[orders,setOrders]=useState([]),[prices,setPrices]=useState({}),[period,setPeriod]=useState('1D'),[mobile,setMobile]=useState(false),[error,setError]=useState('');const t=dict[lang];
 
+  const [authMode, setAuthMode] = useState('login');
+  const [authToken, setAuthToken] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
+
+  async function handleAuth(e) {
+    e.preventDefault();
+    setAuthMessage('');
+
+    const endpoint = authMode === 'register'
+      ? '/auth/register'
+      : '/auth/login';
+
+    try {
+      const response = await fetch(
+        'https://zencrypto-api-backend.onrender.com' + endpoint,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: authEmail,
+            password: authPassword
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Request failed');
+      }
+
+     if (authMode === 'register') {
+  setAuthMessage('Account created. Please log in.');
+  setAuthMode('login');
+} else {
+  setAuthToken(data.access_token);
+  localStorage.setItem('zencrypto_token', data.access_token);
+  setAuthPassword('');
+  setAuthMessage('Login successful.');
+}
+        setAuthMessage('Login successful.');
+      }
+    } catch (error) {
+      setAuthMessage(error.message);
+    }
+  }
+
 useEffect(() => {
   let cancelled = false;
 
