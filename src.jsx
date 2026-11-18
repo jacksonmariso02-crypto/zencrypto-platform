@@ -73,7 +73,9 @@ const [coinsLoading, setCoinsLoading] = useState(false);
 const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('en'),[tab,setTab]=useState('dashboard'),[coin,setCoin]=useState('BTC'),[side,setSide]=useState('buy'),[amount,setAmount]=useState('100'),[orders,setOrders]=useState([]),[prices,setPrices]=useState({}),[period,setPeriod]=useState('1D'),[mobile,setMobile]=useState(false),[error,setError]=useState('');const t=dict[lang];
 
   const [authMode, setAuthMode] = useState('login');
-  const [authToken, setAuthToken] = useState('');
+ const [authToken, setAuthToken] = useState(
+  localStorage.getItem('zencrypto_token') || ''
+);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMessage, setAuthMessage] = useState('');
