@@ -1,0 +1,29 @@
+name: Paper trading verification
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/account-auth-foundation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run build
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt httpx pytest
+      - run: python -m py_compile backend/main.py
+      - run: pytest -q
