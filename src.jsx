@@ -21,9 +21,9 @@ async function fetch1000Coins() {
 
     while (!success && retries < 4) {
       try {
-        const response = await fetch(
-          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
-        );
+       const response = await fetch(
+  `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`
+);
 
         if (response.status === 429) {
           throw new Error("RATE_LIMIT");
@@ -116,7 +116,7 @@ const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('e
   setAuthPassword('');
   setAuthMessage('Login successful.');
 }
-        setAuthMessage('Login successful.');
+       
       }
     } catch (error) {
       setAuthMessage(error.message);
