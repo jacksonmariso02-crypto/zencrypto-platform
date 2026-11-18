@@ -46,7 +46,6 @@ def test_idempotency_and_user_isolation(tmp_path, monkeypatch):
             response=client.post("/auth/login",json={"email":email,"password":"CorrectHorseBattery12"})
             tokens.append({"Authorization":"Bearer "+response.json()["access_token"]})
         h1,h2=tokens
-        client.post("/sandbox/faucet",headers={**h1,"Idempotency-Key":"isolation-faucet-01"},json={"amount":"1000"})
         first=client.post("/sandbox/faucet",headers={**h1,"Idempotency-Key":"same-key-00001"},json={"amount":"1"})
         repeat=client.post("/sandbox/faucet",headers={**h1,"Idempotency-Key":"same-key-00001"},json={"amount":"1"})
         assert first.status_code==201 and repeat.json()==first.json()
