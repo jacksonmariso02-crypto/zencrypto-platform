@@ -121,7 +121,7 @@ def submit_kyc(body:Kyc,u=Depends(require_user)):
 def balances(u=Depends(require_user)):
  with db() as c:
   rows=c.execute('SELECT a.currency,COALESCE(SUM(p.amount_minor),0) balance FROM accounts a LEFT JOIN postings p ON p.account_id=a.id WHERE a.user_id=? GROUP BY a.id',(u['id'],)).fetchall()
- return {'balances':[{'currency':r['currency'],'amount':f"{Decimal(r['balance'])/100:.2f}"} for r in rows],'mode':'SANDBOX_ONLY'}
+ return {'balances':[{'currency':r['currency'],'amount':format(Decimal(r['balance'])/(Decimal(100) if r['currency']=='USD' else Decimal(100000000)),'f')} for r in rows],'mode':'PAPER_ONLY'}
 @app.post('/deposits/request',status_code=201)
 def deposit(body:Money,u=Depends(require_user)):
  if body.currency!='USD': raise HTTPException(422,'Sandbox only supports USD')
@@ -142,9 +142,229 @@ def withdrawal(body:Withdrawal,u=Depends(require_user)):
 def requests(u=Depends(require_user)):
  with db() as c: rows=c.execute('SELECT id,kind,currency,amount_minor,status,created_at FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT 100',(u['id'],)).fetchall()
  return {'requests':[dict(r)|{'amount':f"{Decimal(r['amount_minor'])/100:.2f}"} for r in rows]}
-@app.post('/trade/orders')
-def orders(u=Depends(require_user)):
- raise HTTPException(503,'Live order execution is disabled. Integrate an authorized execution provider and settlement reconciliation.')
+# Paper-trading engine. This subsystem uses simulated balances only.
+class PaperOrder(BaseModel):
+    symbol: str = Field(pattern=r'^[A-Z0-9]{2,12}
+@app.get('/admin/audit')
+def admin_audit(u=Depends(require_user)):
+ if u['role']!='admin': raise HTTPException(403,'Admin role required')
+ with db() as c: rows=c.execute('SELECT id,actor_id,event,detail,created_at FROM audit ORDER BY id DESC LIMIT 100').fetchall()
+ return {'events':[dict(r) for r in rows]}
+
+# Global compliance and paper-only balanced ledger extensions.
+# These endpoints deliberately cannot move real assets or mark KYC as verified.
+from typing import Literal
+
+class PaperTransfer(BaseModel):
+    amount: str
+    currency: Literal['USD'] = 'USD'
+
+class CaseCreate(BaseModel):
+    reason: str = Field(min_length=8, max_length=500)
+
+@app.get('/compliance/jurisdictions/{country}')
+def jurisdiction(country: str):
+    code = country.upper()
+    if len(code) != 2 or not code.isalpha():
+        raise HTTPException(422, 'Use a two-letter ISO country code')
+    with db() as c:
+        r = c.execute('SELECT status,legal_reference FROM jurisdiction_policy WHERE country=?',(code,)).fetchone()
+    return {'country':code,'live_trading_allowed':False,'policy_status':r['status'] if r else 'blocked',
+            'notice':'Live funds are globally disabled. A policy entry is not a licence.'}
+
+@app.get('/compliance/status')
+def compliance_status(u=Depends(require_user)):
+    with db() as c:
+        r=c.execute('SELECT country FROM kyc WHERE user_id=? ORDER BY id DESC LIMIT 1',(u['id'],)).fetchone()
+        count=c.execute("SELECT COUNT(*) FROM compliance_cases WHERE user_id=? AND status='open'",(u['id'],)).fetchone()[0]
+    return {'kyc_status':u['kyc_status'],'declared_country':r['country'] if r else None,
+            'open_cases':count,'real_money_allowed':False,'withdrawals_allowed':False}
+
+@app.post('/compliance/cases',status_code=201)
+def open_case(body:CaseCreate,u=Depends(require_user)):
+    rid=secrets.token_urlsafe(18)
+    with db() as c:
+        c.execute('INSERT INTO compliance_cases(id,user_id,reason,created_at) VALUES(?,?,?,?)',
+                  (rid,u['id'],body.reason,int(time.time())))
+        audit(c,u['id'],'compliance_case_opened',{'case_id':rid})
+    return {'case_id':rid,'status':'open','notice':'Not a substitute for AML monitoring or regulatory reporting.'}
+
+@app.get('/admin/compliance/cases')
+def admin_cases(u=Depends(require_user)):
+    if u['role']!='admin': raise HTTPException(403,'Admin role required')
+    with db() as c:
+        rows=c.execute('SELECT id,user_id,reason,status,created_at FROM compliance_cases ORDER BY created_at DESC LIMIT 100').fetchall()
+    return {'cases':[dict(x) for x in rows]}
+
+def post_balanced(c, kind, reference, entries):
+    # entries: list[(account_id, signed integer cents)]; single currency only.
+    if len(entries)<2 or sum(value for _,value in entries)!=0 or any(value==0 for _,value in entries):
+        raise HTTPException(422,'Unbalanced journal')
+    jid=secrets.token_urlsafe(18)
+    c.execute('INSERT INTO journal(id,kind,reference,created_at) VALUES(?,?,?,?)',
+              (jid,kind,reference,int(time.time())))
+    for aid,value in entries:
+        c.execute('INSERT INTO postings(journal_id,account_id,amount_minor) VALUES(?,?,?)',(jid,aid,value))
+    return jid
+
+@app.post('/sandbox/faucet',status_code=201)
+def sandbox_faucet(body:PaperTransfer, idempotency_key: str=Header(min_length=8,max_length=100),u=Depends(require_user)):
+    # Paper credits are visibly labeled, limited to $1,000 total per user.
+    # Never use this route for real money or production customer balances.
+    amt=amount_minor(body.amount)
+    if amt>100000: raise HTTPException(422,'Sandbox maximum is 1000 USD per request')
+    with db() as c:
+        try:
+            c.execute('BEGIN IMMEDIATE')
+            prev=c.execute('SELECT * FROM sandbox_operations WHERE idempotency_key=?',(idempotency_key,)).fetchone()
+            if prev:
+                if prev['user_id']!=u['id'] or prev['operation']!=f'faucet:{amt}:USD':
+                    raise HTTPException(409,'Idempotency key reused for different operation')
+                c.execute('COMMIT')
+                return json.loads(prev['response'])
+            issued=c.execute("SELECT COALESCE(SUM(CAST(json_extract(response,'$.credited_minor') AS INTEGER)),0) FROM sandbox_operations WHERE user_id=? AND operation LIKE 'faucet:%'",(u['id'],)).fetchone()[0]
+            if issued+amt>100000: raise HTTPException(422,'Lifetime sandbox faucet limit is 1000 USD')
+            user_account=c.execute("SELECT id FROM accounts WHERE user_id=? AND currency='USD'",(u['id'],)).fetchone()['id']
+            # House account is a separately named internal account (user_id NULL prohibited by schema),
+            # so use a dedicated reserved system user with an unguessable password.
+            sysuser=c.execute("SELECT id FROM users WHERE email='sandbox-house@internal.invalid'").fetchone()
+            if not sysuser:
+                sysid=c.execute('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)',
+                                ('sandbox-house@internal.invalid',hash_pw(secrets.token_urlsafe(64)),'system',int(time.time()))).lastrowid
+                house=c.execute("INSERT INTO accounts(user_id,currency) VALUES(?,'USD')",(sysid,)).lastrowid
+            else:
+                house=c.execute("SELECT id FROM accounts WHERE user_id=? AND currency='USD'",(sysuser['id'],)).fetchone()['id']
+            jid=post_balanced(c,'sandbox_faucet','faucet:'+idempotency_key,[(house,-amt),(user_account,amt)])
+            response={'mode':'PAPER_ONLY','credited_minor':amt,'currency':'USD','journal_id':jid}
+            c.execute('INSERT INTO sandbox_operations VALUES(?,?,?,?,?)',
+                      (idempotency_key,u['id'],f'faucet:{amt}:USD',json.dumps(response),int(time.time())))
+            audit(c,u['id'],'sandbox_credit',{'journal_id':jid,'amount_minor':amt})
+            c.execute('COMMIT')
+            return response
+        except Exception:
+            if c.in_transaction: c.execute('ROLLBACK')
+            raise
+
+@app.get('/account/ledger')
+def account_ledger(u=Depends(require_user)):
+    with db() as c:
+        rows=c.execute("""SELECT j.id,j.kind,j.reference,j.created_at,a.currency,p.amount_minor
+           FROM postings p JOIN accounts a ON a.id=p.account_id JOIN journal j ON j.id=p.journal_id
+           WHERE a.user_id=? ORDER BY j.created_at DESC LIMIT 100""",(u['id'],)).fetchall()
+    return {'mode':'PAPER_ONLY','entries':[dict(r) for r in rows]}
+
+@app.get('/admin/ledger/integrity')
+def ledger_integrity(u=Depends(require_user)):
+    if u['role']!='admin': raise HTTPException(403,'Admin role required')
+    with db() as c:
+        bad=c.execute("""SELECT j.id FROM journal j JOIN postings p ON p.journal_id=j.id
+           JOIN accounts a ON a.id=p.account_id
+           GROUP BY j.id,a.currency HAVING COUNT(p.id)<2 OR SUM(p.amount_minor)<>0 LIMIT 100""").fetchall()
+    return {'balanced':not bool(bad),'bad_journal_ids':[r['id'] for r in bad],
+            'notice':'Basic arithmetic check only; not an independent financial or security audit.'}
+)
+    side: Literal['buy','sell']
+    quote_amount: str = Field(min_length=1, max_length=32)
+    reference_price: str = Field(min_length=1, max_length=32)
+
+def asset_units(value: Decimal) -> int:
+    scaled = value * Decimal(100000000)
+    if not value.is_finite() or value <= 0 or scaled != scaled.to_integral_value():
+        raise HTTPException(422, 'Invalid asset quantity precision')
+    return int(scaled)
+
+def ensure_paper_account(c, user_id, currency):
+    c.execute('INSERT OR IGNORE INTO accounts(user_id,currency) VALUES(?,?)',(user_id,currency))
+    return c.execute('SELECT id FROM accounts WHERE user_id=? AND currency=?',(user_id,currency)).fetchone()['id']
+
+def ensure_paper_system_account(c, currency):
+    email='paper-house@internal.invalid'
+    sysuser=c.execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()
+    if not sysuser:
+        uid=c.execute('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)',
+                      (email,hash_pw(secrets.token_urlsafe(64)),'system',int(time.time()))).lastrowid
+    else:
+        uid=sysuser['id']
+    return ensure_paper_account(c,uid,currency)
+
+@app.post('/trade/orders', status_code=201)
+def create_paper_order(body: PaperOrder, idempotency_key: str=Header(min_length=8,max_length=100), u=Depends(require_user)):
+    symbol=body.symbol.upper()
+    if symbol in ('USD','USDT','USDC') or not symbol.isalnum():
+        raise HTTPException(422,'Unsupported trading symbol')
+    try:
+        price=Decimal(body.reference_price)
+        quote=Decimal(body.quote_amount)
+        if not price.is_finite() or price<=0 or not quote.is_finite() or quote<=0:
+            raise ValueError()
+        if price > Decimal('1000000000') or quote > Decimal('1000000'):
+            raise ValueError()
+    except Exception:
+        raise HTTPException(422,'Price and quote amount must be positive valid numbers')
+    fee_rate=Decimal('0.001')
+    quote_minor=int((quote*100).quantize(Decimal('1')))
+    gross_minor=int((quote_minor/100/price*Decimal(100000000)).quantize(Decimal('1')))
+    if gross_minor<=0:
+        raise HTTPException(422,'Order amount is too small')
+    gross_asset=Decimal(gross_minor)/Decimal(100000000)
+    notional_minor=int((gross_asset*price*100).quantize(Decimal('1')))
+    fee_minor=max(1,int((Decimal(notional_minor)*fee_rate).quantize(Decimal('1'))))
+    trade_id=secrets.token_urlsafe(18)
+    now=int(time.time())
+    with db() as c:
+        try:
+            c.execute('BEGIN IMMEDIATE')
+            prior=c.execute('SELECT response FROM sandbox_operations WHERE idempotency_key=?',(idempotency_key,)).fetchone()
+            operation=f'trade:{symbol}:{body.side}:{quote}:{price}'
+            if prior:
+                row=c.execute('SELECT user_id,operation FROM sandbox_operations WHERE idempotency_key=?',(idempotency_key,)).fetchone()
+                if row['user_id']!=u['id'] or row['operation']!=operation:
+                    raise HTTPException(409,'Idempotency key reused for a different order')
+                c.execute('COMMIT')
+                return json.loads(prior['response'])
+            usd_user=ensure_paper_account(c,u['id'],'USD')
+            asset_user=ensure_paper_account(c,u['id'],symbol)
+            usd_house=ensure_paper_system_account(c,'USD')
+            asset_house=ensure_paper_system_account(c,symbol)
+            usd_balance=c.execute('SELECT COALESCE(SUM(amount_minor),0) n FROM postings WHERE account_id=?',(usd_user,)).fetchone()['n']
+            asset_balance=c.execute('SELECT COALESCE(SUM(amount_minor),0) n FROM postings WHERE account_id=?',(asset_user,)).fetchone()['n']
+            if body.side=='buy':
+                debit=notional_minor+fee_minor
+                if usd_balance<debit:
+                    raise HTTPException(422,'Insufficient simulated USD balance. Use the paper faucet to add test funds.')
+                entries=[(usd_user,-debit),(usd_house,debit),(asset_user,gross_minor),(asset_house,-gross_minor)]
+                fee=Decimal(fee_minor)/100
+            else:
+                if asset_balance<gross_minor:
+                    raise HTTPException(422,'Insufficient simulated asset balance')
+                proceeds=notional_minor-fee_minor
+                if proceeds<=0:
+                    raise HTTPException(422,'Order value is too small after fees')
+                entries=[(asset_user,-gross_minor),(asset_house,gross_minor),(usd_user,proceeds),(usd_house,-proceeds)]
+                fee=Decimal(fee_minor)/100
+            jid=post_balanced(c,'paper_trade',trade_id,entries)
+            response={'id':trade_id,'journal_id':jid,'symbol':symbol,'side':body.side,
+                      'quantity':format(gross_asset,'f'),'price':format(price,'f'),
+                      'notional':format(Decimal(notional_minor)/100,'f'),
+                      'fee':format(fee,'f'),'status':'filled','mode':'PAPER_ONLY',
+                      'created_at':now}
+            c.execute('INSERT INTO sandbox_operations VALUES(?,?,?,?,?)',
+                      (idempotency_key,u['id'],operation,json.dumps(response),now))
+            audit(c,u['id'],'paper_order_filled',response)
+            c.execute('COMMIT')
+            return response
+        except Exception:
+            if c.in_transaction: c.execute('ROLLBACK')
+            raise
+
+@app.get('/trade/orders')
+def list_paper_orders(u=Depends(require_user)):
+    with db() as c:
+        rows=c.execute("SELECT response,created_at FROM sandbox_operations WHERE user_id=? AND operation LIKE 'trade:%' ORDER BY created_at DESC LIMIT 100",(u['id'],)).fetchall()
+    return {'mode':'PAPER_ONLY','orders':[json.loads(r['response']) for r in rows]}
+
+@app.post('/sandbox/faucet',status_code=201)
+def sandbox_faucet(body:PaperTransfer, idempotency_key: str=Header(min_length=8,max_length=100),u=Depends(require_user)):
 @app.get('/admin/audit')
 def admin_audit(u=Depends(require_user)):
  if u['role']!='admin': raise HTTPException(403,'Admin role required')
