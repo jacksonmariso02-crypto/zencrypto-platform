@@ -117,7 +117,7 @@ const [coinsError, setCoinsError] = useState("");const[lang,setLang]=useState('e
   setAuthMessage('Login successful.');
 }
        
-      }
+      
     } catch (error) {
       setAuthMessage(error.message);
     }
