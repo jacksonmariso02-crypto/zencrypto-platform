@@ -13,7 +13,7 @@ ZenCrypto is a cryptocurrency-platform **paper-trading prototype** with a React/
 - Simulated market buy/sell orders using a submitted reference price; these are not routed to an exchange.
 - User balances, order history and ledger-entry views.
 - Server-side admin-role checks for audit and ledger-integrity endpoints.
-- Compliance disclosure page that explicitly distinguishes unverified items from completed controls.\n- Browser wallet connection (EIP-1193) with read-only public address, chain ID and native ETH balance.
+- Compliance disclosure page that explicitly distinguishes unverified items from completed controls.\n- Browser wallet connection (EIP-1193) with public address, supported EVM network switching, native ETH and USDC balance reads, receive address display, and user-signed ETH/USDC transfers.
 - GitHub Actions workflow for frontend build and backend tests.
 
 ## Repository layout
@@ -67,7 +67,7 @@ A production exchange requires jurisdiction-specific legal review and required a
 
 ## Project documentation
 
-- [Self-custody DEX architecture for U.S. market review](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md)\n- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
+- [Self-custody DEX architecture for U.S. market review](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md)\n- [Wallet transfer implementation and release status](docs/WALLET_TRANSFER_IMPLEMENTATION.md)\n- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
 - [Current implementation status and roadmap](docs/PROJECT_STATUS.md)
 - [Release checklist and production launch gates](docs/RELEASE_CHECKLIST.md)
 - [Security policy](SECURITY.md)
