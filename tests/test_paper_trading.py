@@ -182,7 +182,7 @@ def test_dex_quote_response_rejects_wrong_asset_and_calldata():
     taker = "0x0000000000000000000000000000000000000001"
     good = {
         "liquidityAvailable": True,
-        "sellToken": sell, "buyToken": buy, "sellAmount": "1000000", "buyAmount": "999",
+        "sellToken": sell, "buyToken": buy, "sellAmount": "1000000", "buyAmount": "999", "minBuyAmount": "989", "issues": {},
         "transaction": {"from": taker, "to": "0x0000000000000000000000000000000000000002",
                         "data": "0x12345678", "value": "0"},
     }
@@ -195,6 +195,11 @@ def test_dex_quote_response_rejects_wrong_asset_and_calldata():
         {"buyToken": sell},
         {"sellAmount": "999999"},
         {"buyAmount": "0"},
+        {"minBuyAmount": "1000"},
+        {"minBuyAmount": "0"},
+        {"issues": {"simulationIncomplete": True}},
+        {"issues": {"invalidSourcesPassed": ["BadPool"]}},
+        {"issues": {"balance": {"actual": "0", "expected": "1000000"}}},
         {"transaction": {**good["transaction"], "data": "0xgarbage"}},
         {"transaction": {**good["transaction"], "value": "0x1"}},
         {"transaction": {**good["transaction"], "from": "0x0000000000000000000000000000000000000003"}},
