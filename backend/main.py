@@ -162,6 +162,19 @@ class PaperOrder(BaseModel):
 class PaperTransfer(BaseModel):
     amount: str
     currency: Literal["USD"] = "USD"
+class SandboxDeposit(BaseModel):
+    amount: str
+    currency: Literal["USD"] = "USD"
+
+class SandboxWithdrawal(BaseModel):
+    amount: str
+    currency: Literal["USD"] = "USD"
+    destination_label: str = Field(min_length=3, max_length=120)
+
+class WithdrawalResolution(BaseModel):
+    decision: Literal["approve", "reject"]
+    note: str = Field(min_length=3, max_length=300)
+
 class CaseCreate(BaseModel):
     reason: str = Field(min_length=8, max_length=500)
 class Kyc(BaseModel):
@@ -341,6 +354,140 @@ def faucet(body: PaperTransfer, idempotency_key: str = Header(min_length=8, max_
             audit(c, u["id"], "paper_funds_credited", {"amount_minor": amount})
             c.execute("COMMIT")
             return result
+        except Exception:
+            if c.in_transaction: c.execute("ROLLBACK")
+            raise
+
+
+# Test-workflow endpoints. These only move virtual USD inside the paper ledger.
+# They do not connect to a blockchain, bank, external wallet or payment rail.
+@app.post("/sandbox/deposits", status_code=201)
+def sandbox_deposit(body: SandboxDeposit, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
+    amount = money_minor(body.amount)
+    with db() as c:
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            prior = c.execute("SELECT user_id,operation,response FROM sandbox_operations WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            operation = f"sandbox_deposit:{amount}:USD"
+            if prior:
+                if prior["user_id"] != u["id"] or prior["operation"] != operation:
+                    raise HTTPException(409, "Idempotency key reused for a different deposit.")
+                c.execute("COMMIT")
+                return json.loads(prior["response"])
+            issued = c.execute("""SELECT COALESCE(SUM(CAST(json_extract(response,'$.credited_minor') AS INTEGER)),0)
+                                  FROM sandbox_operations WHERE user_id=? AND operation LIKE 'sandbox_deposit:%'""", (u["id"],)).fetchone()[0]
+            if issued + amount > 100000:
+                raise HTTPException(422, "Sandbox deposit limit is $1,000 per user.")
+            user_usd = ensure_account(c, u["id"], "USD")
+            faucet = system_account(c, "USD", "paper-faucet")
+            request_id = secrets.token_urlsafe(18)
+            journal_id = post_journal(c, "sandbox_deposit", request_id, [(faucet, "USD", -amount), (user_usd, "USD", amount)])
+            now = int(time.time())
+            result = {"id": request_id, "currency": "USD", "amount": format(Decimal(amount)/100, ".2f"),
+                      "status": "sandbox_credited", "mode": "PAPER_ONLY", "journal_id": journal_id,
+                      "notice": "Virtual test funds only. No blockchain deposit or real payment occurred."}
+            c.execute("INSERT INTO requests(id,user_id,kind,currency,amount_minor,destination,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                      (request_id, u["id"], "sandbox_deposit", "USD", amount, None, "sandbox_credited", now))
+            c.execute("INSERT INTO sandbox_operations VALUES(?,?,?,?,?)",
+                      (idempotency_key, u["id"], operation, json.dumps(result), now))
+            audit(c, u["id"], "sandbox_deposit_credited", {"request_id": request_id, "amount_minor": amount})
+            c.execute("COMMIT")
+            return result
+        except Exception:
+            if c.in_transaction: c.execute("ROLLBACK")
+            raise
+
+@app.post("/sandbox/withdrawal-requests", status_code=201)
+def sandbox_withdrawal(body: SandboxWithdrawal, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
+    amount = money_minor(body.amount)
+    destination = body.destination_label.strip()
+    with db() as c:
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            prior = c.execute("SELECT user_id,operation,response FROM sandbox_operations WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            operation = f"sandbox_withdrawal:{amount}:USD:{destination}"
+            if prior:
+                if prior["user_id"] != u["id"] or prior["operation"] != operation:
+                    raise HTTPException(409, "Idempotency key reused for a different withdrawal.")
+                c.execute("COMMIT")
+                return json.loads(prior["response"])
+            user_usd = ensure_account(c, u["id"], "USD")
+            if balance_minor(c, user_usd) < amount:
+                raise HTTPException(400, "Insufficient simulated USD balance.")
+            hold = system_account(c, "USD", "paper-withdrawal-hold")
+            request_id = secrets.token_urlsafe(18)
+            journal_id = post_journal(c, "sandbox_withdrawal_hold", request_id,
+                                      [(user_usd, "USD", -amount), (hold, "USD", amount)])
+            now = int(time.time())
+            result = {"id": request_id, "currency": "USD", "amount": format(Decimal(amount)/100, ".2f"),
+                      "destination_label": destination, "status": "pending_sandbox_review", "mode": "PAPER_ONLY",
+                      "journal_id": journal_id,
+                      "notice": "Virtual balance reserved for workflow testing only. No external transfer will occur."}
+            c.execute("INSERT INTO requests(id,user_id,kind,currency,amount_minor,destination,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                      (request_id, u["id"], "sandbox_withdrawal", "USD", amount, destination, "pending_sandbox_review", now))
+            c.execute("INSERT INTO sandbox_operations VALUES(?,?,?,?,?)",
+                      (idempotency_key, u["id"], operation, json.dumps(result), now))
+            audit(c, u["id"], "sandbox_withdrawal_requested", {"request_id": request_id, "amount_minor": amount})
+            c.execute("COMMIT")
+            return result
+        except Exception:
+            if c.in_transaction: c.execute("ROLLBACK")
+            raise
+
+@app.get("/account/requests")
+def account_requests(u=Depends(require_user)):
+    with db() as c:
+        rows = c.execute("""SELECT id,kind,currency,amount_minor,destination,status,created_at
+                            FROM requests WHERE user_id=? ORDER BY created_at DESC LIMIT 100""", (u["id"],)).fetchall()
+    return {"mode": "PAPER_ONLY", "requests": [
+        {"id": r["id"], "kind": r["kind"], "currency": r["currency"],
+         "amount": format(Decimal(r["amount_minor"])/100, ".2f"),
+         "destination_label": r["destination"], "status": r["status"], "created_at": r["created_at"]}
+        for r in rows]}
+
+@app.get("/admin/requests")
+def admin_requests(u=Depends(require_user)):
+    if u["role"] != "admin":
+        raise HTTPException(403, "Admin role required")
+    with db() as c:
+        rows = c.execute("""SELECT r.id,r.user_id,u.email,r.kind,r.currency,r.amount_minor,r.destination,r.status,r.created_at
+                            FROM requests r JOIN users u ON u.id=r.user_id ORDER BY r.created_at DESC LIMIT 200""").fetchall()
+    return {"mode": "PAPER_ONLY", "requests": [
+        {"id": r["id"], "user_id": r["user_id"], "email": r["email"], "kind": r["kind"],
+         "currency": r["currency"], "amount": format(Decimal(r["amount_minor"])/100, ".2f"),
+         "destination_label": r["destination"], "status": r["status"], "created_at": r["created_at"]}
+        for r in rows]}
+
+@app.post("/admin/requests/{request_id}/resolve")
+def resolve_sandbox_request(request_id: str, body: WithdrawalResolution, u=Depends(require_user)):
+    if u["role"] != "admin":
+        raise HTTPException(403, "Admin role required")
+    with db() as c:
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            req = c.execute("SELECT * FROM requests WHERE id=? AND kind='sandbox_withdrawal'", (request_id,)).fetchone()
+            if not req:
+                raise HTTPException(404, "Sandbox withdrawal request not found.")
+            if req["status"] != "pending_sandbox_review":
+                raise HTTPException(409, "Request has already been resolved.")
+            user_usd = ensure_account(c, req["user_id"], "USD")
+            hold = system_account(c, "USD", "paper-withdrawal-hold")
+            amount = req["amount_minor"]
+            if body.decision == "approve":
+                sink = system_account(c, "USD", "paper-withdrawal-simulated-settlement")
+                journal_id = post_journal(c, "sandbox_withdrawal_approved", request_id,
+                                          [(hold, "USD", -amount), (sink, "USD", amount)])
+                new_status = "sandbox_approved"
+            else:
+                journal_id = post_journal(c, "sandbox_withdrawal_rejected", request_id,
+                                          [(hold, "USD", -amount), (user_usd, "USD", amount)])
+                new_status = "sandbox_rejected"
+            c.execute("UPDATE requests SET status=? WHERE id=?", (new_status, request_id))
+            audit(c, u["id"], "sandbox_withdrawal_resolved",
+                  {"request_id": request_id, "decision": body.decision, "note": body.note, "journal_id": journal_id})
+            c.execute("COMMIT")
+            return {"id": request_id, "status": new_status, "mode": "PAPER_ONLY",
+                    "notice": "Sandbox ledger state updated. No external funds were transferred."}
         except Exception:
             if c.in_transaction: c.execute("ROLLBACK")
             raise
