@@ -1,4 +1,4 @@
-"""ZenCrypto API. Simulated paper trading only; never transfers real assets."""
+"""ZenCrypto non-custodial API: server-side DEX quotes; users sign and submit transactions in their own wallets."""
 import os, sqlite3, secrets, hashlib, hmac, time, json
 import httpx
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
@@ -17,7 +17,7 @@ if not SECRET:
     SECRET = secrets.token_urlsafe(48)
 TOKEN = URLSafeTimedSerializer(SECRET, salt="zencrypto-session-v1")
 bearer = HTTPBearer(auto_error=False)
-app = FastAPI(title="ZenCrypto Paper Trading API", version="1.0.0")
+app = FastAPI(title="ZenCrypto Non-Custodial API", version="1.1.0")
 
 PAPER_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
 
