@@ -81,3 +81,58 @@ def test_compliance_disclosure_and_real_money_routes_stay_disabled(tmp_path, mon
         assert client.post("/withdrawals/request", headers=headers, json={"currency": "USD", "amount": "10", "destination": "bank"}).status_code == 403
         assert client.get("/admin/audit", headers=headers).status_code == 403
         assert client.get("/admin/ledger/integrity", headers=headers).status_code == 403
+
+def test_sandbox_deposit_withdrawal_reservation_and_admin_resolution(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "transfers.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        reg = client.post("/auth/register", json={"email": "transfer-user@example.test", "password": "CorrectHorseBattery12"})
+        assert reg.status_code == 201
+        login = client.post("/auth/login", json={"email": "transfer-user@example.test", "password": "CorrectHorseBattery12"})
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+
+        deposit = client.post("/sandbox/deposits", headers={**headers, "Idempotency-Key": "deposit-test-0001"},
+                              json={"amount": "100", "currency": "USD"})
+        assert deposit.status_code == 201, deposit.text
+        assert deposit.json()["status"] == "sandbox_credited"
+        assert "No blockchain deposit" in deposit.json()["notice"]
+
+        again = client.post("/sandbox/deposits", headers={**headers, "Idempotency-Key": "deposit-test-0001"},
+                            json={"amount": "100", "currency": "USD"})
+        assert again.status_code == 201
+        assert again.json()["id"] == deposit.json()["id"]
+
+        withdrawal = client.post("/sandbox/withdrawal-requests",
+                                 headers={**headers, "Idempotency-Key": "withdraw-test-0001"},
+                                 json={"amount": "40", "currency": "USD", "destination_label": "My test wallet"})
+        assert withdrawal.status_code == 201, withdrawal.text
+        assert withdrawal.json()["status"] == "pending_sandbox_review"
+
+        balances = {x["currency"]: float(x["amount"]) for x in
+                    client.get("/account/balances", headers=headers).json()["balances"]}
+        assert balances["USD"] == 60.0
+
+        history = client.get("/account/requests", headers=headers).json()["requests"]
+        assert len(history) == 2
+        assert any(x["kind"] == "sandbox_withdrawal" and x["status"] == "pending_sandbox_review" for x in history)
+
+        with main.db() as conn:
+            conn.execute("UPDATE users SET role='admin' WHERE email='transfer-user@example.test'")
+
+        admin_requests = client.get("/admin/requests", headers=headers)
+        assert admin_requests.status_code == 200
+        resolution = client.post("/admin/requests/" + withdrawal.json()["id"] + "/resolve",
+                                 headers=headers, json={"decision": "approve", "note": "Sandbox approval test"})
+        assert resolution.status_code == 200, resolution.text
+        assert resolution.json()["status"] == "sandbox_approved"
+        assert "No external funds" in resolution.json()["notice"]
+
+        balance_after = client.get("/account/balances", headers=headers).json()["balances"]
+        usd_after = next(x for x in balance_after if x["currency"] == "USD")
+        assert float(usd_after["amount"]) == 60.0
+
+        assert client.post("/deposits/request", headers=headers,
+                           json={"currency": "USD", "amount": "10"}).status_code == 403
+        assert client.post("/withdrawals/request", headers=headers,
+                           json={"currency": "USD", "amount": "10", "destination": "external"}).status_code == 403
