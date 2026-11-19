@@ -173,3 +173,32 @@ def test_legacy_paper_api_is_closed_when_feature_flag_is_off(monkeypatch):
         response = client.post("/auth/register", json={"email": "blocked@example.test", "password": "CorrectHorseBattery12"})
         assert response.status_code == 404
         assert "paper-trading API is disabled" in response.json()["detail"]
+
+
+def test_dex_quote_response_rejects_wrong_asset_and_calldata():
+    from fastapi import HTTPException
+    sell = "0x4200000000000000000000000000000000000006"
+    buy = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    taker = "0x0000000000000000000000000000000000000001"
+    good = {
+        "liquidityAvailable": True,
+        "sellToken": sell, "buyToken": buy, "sellAmount": "1000000", "buyAmount": "999",
+        "transaction": {"from": taker, "to": "0x0000000000000000000000000000000000000002",
+                        "data": "0x12345678", "value": "0"},
+    }
+    def check(payload):
+        return main.validate_dex_quote_response(payload, chain_id=8453, sell_token=sell,
+                                                buy_token=buy, sell_amount="1000000", taker=taker)
+    assert check(good) == good
+    for changed in (
+        {"sellToken": buy},
+        {"buyToken": sell},
+        {"sellAmount": "999999"},
+        {"buyAmount": "0"},
+        {"transaction": {**good["transaction"], "data": "0xgarbage"}},
+        {"transaction": {**good["transaction"], "value": "0x1"}},
+        {"transaction": {**good["transaction"], "from": "0x0000000000000000000000000000000000000003"}},
+        {"issues": {"allowance": {"spender": "0x0000000000000000000000000000000000000004"}}},
+    ):
+        with __import__("pytest").raises(HTTPException):
+            check({**good, **changed})
