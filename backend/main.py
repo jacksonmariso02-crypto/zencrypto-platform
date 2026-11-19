@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -17,6 +18,15 @@ if not SECRET:
 TOKEN = URLSafeTimedSerializer(SECRET, salt="zencrypto-session-v1")
 bearer = HTTPBearer(auto_error=False)
 app = FastAPI(title="ZenCrypto Paper Trading API", version="1.0.0")
+
+PAPER_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
+
+@app.middleware("http")
+async def disable_legacy_paper_api_by_default(request, call_next):
+    if request.url.path.startswith(PAPER_ROUTE_PREFIXES) and os.getenv("ENABLE_PAPER_TRADING", "false").lower() != "true":
+        return JSONResponse(status_code=404, content={"detail": "Legacy paper-trading API is disabled. ZenCrypto wallet and DEX routes are separate."})
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173,https://jacksonmariso02-crypto.github.io").split(",") if x.strip()],
