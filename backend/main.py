@@ -1,5 +1,6 @@
 """ZenCrypto API. Simulated paper trading only; never transfers real assets."""
 import os, sqlite3, secrets, hashlib, hmac, time, json
+import httpx
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
 from typing import Literal
@@ -550,3 +551,93 @@ def ledger_integrity(u=Depends(require_user)):
                            HAVING COUNT(p.id)<2 OR SUM(p.amount_minor)<>0 LIMIT 100""").fetchall()
     return {"balanced": not bool(bad), "bad_journal_ids": [r["id"] for r in bad],
             "mode": "PAPER_ONLY", "notice": "Arithmetic integrity check only; not an independent audit."}
+
+
+# Non-custodial DEX quote proxy. The 0x API key is server-side only.
+DEX_TOKENS = {
+    1: {
+        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "WETH",
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
+    },
+    8453: {
+        "0x4200000000000000000000000000000000000006": "WETH",
+        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": "USDC",
+    },
+}
+ZEROX_ALLOWANCE_HOLDER = "0x0000000000001ff3684f28c67538d4d072c22734"
+
+def validate_dex_request(chain_id: int, sell_token: str, buy_token: str, sell_amount: str, taker: str):
+    if chain_id not in DEX_TOKENS:
+        raise HTTPException(422, "DEX quotes are enabled only for Ethereum Mainnet and Base Mainnet.")
+    sell = sell_token.lower()
+    buy = buy_token.lower()
+    if sell not in DEX_TOKENS[chain_id] or buy not in DEX_TOKENS[chain_id] or sell == buy:
+        raise HTTPException(422, "Unsupported token pair. Only the curated WETH/USDC pair is enabled.")
+    if not sell_amount.isdigit() or int(sell_amount) <= 0 or len(sell_amount) > 78:
+        raise HTTPException(422, "sellAmount must be a positive integer in token base units.")
+    if not (len(taker) == 42 and taker.startswith("0x") and all(ch in "0123456789abcdefABCDEF" for ch in taker[2:])):
+        raise HTTPException(422, "Invalid wallet address.")
+    return sell, buy
+
+async def call_zerox(endpoint: str, params: dict):
+    api_key = os.getenv("ZEROX_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "DEX quotes are not configured. Add ZEROX_API_KEY to the backend environment.")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                "https://api.0x.org" + endpoint,
+                params=params,
+                headers={"0x-api-key": api_key, "0x-version": "v2", "Accept": "application/json"},
+            )
+        if response.status_code >= 400:
+            detail = "Quote provider rejected the request."
+            try:
+                detail = response.json().get("reason") or response.json().get("message") or detail
+            except Exception:
+                pass
+            raise HTTPException(502, detail[:300])
+        return response.json()
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Quote provider timed out. Request a fresh quote.")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Quote provider is temporarily unavailable.")
+
+@app.get("/dex/price")
+async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str, taker: str):
+    sell, buy = validate_dex_request(chainId, sellToken, buyToken, sellAmount, taker)
+    data = await call_zerox("/swap/allowance-holder/price", {
+        "chainId": str(chainId), "sellToken": sell, "buyToken": buy,
+        "sellAmount": sellAmount, "taker": taker,
+    })
+    if not data.get("liquidityAvailable"):
+        raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
+    return data
+
+class DexQuoteRequest(BaseModel):
+    chainId: int
+    sellToken: str
+    buyToken: str
+    sellAmount: str
+    taker: str
+
+@app.post("/dex/quote")
+async def dex_quote(body: DexQuoteRequest):
+    sell, buy = validate_dex_request(body.chainId, body.sellToken, body.buyToken, body.sellAmount, body.taker)
+    data = await call_zerox("/swap/allowance-holder/quote", {
+        "chainId": str(body.chainId), "sellToken": sell, "buyToken": buy,
+        "sellAmount": body.sellAmount, "taker": body.taker,
+    })
+    if not data.get("liquidityAvailable"):
+        raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
+    tx = data.get("transaction") or {}
+    if tx.get("from", "").lower() != body.taker.lower():
+        raise HTTPException(502, "Quote taker does not match the connected wallet.")
+    to = tx.get("to", "")
+    if not (len(to) == 42 and to.startswith("0x") and all(ch in "0123456789abcdefABCDEF" for ch in to[2:])):
+        raise HTTPException(502, "Quote contains an invalid transaction target.")
+    allowance = (data.get("issues") or {}).get("allowance") or {}
+    spender = allowance.get("spender") or data.get("allowanceTarget")
+    if spender and spender.lower() != ZEROX_ALLOWANCE_HOLDER:
+        raise HTTPException(502, "Unexpected token allowance target. Quote rejected for safety.")
+    return data
