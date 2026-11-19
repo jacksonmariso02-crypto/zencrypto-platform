@@ -72,7 +72,12 @@ Use a unique, randomly generated `APP_SECRET` in each environment. Never commit 
 | GET | `/account/balances` | Paper balances only |
 | GET | `/trade/orders` | Current user's simulated order history |
 | POST | `/trade/orders` | Simulated fill only; not exchange execution |
-| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |\n| POST | `/sandbox/deposits` | Credit capped virtual USD and record sandbox deposit history; no blockchain transfer |\n| POST | `/sandbox/withdrawal-requests` | Reserve virtual USD and create a pending sandbox withdrawal request |\n| GET | `/account/requests` | Current user deposit and withdrawal request history |\n| GET | `/admin/requests` | Admin-only sandbox request queue |\n| POST | `/admin/requests/{request_id}/resolve` | Admin-only simulated approval/rejection; no external transfer |
+| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |
+| POST | `/sandbox/deposits` | Credit capped virtual USD and record sandbox deposit history; no blockchain transfer |
+| POST | `/sandbox/withdrawal-requests` | Reserve virtual USD and create a pending sandbox withdrawal request |
+| GET | `/account/requests` | Current user deposit and withdrawal request history |
+| GET | `/admin/requests` | Admin-only sandbox request queue |
+| POST | `/admin/requests/{request_id}/resolve` | Admin-only simulated approval/rejection; no external transfer |
 | GET | `/account/ledger` | Current user's demo ledger entries |
 | POST | `/deposits/request` | Always blocked |
 | POST | `/withdrawals/request` | Always blocked |
@@ -97,7 +102,34 @@ pytest -q
 
 GitHub Actions runs the frontend build and backend tests for the working feature branch and pull requests to `main`.
 
-## Wallet connectivity\n\nThe Wallet page can connect to an injected EIP-1193 provider and read the active public account, chain ID and native ETH balance. This is read-only. It does not request signatures, ERC-20 approvals, swaps, or transfers. No DEX router or settlement contract is deployed.\n\n## Production environment variables\n\n- `ZEROX_API_KEY`: required on the backend for 0x Swap API v2 quote requests. Store it in the backend host's secret environment settings; never add it to frontend `VITE_` variables or commit it.\n- `ENABLE_PAPER_TRADING=false`: default-deny setting that blocks the legacy SQLite paper-account, sandbox deposit/withdrawal and simulated order routes. Set it to `true` only for isolated local tests.\n\n## DEX quote and swap API\n\nThe API exposes `GET /dex/price` and `POST /dex/quote` as a server-side proxy to 0x Swap API v2. It uses a fixed 100 bps (1%) slippage parameter for the returned quote. Only WETH/USDC on Ethereum Mainnet and Base Mainnet are accepted. The backend reads `ZEROX_API_KEY` from its environment and never returns the key to the browser. The frontend requests indicative pricing, a firm quote, exact token allowance when required, and wallet-signed execution. Configure `ZEROX_API_KEY` in the backend hosting provider before the quote UI can return live prices.\n\n## Sandbox deposit and withdrawal workflow\n\nThe Deposit and Withdraw screens now exercise a paper-only workflow. A sandbox deposit credits virtual USD with a capped, idempotent ledger journal. A sandbox withdrawal reserves virtual USD in a hold account and enters a pending review queue. An administrator can approve the demo request (move the hold to a simulated settlement account) or reject it (release the hold back to the user). Request history is visible to the user. These actions do not generate blockchain addresses, monitor transactions, connect to wallets or banks, or transfer real funds.\n\n## Self-custody DEX gaps — do not represent these as completed\n\n- No deployed or audited swap router, AMM pool or settlement contract.\n- No transaction simulation, slippage protection, ERC-20 allowance flow or wallet-signed swap.\n- No production chain indexer, reorg-safe confirmation service or contract event reconciliation.\n- No production token allowlist, routing/quote service or verified contract-address registry.\n- The current paper balances and sandbox transfer workflows are not connected to the browser wallet.\n\nSee [docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md) for the selected design and release gates.\n\n## Known gaps — do not represent these as completed
+## Wallet connectivity
+
+The Wallet page can connect to an injected EIP-1193 provider and read the active public account, chain ID and native ETH balance. This is read-only. It does not request signatures, ERC-20 approvals, swaps, or transfers. No DEX router or settlement contract is deployed.
+
+## Production environment variables
+
+- `ZEROX_API_KEY`: required on the backend for 0x Swap API v2 quote requests. Store it in the backend host's secret environment settings; never add it to frontend `VITE_` variables or commit it.
+- `ENABLE_PAPER_TRADING=false`: default-deny setting that blocks the legacy SQLite paper-account, sandbox deposit/withdrawal and simulated order routes. Set it to `true` only for isolated local tests.
+
+## DEX quote and swap API
+
+The API exposes `GET /dex/price` and `POST /dex/quote` as a server-side proxy to 0x Swap API v2. It uses a fixed 100 bps (1%) slippage parameter for the returned quote. Only WETH/USDC on Ethereum Mainnet and Base Mainnet are accepted. The backend reads `ZEROX_API_KEY` from its environment and never returns the key to the browser. The frontend requests indicative pricing, a firm quote, exact token allowance when required, and wallet-signed execution. Configure `ZEROX_API_KEY` in the backend hosting provider before the quote UI can return live prices.
+
+## Sandbox deposit and withdrawal workflow
+
+The Deposit and Withdraw screens now exercise a paper-only workflow. A sandbox deposit credits virtual USD with a capped, idempotent ledger journal. A sandbox withdrawal reserves virtual USD in a hold account and enters a pending review queue. An administrator can approve the demo request (move the hold to a simulated settlement account) or reject it (release the hold back to the user). Request history is visible to the user. These actions do not generate blockchain addresses, monitor transactions, connect to wallets or banks, or transfer real funds.
+
+## Self-custody DEX gaps — do not represent these as completed
+
+- No deployed or audited swap router, AMM pool or settlement contract.
+- No transaction simulation, slippage protection, ERC-20 allowance flow or wallet-signed swap.
+- No production chain indexer, reorg-safe confirmation service or contract event reconciliation.
+- No production token allowlist, routing/quote service or verified contract-address registry.
+- The current paper balances and sandbox transfer workflows are not connected to the browser wallet.
+
+See [docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md) for the selected design and release gates.
+
+## Known gaps — do not represent these as completed
 
 - No MFA/passkeys, email verification, robust login throttling, bot protection or production session/cookie hardening.
 - No production PostgreSQL migrations, serializable transaction design, operational backup/restore drills or high-availability setup.
