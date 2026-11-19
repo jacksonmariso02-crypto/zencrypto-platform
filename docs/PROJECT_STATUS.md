@@ -23,7 +23,7 @@ Last updated: 2026-11-19
 - [x] KYC declaration endpoint clearly marked as non-verification.
 - [x] Compliance status and demo case endpoints.
 - [x] Admin-role checks for audit and ledger-integrity endpoints.
-- [x] Compliance disclosure UI.\n- [x] Sandbox deposit flow with capped virtual USD credit and idempotency.\n- [x] Sandbox withdrawal request with virtual-balance reservation.\n- [x] User deposit/withdrawal history and admin-only simulated request resolution.
+- [x] Compliance disclosure UI.\n- [x] EIP-1193 injected wallet connection and read-only native ETH balance display.\n- [x] Sandbox deposit flow with capped virtual USD credit and idempotency.\n- [x] Sandbox withdrawal request with virtual-balance reservation.\n- [x] User deposit/withdrawal history and admin-only simulated request resolution.
 - [x] GitHub Actions frontend build and backend test workflow.
 
 ## Verification
@@ -38,7 +38,7 @@ A green CI run verifies those automated checks only; it is not a security audit,
 
 ## Remaining engineering work
 
-### Priority 1 — harden the sandbox and account foundation
+### Priority 0 — self-custody DEX implementation\n- Complete reviewed smart-contract specification and deployment pipeline.\n- Build a chain indexer with confirmation, reorg and backfill handling.\n- Add verified token registry, route quotes, transaction simulation and wallet-signed swap requests.\n- Add explorer links, transaction lifecycle tracking, gas/slippage/price-impact disclosures.\n- Remove or isolate paper balances and sandbox deposit/withdraw controls from any production-facing build.\n- Complete independent contract audit and written U.S. legal review before mainnet.\n\n### Priority 1 — harden the sandbox and account foundation
 - Add MFA/passkeys, email verification, login throttling and abuse controls.
 - Review token storage and session lifecycle; move toward secure, HttpOnly cookie sessions with a deliberate CSRF design.
 - Add security headers, strict production CORS allowlists and dependency/security scanning.
@@ -63,6 +63,6 @@ A green CI run verifies those automated checks only; it is not a security audit,
 - Define incident response, disaster recovery, customer support, disclosures and operational controls.
 - Maintain a jurisdiction/product/customer allowlist with default-deny behavior.
 
-## Important boundary
+## Wallet connection status\n\nThe Wallet page can connect to an injected EIP-1193 browser wallet and read the public address, current chain ID and native ETH balance. This is read-only connectivity. It does not request signatures, token approvals or transactions. It does not constitute a deployed exchange, a deposit address, a withdrawal service or a live swap feature.\n\nSee [Self-Custody Exchange Architecture](SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md) for the selected product model and launch gates.\n\n## Important boundary
 
 This repository is a software prototype. Do not advertise the platform as licensed, regulated, audited, custody-capable or able to process real deposits/withdrawals. Do not collect customer funds or sensitive identity documents through this prototype. No real-money capability should be implemented or enabled until qualified legal, compliance, custody, security and operational reviews are complete.
