@@ -136,3 +136,32 @@ def test_sandbox_deposit_withdrawal_reservation_and_admin_resolution(tmp_path, m
                            json={"currency": "USD", "amount": "10"}).status_code == 403
         assert client.post("/withdrawals/request", headers=headers,
                            json={"currency": "USD", "amount": "10", "destination": "external"}).status_code == 403
+
+def test_dex_quote_proxy_is_disabled_without_server_side_api_key(monkeypatch):
+    monkeypatch.delenv("ZEROX_API_KEY", raising=False)
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        response = client.get("/dex/price", params={
+            "chainId": 8453,
+            "sellToken": "0x4200000000000000000000000000000000000006",
+            "buyToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "sellAmount": "100000000000000000",
+            "taker": "0x0000000000000000000000000000000000000001",
+        })
+        assert response.status_code == 503
+        assert "ZEROX_API_KEY" in response.json()["detail"]
+
+
+def test_dex_quote_proxy_rejects_unapproved_tokens_before_provider_call(monkeypatch):
+    monkeypatch.setenv("ZEROX_API_KEY", "test-key")
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        response = client.get("/dex/price", params={
+            "chainId": 8453,
+            "sellToken": "0x0000000000000000000000000000000000000001",
+            "buyToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "sellAmount": "1000000",
+            "taker": "0x0000000000000000000000000000000000000001",
+        })
+        assert response.status_code == 422
+        assert "curated WETH/USDC" in response.json()["detail"]
