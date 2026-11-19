@@ -25,9 +25,9 @@ The app does not request, receive or store seed phrases or private keys. The con
 
 Before production release, verify all chain IDs and token contract addresses against issuer documentation and chain explorers, and maintain a versioned allowlist. The current UI intentionally does not accept arbitrary token contract addresses.
 
-## What is not implemented
+## DEX quote and swap integration added\n\nThe backend now provides a server-side 0x Swap API v2 proxy for indicative price and firm quotes. The proxy supports only WETH/USDC on Ethereum Mainnet and Base Mainnet, validates the token pair and wallet address, and rejects an unexpected AllowanceHolder spender. The 0x API key is read only from the backend environment variable `ZEROX_API_KEY`.\n\nThe frontend can request an indicative price, fetch a firm quote, request an exact ERC-20 allowance through the connected wallet when the provider reports it is needed, and submit the returned transaction through the wallet. The flow waits for an approval receipt before requesting a fresh firm quote.\n\nThis integration requires a valid 0x API key on the backend and has not yet been tested with live mainnet funds. It is not a claim of audit or production readiness.\n\n## What is not implemented
 
-- DEX quote and routing integration.
+- Independent quote-response signature verification and provider security assessment.
 - Swap router or liquidity pool contracts.
 - ERC-20 approval workflow for swaps.
 - Swap transaction simulation, slippage and price-impact limits.
