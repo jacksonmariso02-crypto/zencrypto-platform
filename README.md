@@ -65,4 +65,12 @@ The GitHub Actions workflow runs the frontend production build, Python compilati
 
 A production exchange requires jurisdiction-specific legal review and required authorizations, verified KYC/AML and sanctions controls, approved custody and payment partners, a production-grade database and ledger, audited security controls, reconciliation, operational monitoring, incident response, independent testing, and explicit country/product launch approval. None of these should be inferred from this prototype. Keep real-money features disabled until all applicable gates have been independently satisfied.
 
-See [README-FULLSTACK.md](README-FULLSTACK.md) and [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+## Project documentation
+
+- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
+- [Current implementation status and roadmap](docs/PROJECT_STATUS.md)
+- [Release checklist and production launch gates](docs/RELEASE_CHECKLIST.md)
+- [Security policy](SECURITY.md)
+- [Full-stack setup and API reference](README-FULLSTACK.md)
+
+See these documents before making deployment or product claims.
