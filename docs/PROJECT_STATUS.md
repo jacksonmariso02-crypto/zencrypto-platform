@@ -62,7 +62,7 @@ Last updated: 2026-11-19
 - Implement any required geofencing, sanctions, reporting, disclosures and access restrictions based on qualified legal advice.
 - Do not publish regulatory approval badges unless the underlying records have been independently verified.
 
-## Verification
+## Production configuration gate\n\nThe backend now exposes `/health` for process liveness and `/ready` for configuration readiness. `/ready` requires a server-side 0x key, explicit CORS origins, `ENABLE_PAPER_TRADING=false`, and a persistent `APP_SECRET`. A passing response means only that these environment checks are satisfied; it does not certify licensing, legal compliance, security audit completion, or successful mainnet trading.\n\nThe DEX quote request schema rejects malformed addresses, non-integer amounts, out-of-range chain IDs and unexpected fields.\n\n## Verification
 
 GitHub Actions has passed the frontend production build and backend test suite on recent commits. CI verifies code compilation/build and the automated tests only; it does not verify live liquidity, wallet signing on mainnet, contract safety, legal compliance or production readiness.
 
