@@ -608,7 +608,7 @@ async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str
     sell, buy = validate_dex_request(chainId, sellToken, buyToken, sellAmount, taker)
     data = await call_zerox("/swap/allowance-holder/price", {
         "chainId": str(chainId), "sellToken": sell, "buyToken": buy,
-        "sellAmount": sellAmount, "taker": taker,
+        "sellAmount": sellAmount, "taker": taker, "slippageBps": "100",
     })
     if not data.get("liquidityAvailable"):
         raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
@@ -626,7 +626,7 @@ async def dex_quote(body: DexQuoteRequest):
     sell, buy = validate_dex_request(body.chainId, body.sellToken, body.buyToken, body.sellAmount, body.taker)
     data = await call_zerox("/swap/allowance-holder/quote", {
         "chainId": str(body.chainId), "sellToken": sell, "buyToken": buy,
-        "sellAmount": body.sellAmount, "taker": body.taker,
+        "sellAmount": body.sellAmount, "taker": body.taker, "slippageBps": "100",
     })
     if not data.get("liquidityAvailable"):
         raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
