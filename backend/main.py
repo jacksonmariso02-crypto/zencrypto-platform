@@ -613,6 +613,40 @@ async def call_zerox(endpoint: str, params: dict):
     except httpx.HTTPError:
         raise HTTPException(502, "Quote provider is temporarily unavailable.")
 
+def validate_dex_quote_response(data: dict, *, chain_id: int, sell_token: str, buy_token: str, sell_amount: str, taker: str):
+    """Reject mismatched provider payloads before returning wallet-executable calldata."""
+    if not isinstance(data, dict):
+        raise HTTPException(502, "Invalid quote provider response.")
+    if data.get("liquidityAvailable") is not True:
+        raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
+    for field, expected in (("sellToken", sell_token), ("buyToken", buy_token)):
+        actual = data.get(field)
+        if not isinstance(actual, str) or actual.lower() != expected:
+            raise HTTPException(502, "Quote provider returned a mismatched token.")
+    if str(data.get("sellAmount", "")) != sell_amount:
+        raise HTTPException(502, "Quote provider returned a mismatched sell amount.")
+    buy_amount = str(data.get("buyAmount", ""))
+    if not buy_amount.isascii() or not buy_amount.isdigit() or int(buy_amount) <= 0:
+        raise HTTPException(502, "Quote provider returned an invalid buy amount.")
+    tx = data.get("transaction")
+    if not isinstance(tx, dict):
+        raise HTTPException(502, "Quote provider did not return a transaction.")
+    if not isinstance(tx.get("from"), str) or tx["from"].lower() != taker.lower():
+        raise HTTPException(502, "Quote taker does not match the connected wallet.")
+    target = tx.get("to")
+    if not isinstance(target, str) or len(target) != 42 or not target.startswith("0x") or any(c not in "0123456789abcdefABCDEF" for c in target[2:]):
+        raise HTTPException(502, "Quote contains an invalid transaction target.")
+    calldata = tx.get("data")
+    if not isinstance(calldata, str) or not calldata.startswith("0x") or len(calldata) < 10 or len(calldata) % 2 or any(c not in "0123456789abcdefABCDEF" for c in calldata[2:]):
+        raise HTTPException(502, "Quote contains invalid transaction calldata.")
+    if str(tx.get("value", "0")) not in ("0", "0x0", "0x00"):
+        raise HTTPException(502, "ERC-20 swap unexpectedly requests native currency.")
+    allowance = (data.get("issues") or {}).get("allowance") or {}
+    spender = allowance.get("spender") or data.get("allowanceTarget")
+    if spender is not None and (not isinstance(spender, str) or spender.lower() != ZEROX_ALLOWANCE_HOLDER):
+        raise HTTPException(502, "Unexpected token allowance target.")
+    return data
+
 @app.get("/dex/price")
 async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str, taker: str):
     sell, buy = validate_dex_request(chainId, sellToken, buyToken, sellAmount, taker)
@@ -638,16 +672,4 @@ async def dex_quote(body: DexQuoteRequest):
         "chainId": str(body.chainId), "sellToken": sell, "buyToken": buy,
         "sellAmount": body.sellAmount, "taker": body.taker, "slippageBps": "100",
     })
-    if not data.get("liquidityAvailable"):
-        raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
-    tx = data.get("transaction") or {}
-    if tx.get("from", "").lower() != body.taker.lower():
-        raise HTTPException(502, "Quote taker does not match the connected wallet.")
-    to = tx.get("to", "")
-    if not (len(to) == 42 and to.startswith("0x") and all(ch in "0123456789abcdefABCDEF" for ch in to[2:])):
-        raise HTTPException(502, "Quote contains an invalid transaction target.")
-    allowance = (data.get("issues") or {}).get("allowance") or {}
-    spender = allowance.get("spender") or data.get("allowanceTarget")
-    if spender and spender.lower() != ZEROX_ALLOWANCE_HOLDER:
-        raise HTTPException(502, "Unexpected token allowance target. Quote rejected for safety.")
-    return data
+    return validate_dex_quote_response(data, chain_id=body.chainId, sell_token=sell, buy_token=buy, sell_amount=body.sellAmount, taker=body.taker)
