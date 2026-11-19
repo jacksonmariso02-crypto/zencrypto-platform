@@ -628,6 +628,23 @@ def validate_dex_quote_response(data: dict, *, chain_id: int, sell_token: str, b
     buy_amount = str(data.get("buyAmount", ""))
     if not buy_amount.isascii() or not buy_amount.isdigit() or int(buy_amount) <= 0:
         raise HTTPException(502, "Quote provider returned an invalid buy amount.")
+    min_buy_amount = data.get("minBuyAmount")
+    if min_buy_amount is None or not str(min_buy_amount).isascii() or not str(min_buy_amount).isdigit() or int(min_buy_amount) <= 0 or int(min_buy_amount) > int(buy_amount):
+        raise HTTPException(502, "Quote provider returned an invalid minimum output.")
+    issues = data.get("issues")
+    if not isinstance(issues, dict):
+        raise HTTPException(502, "Quote provider did not provide execution safety diagnostics.")
+    if issues.get("simulationIncomplete") is True:
+        raise HTTPException(422, "Quote simulation is incomplete; execution is blocked.")
+    if issues.get("invalidSourcesPassed"):
+        raise HTTPException(422, "Quote provider reported invalid liquidity sources.")
+    balance = issues.get("balance")
+    if balance:
+        try:
+            if int(balance["actual"]) < int(balance["expected"]):
+                raise HTTPException(422, "Insufficient token balance for the swap.")
+        except (ValueError, TypeError, KeyError):
+            raise HTTPException(502, "Malformed balance diagnostics from quote provider.")
     tx = data.get("transaction")
     if not isinstance(tx, dict):
         raise HTTPException(502, "Quote provider did not return a transaction.")
