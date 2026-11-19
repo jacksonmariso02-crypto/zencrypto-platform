@@ -23,7 +23,7 @@ Last updated: 2026-11-19
 - [x] KYC declaration endpoint clearly marked as non-verification.
 - [x] Compliance status and demo case endpoints.
 - [x] Admin-role checks for audit and ledger-integrity endpoints.
-- [x] Compliance disclosure UI.
+- [x] Compliance disclosure UI.\n- [x] Sandbox deposit flow with capped virtual USD credit and idempotency.\n- [x] Sandbox withdrawal request with virtual-balance reservation.\n- [x] User deposit/withdrawal history and admin-only simulated request resolution.
 - [x] GitHub Actions frontend build and backend test workflow.
 
 ## Verification
