@@ -165,3 +165,11 @@ def test_dex_quote_proxy_rejects_unapproved_tokens_before_provider_call(monkeypa
         })
         assert response.status_code == 422
         assert "curated WETH/USDC" in response.json()["detail"]
+
+def test_legacy_paper_api_is_closed_when_feature_flag_is_off(monkeypatch):
+    monkeypatch.setenv("ENABLE_PAPER_TRADING", "false")
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        response = client.post("/auth/register", json={"email": "blocked@example.test", "password": "CorrectHorseBattery12"})
+        assert response.status_code == 404
+        assert "paper-trading API is disabled" in response.json()["detail"]
