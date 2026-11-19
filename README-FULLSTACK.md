@@ -1,49 +1,121 @@
-# ZenCrypto — frontend + sandbox backend
+# ZenCrypto — full-stack paper-trading prototype
 
-**NOT production ready. Does not execute real trades, custody funds, send withdrawals, perform actual KYC/AML or accept deposits.** This is a runnable integration foundation. The included frontend remains an independent prototype; it is **not yet wired** to the backend API. Backend docs are available at `/docs`.
+> **Not production-ready. Paper trading only.** This application does not accept deposits, hold customer assets, execute live exchange orders, or process withdrawals. KYC submission is only a declaration and is not identity verification. No jurisdiction is enabled for live trading.
 
-## Run
+## Architecture
 
-Frontend: from project root `npm install && npm run dev` (Node.js 20.19+ or 22.12+).
+- Frontend: React 19, Vite, Recharts and Lucide icons.
+- API: FastAPI with bearer-token sessions.
+- Sandbox persistence: SQLite.
+- Ledger: journal and postings tables with per-currency balancing checks and update/delete prevention triggers. This is a demo ledger, not a production financial ledger or an independent audit.
+- Market display: public market-data WebSocket for indicative prices. The paper-order API uses the reference price submitted by the client; this is not a production market-data or execution design.
+- Real-money functions: deposits and withdrawals are hard-disabled. No wallet, banking, custody, liquidity or exchange execution provider is connected.
 
-Backend: `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && export APP_SECRET="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" && uvicorn main:app --reload --host 127.0.0.1 --port 8000`. On Windows use `.venv\\Scripts\\activate` and set APP_SECRET through PowerShell environment variables. API: http://127.0.0.1:8000/docs .
+## Run locally
 
-## Implemented backend routes
+### Frontend
 
-- POST `/auth/register`, `/auth/login`, `/auth/logout` (password PBKDF2 and expiring revocable sessions; **no MFA or brute-force controls yet**)
-- GET `/account/me`, `/account/balances`, `/account/requests`
-- POST `/kyc/submit` (collects only a declaration; **does not verify identity**)
-- POST `/deposits/request` (request only; no deposit address or balance credit)
-- POST `/withdrawals/request` (always blocked, no transfers)
-- POST `/trade/orders` (always blocked, no live execution)
-- GET `/admin/audit` (server-side admin role check; no admin bootstrap)
-- Database schema includes double-entry journal/postings tables but **no settlement posting engine**; audit is mutable SQLite, not tamper-evident.
+From the repository root:
 
-## Critical launch requirements
+```bash
+npm install
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
 
-1. Engage jurisdiction-specific legal counsel to confirm licensing/registration, KYC, AML, sanctions, travel-rule, consumer protection, data privacy, and transaction monitoring requirements.
-2. Replace SQLite with transactional PostgreSQL, implement balanced immutable journal entries, reserved funds, idempotent settlement, reconciliations and controlled migrations.
-3. Use a certified KYC/KYB provider, sanctions/PEP screening, risk scoring, ongoing transaction monitoring, suspicious-activity case management and legally required reporting.
-4. Integrate licensed exchange execution and qualified custodial wallet/fiat payment providers using signed verified webhooks, idempotency keys, limits and dual authorization for withdrawals.
-5. Implement MFA/passkeys, email verification, login throttling, anti-bot, secure cookies/CSRF strategy, admin separation, encryption, secrets vault, SIEM, backups and penetration tests.
-6. Independently audit the code and infrastructure and complete provider and regulatory approvals **before enabling real funds**.
+On PowerShell:
 
-## Public deployment
+```powershell
+$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
+npm install
+npm run dev
+```
 
-Frontend: Vercel or Netlify; connect a domain you own. Backend: deploy separately to a supported Python hosting platform with HTTPS and a production database **only after security hardening**. Configure frontend `VITE_API_BASE_URL` when wiring it to the backend. No domain is provisioned by this package.
+### Backend
 
-## November 2026 global-compliance extension
+macOS/Linux:
 
-Additional endpoints: `GET /compliance/jurisdictions/{ISO2}`, `GET /compliance/status`, `POST /compliance/cases`, `GET /admin/compliance/cases`, `POST /sandbox/faucet` (requires `Idempotency-Key` header, maximum cumulative $1,000 virtual USD), `GET /account/ledger`, `GET /admin/ledger/integrity`.
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export APP_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export CORS_ORIGINS="http://localhost:5173"
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-**Default deny:** No jurisdiction enables live trading. KYC submission is not verification. The faucet only issues paper-money balances and its internal house balance is not a real reserve. No blockchain wallet, fiat payment, matching engine, withdrawal execution, Travel Rule transfer, or KYC vendor is connected. SQLite, bearer tokens and this demo journal are **not** suitable for production financial operations. A real production ledger requires PostgreSQL, stronger append-only controls, serializable transactions, reserved funds, independent reconciliation and externally verifiable audit records. Never deploy these APIs as a public money service.
+Windows PowerShell:
 
-### Global market go-live gates
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:APP_SECRET = python -c "import secrets; print(secrets.token_urlsafe(48))"
+$env:CORS_ORIGINS = "http://localhost:5173"
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-1. Obtain counsel's written jurisdiction-by-jurisdiction legal opinions and required authorizations; maintain an allowlist of permitted legal entities, countries, assets, customer types and features.
-2. Implement licensed KYC/AML and sanctions providers, ongoing screening, monitoring, Travel Rule, case management, and reporting procedures; avoid storing raw identity documents in the app.
-3. Contract authorized custody, banking and liquidity providers, validate signed webhooks and idempotent settlement, implement double authorization and withdrawal limits.
-4. Independently audit infrastructure, smart-contract/wallet integrations, security and financial ledger; run penetration tests, incident response exercises and disaster recovery tests.
-5. Only then build an independently reviewed production deployment with real-funds feature gates and country-specific launch approvals.
+API documentation: `http://127.0.0.1:8000/docs`.
 
-Regulatory reading: https://www.esma.europa.eu/esmas-activities/digital-finance-and-innovation/markets-crypto-assets-regulation-mica ; https://www.fatf-gafi.org/en/topics/virtual-assets.html ; https://www.fincen.gov/resources/statutes-regulations/guidance/application-fincens-regulations-persons-administering
+Use a unique, randomly generated `APP_SECRET` in each environment. Never commit secrets, database files, access tokens or customer data.
+
+## Implemented API routes
+
+| Method | Route | Purpose / limitation |
+|---|---|---|
+| GET | `/health` | Health check |
+| POST | `/auth/register` | Create a demo user account |
+| POST | `/auth/login` | Create a bearer-token session |
+| POST | `/auth/logout` | Revoke the current session |
+| GET | `/account/me` | Current authenticated account |
+| GET | `/account/balances` | Paper balances only |
+| GET | `/trade/orders` | Current user's simulated order history |
+| POST | `/trade/orders` | Simulated fill only; not exchange execution |
+| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |
+| GET | `/account/ledger` | Current user's demo ledger entries |
+| POST | `/deposits/request` | Always blocked |
+| POST | `/withdrawals/request` | Always blocked |
+| POST | `/kyc/submit` | Records a declaration; does not verify identity |
+| GET | `/compliance/status` | Demo account compliance state |
+| POST | `/compliance/cases` | Open a demo compliance case |
+| GET | `/admin/audit` | Admin role required |
+| GET | `/admin/ledger/integrity` | Admin role required; arithmetic check only |
+
+## Tests and build
+
+```bash
+# Frontend
+npm install
+npm run build
+
+# Backend
+pip install -r backend/requirements.txt httpx pytest
+python -m py_compile backend/main.py
+pytest -q
+```
+
+GitHub Actions runs the frontend build and backend tests for the working feature branch and pull requests to `main`.
+
+## Known gaps — do not represent these as completed
+
+- No MFA/passkeys, email verification, robust login throttling, bot protection or production session/cookie hardening.
+- No production PostgreSQL migrations, serializable transaction design, operational backup/restore drills or high-availability setup.
+- No production-grade append-only audit log, external reconciliation or independent ledger attestation.
+- No live order book, matching engine, exchange connectivity or settlement engine.
+- No blockchain wallet, private-key management, custody, deposit monitoring, withdrawal execution or banking/payment integration.
+- No verified KYC/KYB, sanctions/PEP screening, transaction monitoring, Travel Rule or regulatory reporting provider.
+- No jurisdiction-specific legal opinion, licence/registration verification or approval to serve customers.
+- No independent security assessment or penetration test.
+
+## Production-readiness gates
+
+1. Obtain written jurisdiction-by-jurisdiction legal advice and all required authorizations before offering regulated services.
+2. Select authorized custody, banking, liquidity and execution providers; complete due diligence and contracts.
+3. Design and independently review the production ledger, reserves, settlement, reconciliation and withdrawal approval controls.
+4. Integrate verified identity, sanctions, transaction monitoring, case management and legally required reporting.
+5. Implement MFA/passkeys, secure session management, abuse prevention, secrets management, encryption, logging, alerting, backups and disaster recovery.
+6. Complete independent security review, penetration testing, incident-response exercises and operational readiness review.
+7. Keep live-money features deny-by-default and enable them only for specifically approved entities, jurisdictions, products and customer groups.
+
+No live-money feature should be enabled by a UI toggle alone.
