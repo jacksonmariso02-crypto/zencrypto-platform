@@ -219,8 +219,29 @@ class Kyc(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": "PAPER_ONLY", "live_funds_enabled": False,
-            "real_deposits_enabled": False, "real_withdrawals_enabled": False}
+    # Liveness only: this endpoint does not claim trading or production readiness.
+    return {"status": "ok", "service": "zencrypto-noncustodial-api", "version": app.version}
+
+@app.get("/ready")
+def readiness():
+    origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
+    paper_enabled = os.getenv("ENABLE_PAPER_TRADING", "false").lower() == "true"
+    checks = {
+        "dex_provider_key_configured": bool(os.getenv("ZEROX_API_KEY", "").strip()),
+        "explicit_cors_origins_configured": bool(origins),
+        "paper_trading_disabled": not paper_enabled,
+        "persistent_app_secret_configured": bool(os.getenv("APP_SECRET", "").strip()),
+    }
+    ready = all(checks.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "ready": ready,
+            "service": "zencrypto-noncustodial-api",
+            "checks": checks,
+            "notice": "Operational configuration only; this is not a legal, licensing, security-audit, or mainnet-trading approval."
+        }
+    )
 
 @app.post("/auth/register", status_code=201)
 def register(body: Register):
@@ -608,7 +629,7 @@ def validate_dex_request(chain_id: int, sell_token: str, buy_token: str, sell_am
     buy = buy_token.lower()
     if sell not in DEX_TOKENS[chain_id] or buy not in DEX_TOKENS[chain_id] or sell == buy:
         raise HTTPException(422, "Unsupported token pair. Only the curated WETH/USDC pair is enabled.")
-    if not sell_amount.isdigit() or int(sell_amount) <= 0 or len(sell_amount) > 78:
+    if not sell_amount.isascii() or not sell_amount.isdigit() or int(sell_amount) <= 0 or len(sell_amount) > 78:
         raise HTTPException(422, "sellAmount must be a positive integer in token base units.")
     if not (len(taker) == 42 and taker.startswith("0x") and all(ch in "0123456789abcdefABCDEF" for ch in taker[2:])):
         raise HTTPException(422, "Invalid wallet address.")
@@ -710,11 +731,12 @@ async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str
     return data
 
 class DexQuoteRequest(BaseModel):
-    chainId: int
-    sellToken: str
-    buyToken: str
-    sellAmount: str
-    taker: str
+    model_config = {"extra": "forbid"}
+    chainId: int = Field(ge=1, le=100000)
+    sellToken: str = Field(min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
+    buyToken: str = Field(min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
+    sellAmount: str = Field(min_length=1, max_length=78, pattern=r"^[0-9]+$")
+    taker: str = Field(min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
 
 @app.post("/dex/quote")
 async def dex_quote(body: DexQuoteRequest):
