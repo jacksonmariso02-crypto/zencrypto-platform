@@ -93,7 +93,7 @@ Not implemented:
 - No verified token allowlist, price oracle or production quote service.
 - No legal determination or authorization for any U.S. state or asset.
 
-The existing email/password accounts, paper USD balances, simulated orders and sandbox deposit/withdrawal screens remain a separate prototype. They must not be represented as connected to the user's self-custody wallet or as real trading. The next engineering step is to clearly segregate or remove those paper-only controls from any production-facing build.
+The existing email/password accounts, paper USD balances, simulated orders and sandbox deposit/withdrawal screens remain a separate prototype. They must not be represented as connected to the user's self-custody wallet or as real trading. The legacy FastAPI/SQLite paper-trading backend remains separate from the self-custody frontend and must be removed or isolated before production.
 
 ## 8. Release gates
 
