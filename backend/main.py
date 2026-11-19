@@ -1,5 +1,6 @@
 """ZenCrypto non-custodial API: server-side DEX quotes; users sign and submit transactions in their own wallets."""
 import os, sqlite3, secrets, hashlib, hmac, time, json
+from collections import defaultdict, deque
 import httpx
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
@@ -18,6 +19,30 @@ if not SECRET:
 TOKEN = URLSafeTimedSerializer(SECRET, salt="zencrypto-session-v1")
 bearer = HTTPBearer(auto_error=False)
 app = FastAPI(title="ZenCrypto Non-Custodial API", version="1.1.0")
+
+# Best-effort per-process DEX request throttling. Use an edge/API gateway limit for multi-worker deployments.
+DEX_RATE_LIMIT = int(os.getenv("DEX_RATE_LIMIT_PER_MINUTE", "30"))
+_dex_requests = defaultdict(deque)
+
+@app.middleware("http")
+async def dex_api_safety_middleware(request, call_next):
+    path = request.url.path
+    if path.startswith("/dex/"):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        window = _dex_requests[client_ip]
+        while window and now - window[0] > 60:
+            window.popleft()
+        if len(window) >= max(1, DEX_RATE_LIMIT):
+            return JSONResponse(status_code=429, content={"detail": "Too many quote requests. Please wait and retry."},
+                                headers={"Retry-After": "60"})
+        window.append(now)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 PAPER_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
 
@@ -671,8 +696,17 @@ async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str
         "chainId": str(chainId), "sellToken": sell, "buyToken": buy,
         "sellAmount": sellAmount, "taker": taker, "slippageBps": "100",
     })
-    if not data.get("liquidityAvailable"):
+    if not isinstance(data, dict) or data.get("liquidityAvailable") is not True:
         raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
+    for field, expected in (("sellToken", sell), ("buyToken", buy)):
+        actual = data.get(field)
+        if not isinstance(actual, str) or actual.lower() != expected:
+            raise HTTPException(502, "Price provider returned a mismatched token.")
+    if str(data.get("sellAmount", "")) != sellAmount:
+        raise HTTPException(502, "Price provider returned a mismatched sell amount.")
+    out = str(data.get("buyAmount", ""))
+    if not out.isascii() or not out.isdigit() or int(out) <= 0:
+        raise HTTPException(502, "Price provider returned an invalid output amount.")
     return data
 
 class DexQuoteRequest(BaseModel):
