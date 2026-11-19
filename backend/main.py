@@ -475,11 +475,11 @@ def resolve_sandbox_request(request_id: str, body: WithdrawalResolution, u=Depen
             amount = req["amount_minor"]
             if body.decision == "approve":
                 sink = system_account(c, "USD", "paper-withdrawal-simulated-settlement")
-                journal_id = post_journal(c, "sandbox_withdrawal_approved", request_id,
+                journal_id = post_journal(c, "sandbox_withdrawal_approved", request_id + ":approved",
                                           [(hold, "USD", -amount), (sink, "USD", amount)])
                 new_status = "sandbox_approved"
             else:
-                journal_id = post_journal(c, "sandbox_withdrawal_rejected", request_id,
+                journal_id = post_journal(c, "sandbox_withdrawal_rejected", request_id + ":rejected",
                                           [(hold, "USD", -amount), (user_usd, "USD", amount)])
                 new_status = "sandbox_rejected"
             c.execute("UPDATE requests SET status=? WHERE id=?", (new_status, request_id))
