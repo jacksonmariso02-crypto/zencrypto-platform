@@ -89,7 +89,8 @@ Not implemented:
 - No production swap router or pool contracts are deployed.
 - No audited smart contracts, token approvals, swap signing or mainnet execution.
 - No on-chain deposit/withdrawal product or internal customer custody.
-- No production indexer, reorg-safe transaction monitor or settlement service.\n- Direct wallet transfer is not a DEX swap and does not create a ZenCrypto exchange balance.
+- No production indexer, reorg-safe transaction monitor or settlement service.
+- Direct wallet transfer is not a DEX swap and does not create a ZenCrypto exchange balance.
 - No verified token allowlist, price oracle or production quote service.
 - No legal determination or authorization for any U.S. state or asset.
 
