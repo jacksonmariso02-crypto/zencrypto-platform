@@ -1,49 +1,68 @@
-# ZenCrypto — deployable exchange UI prototype
+# ZenCrypto
 
-This is a **frontend-only prototype**, NOT a live exchange. There is no backend, authentication, custody, real-money ledger, actual trading, deposit address, withdrawal mechanism, or privileged admin access. Orders are simulated in browser memory and disappear on refresh. Portfolio balance remains zero. Some market values and chart shapes are illustrative; prices may be refreshed from CoinGecko's public API (rate limits/CORS apply). Never send money to anyone claiming this prototype accepts deposits.
+ZenCrypto is a cryptocurrency-platform **paper-trading prototype** with a React/Vite frontend and a FastAPI sandbox backend.
+
+> **Important: paper trading only.** The project does not accept deposits, custody customer assets, execute real exchange orders, or process withdrawals. No jurisdiction is currently enabled for real-money activity. Do not send funds to this prototype.
+
+## Current capabilities
+
+- React 19 + Vite web interface with English/Chinese labels.
+- Account registration, login, logout and authenticated account view.
+- FastAPI backend with SQLite sandbox storage.
+- Simulated USD test-funds faucet with an idempotency key and a cumulative demo cap.
+- Simulated market buy/sell orders using a submitted reference price; these are not routed to an exchange.
+- User balances, order history and ledger-entry views.
+- Server-side admin-role checks for audit and ledger-integrity endpoints.
+- Compliance disclosure page that explicitly distinguishes unverified items from completed controls.
+- GitHub Actions workflow for frontend build and backend tests.
+
+## Repository layout
+
+- `src.jsx`, `style.css`, `index.html`: frontend.
+- `backend/main.py`: FastAPI application and sandbox ledger.
+- `backend/requirements.txt`: Python dependencies.
+- `tests/test_paper_trading.py`: sandbox trading, idempotency and account-isolation tests.
+- `.github/workflows/paper-trading-tests.yml`: CI checks.
+- `README-FULLSTACK.md`: detailed setup and API reference.
+- `docs/PROJECT_STATUS.md`: implementation status and remaining launch gates.
 
 ## Run locally
 
-Install Node.js 20.19+ or 22.12+ and run:
+Requirements: Node.js 22 (or a compatible supported Vite version), Python 3.12+, and Git.
 
+Frontend:
 ```bash
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite (usually http://localhost:5173).
+Backend (macOS/Linux):
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export APP_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-## Build
+Backend API docs: `http://127.0.0.1:8000/docs`.
+
+Set `VITE_API_BASE_URL` to the backend origin when running the frontend against a different backend host. The current frontend has a default hosted API URL; local development should override it with `http://127.0.0.1:8000`.
+
+## Verification
 
 ```bash
 npm run build
-npm run preview
+pip install -r backend/requirements.txt httpx pytest
+python -m py_compile backend/main.py
+pytest -q
 ```
 
-The static site output is in `dist/`.
+The GitHub Actions workflow runs the frontend production build, Python compilation and backend tests on pushes to `feature/account-auth-foundation` and pull requests targeting `main`.
 
-## Publish with Netlify
+## Before any real-money launch
 
-1. Push this project to a GitHub repository (or upload the generated `dist/` directory to Netlify).
-2. In Netlify, select **Add new project → Import an existing project**.
-3. Set build command to `npm run build` and publish directory to `dist`.
-4. Deploy. Netlify assigns a public `*.netlify.app` URL. You can later add a verified custom domain and configure DNS.
+A production exchange requires jurisdiction-specific legal review and required authorizations, verified KYC/AML and sanctions controls, approved custody and payment partners, a production-grade database and ledger, audited security controls, reconciliation, operational monitoring, incident response, independent testing, and explicit country/product launch approval. None of these should be inferred from this prototype. Keep real-money features disabled until all applicable gates have been independently satisfied.
 
-## Publish with Vercel
-
-1. Import the GitHub repository in Vercel.
-2. Framework preset: Vite; build command: `npm run build`; output directory: `dist`.
-3. Deploy and receive a `*.vercel.app` URL. Connect a domain you own if desired.
-
-## Before enabling real-money operations
-
-- Determine jurisdictions, entity structure, legal counsel, required VASP/MSB/MTL and other licensing or registration, AML/KYC/sanctions obligations, and data protection requirements.
-- Implement a secure backend and server-side RBAC with MFA, rate limiting, session management, audit logs, and penetration testing.
-- Integrate a licensed exchange/liquidity provider, market data with appropriate rights, reliable matching/execution and reconciliation, and an auditable double-entry ledger.
-- Integrate a qualified custody/wallet provider, chain monitoring, address validation, withdrawal approvals, fraud controls and transaction monitoring.
-- Establish production infrastructure: encrypted secrets, backups, observability, incident response, security audits, and disaster recovery.
-- Do not enable deposits, withdrawals, or live trading before legal and security sign-off.
-
-## Important
-
-The admin page is a visual mockup, not an authenticated admin panel. The chart's timeframe selectors do not load historical candles; integrate an authorized OHLCV feed for real charts. The 24-hour volume display is illustrative, not live.
+See [README-FULLSTACK.md](README-FULLSTACK.md) and [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
