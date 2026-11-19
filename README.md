@@ -1,76 +1,91 @@
 # ZenCrypto
 
-ZenCrypto is a cryptocurrency-platform **paper-trading prototype** with a React/Vite frontend and a FastAPI sandbox backend.
+ZenCrypto is a self-custody EVM wallet interface and early-stage decentralized swap application.
 
-> **Important: paper trading only.** The project does not accept deposits, custody customer assets, execute real exchange orders, or process withdrawals. No jurisdiction is currently enabled for real-money activity. Do not send funds to this prototype.
+> **Important:** The current build supports connecting a user-controlled wallet, reading public balances, receiving assets to the user's own address, sending ETH/WETH/USDC with wallet signatures, wrapping/unwrapping ETH/WETH, and requesting WETH/USDC quotes through the 0x Swap API. It is not yet a fully audited or production-approved exchange. Do not use funds you cannot afford to lose.
 
-## Current capabilities
+## Implemented
 
-- React 19 + Vite web interface with English/Chinese labels.
-- Account registration, login, logout and authenticated account view.
-- FastAPI backend with SQLite sandbox storage.
-- Simulated USD test-funds faucet with an idempotency key and a cumulative demo cap.
-- Simulated market buy/sell orders using a submitted reference price; these are not routed to an exchange.
-- User balances, order history and ledger-entry views.
-- Server-side admin-role checks for audit and ledger-integrity endpoints.
-- Compliance disclosure page that explicitly distinguishes unverified items from completed controls.\n- Browser wallet connection (EIP-1193), EVM network switching, native ETH/USDC balance reads, receive address display, and user-signed ETH/USDC transfers.\n- 0x Swap API v2 quote proxy for the curated WETH/USDC pair on Ethereum and Base, with wallet-side exact approval and swap signing (requires a backend API key).
-- GitHub Actions workflow for frontend build and backend tests.
+- React 19 + Vite responsive web interface.
+- EIP-1193 browser wallet connection.
+- Ethereum Mainnet, Base Mainnet, Sepolia and Base Sepolia network switching.
+- Native ETH balance reads on supported EVM networks.
+- WETH and USDC balance reads on Ethereum and Base.
+- User-controlled receive address and copy action.
+- Wallet-signed ETH, WETH and USDC transfers.
+- Wallet-signed ETH-to-WETH wrapping and WETH-to-ETH unwrapping.
+- Server-side 0x Swap API v2 proxy for the curated WETH/USDC pair on Ethereum and Base.
+- Firm-quote flow with exact AllowanceHolder approval when required, wallet-signed swap transaction and receipt lookup.
+- Legacy SQLite paper-account API routes are disabled by default.
 
-## Repository layout
+## Important setup
 
-- `src.jsx`, `style.css`, `index.html`: frontend.
-- `backend/main.py`: FastAPI application and sandbox ledger.
-- `backend/requirements.txt`: Python dependencies.
-- `tests/test_paper_trading.py`: sandbox trading, idempotency and account-isolation tests.
-- `.github/workflows/paper-trading-tests.yml`: CI checks.
-- `README-FULLSTACK.md`: detailed setup and API reference.
-- `docs/PROJECT_STATUS.md`: implementation status and remaining launch gates.
+The DEX quote service requires a 0x API key. Configure `ZEROX_API_KEY` as a secret environment variable on the backend host. Never put it in a `VITE_*` frontend variable or commit it to Git.
+
+Keep `ENABLE_PAPER_TRADING=false` in public deployments. The old paper-account and sandbox routes are blocked by default and are retained only for isolated legacy tests.
 
 ## Run locally
 
-Requirements: Node.js 22 (or a compatible supported Vite version), Python 3.12+, and Git.
+Requirements: Node.js 22+, Python 3.12+, and Git.
 
 Frontend:
+
 ```bash
 npm install
-npm run dev
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-Backend (macOS/Linux):
+Backend:
+
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export APP_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export ZEROX_API_KEY="your-server-side-0x-key"
+export ENABLE_PAPER_TRADING=false
+export CORS_ORIGINS="http://localhost:5173"
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Backend API docs: `http://127.0.0.1:8000/docs`.
+On Windows PowerShell, use `$env:ZEROX_API_KEY="..."`, `$env:ENABLE_PAPER_TRADING="false"`, and `$env:CORS_ORIGINS="http://localhost:5173"`.
 
-Set `VITE_API_BASE_URL` to the backend origin when running the frontend against a different backend host. The current frontend has a default hosted API URL; local development should override it with `http://127.0.0.1:8000`.
+API health: `http://127.0.0.1:8000/health`.
+API docs: `http://127.0.0.1:8000/docs`.
+
+Set a unique `APP_SECRET` for any environment where legacy account endpoints are intentionally enabled. Do not commit secrets, private keys, seed phrases, database files or customer information.
 
 ## Verification
 
 ```bash
+npm install
 npm run build
 pip install -r backend/requirements.txt httpx pytest
 python -m py_compile backend/main.py
 pytest -q
 ```
 
-The GitHub Actions workflow runs the frontend production build, Python compilation and backend tests on pushes to `feature/account-auth-foundation` and pull requests targeting `main`.
+GitHub Actions builds the frontend and runs Python compilation and backend tests.
 
-## Before any real-money launch
+## Not yet production-ready
 
-A production exchange requires jurisdiction-specific legal review and required authorizations, verified KYC/AML and sanctions controls, approved custody and payment partners, a production-grade database and ledger, audited security controls, reconciliation, operational monitoring, incident response, independent testing, and explicit country/product launch approval. None of these should be inferred from this prototype. Keep real-money features disabled until all applicable gates have been independently satisfied.
+- Live 0x quotes and swaps have not been end-to-end tested with mainnet funds.
+- The 0x API response signature is not yet independently verified.
+- No production chain indexer, reorg-aware transaction history or confirmation service.
+- No audited contract integration/security review or bug bounty.
+- No complete token-risk screening, price-impact limits, advanced transaction simulation or wallet compatibility matrix.
+- No written U.S. legal determination for the final product, token list, fee model, governance or user jurisdictions.
+- No claim is made that ZenCrypto is licensed, registered, audited or approved.
+
+A wallet-to-wallet transfer is not a deposit into a ZenCrypto account. A DEX swap is not an internal exchange order-book fill. Users control their keys and approve transactions in their wallet. Mainnet functionality must remain restricted until technical and legal launch gates are satisfied.
 
 ## Project documentation
 
-- [Self-custody DEX architecture for U.S. market review](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md)\n- [Wallet transfer implementation and release status](docs/WALLET_TRANSFER_IMPLEMENTATION.md)\n- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
-- [Current implementation status and roadmap](docs/PROJECT_STATUS.md)
-- [Release checklist and production launch gates](docs/RELEASE_CHECKLIST.md)
+- [Self-custody DEX architecture](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md)
+- [Wallet transfer implementation](docs/WALLET_TRANSFER_IMPLEMENTATION.md)
+- [Deployment checklist](docs/DEPLOYMENT.md)
+- [Architecture and trust boundaries](docs/ARCHITECTURE.md)
+- [Project status and roadmap](docs/PROJECT_STATUS.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Security policy](SECURITY.md)
 - [Full-stack setup and API reference](README-FULLSTACK.md)
-
-See these documents before making deployment or product claims.
