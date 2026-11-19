@@ -1,153 +1,94 @@
-# ZenCrypto — full-stack paper-trading prototype
+# ZenCrypto — self-custody wallet and DEX integration
 
-> **Not production-ready. Paper trading only.** This application does not accept deposits, hold customer assets, execute live exchange orders, or process withdrawals. KYC submission is only a declaration and is not identity verification. No jurisdiction is enabled for live trading.
+> **Early-stage implementation, not production-ready.** Users control their own wallets and sign all transfers/swaps. The app does not hold customer private keys or maintain custodial balances. DEX quotes require a backend-only 0x API key. Do not use mainnet funds until the integration, legal and security launch gates have been independently reviewed.
 
 ## Architecture
 
-- Frontend: React 19, Vite, Recharts and Lucide icons.
-- API: FastAPI with bearer-token sessions.
-- Sandbox persistence: SQLite.
-- Ledger: journal and postings tables with per-currency balancing checks and update/delete prevention triggers. This is a demo ledger, not a production financial ledger or an independent audit.
-- Market display: public market-data WebSocket for indicative prices. The paper-order API uses the reference price submitted by the client; this is not a production market-data or execution design.
-- Real-money functions: deposits and withdrawals are hard-disabled. No wallet, banking, custody, liquidity or exchange execution provider is connected.
+- Frontend: React 19 and Vite.
+- Wallet: EIP-1193 browser provider.
+- Supported networks: Ethereum Mainnet, Base Mainnet, Sepolia and Base Sepolia for wallet reads/transfers; DEX quotes are restricted to Ethereum and Base mainnet.
+- Token support: native ETH, WETH and canonical USDC on Ethereum/Base.
+- Wallet operations: public balance reads, receive address display, user-signed transfers, WETH wrap/unwrap.
+- DEX quotes: server-side 0x Swap API v2 proxy, curated WETH/USDC pair, explicit 100 bps slippage.
+- Backend: FastAPI. The old SQLite paper account and sandbox routes are blocked by default and are not used for wallet transactions.
+- The blockchain and user's wallet are the source of truth for ownership and transaction signing.
 
 ## Run locally
 
-### Frontend
-
-From the repository root:
+Frontend:
 
 ```bash
 npm install
 VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-On PowerShell:
-
-```powershell
-$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
-npm install
-npm run dev
-```
-
-### Backend
-
-macOS/Linux:
+Backend:
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export APP_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export ZEROX_API_KEY="your-private-0x-api-key"
+export ENABLE_PAPER_TRADING=false
 export CORS_ORIGINS="http://localhost:5173"
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Windows PowerShell:
+On PowerShell, use `$env:ZEROX_API_KEY="..."`, `$env:ENABLE_PAPER_TRADING="false"` and `$env:CORS_ORIGINS="http://localhost:5173"`.
 
-```powershell
-cd backend
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:APP_SECRET = python -c "import secrets; print(secrets.token_urlsafe(48))"
-$env:CORS_ORIGINS = "http://localhost:5173"
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
+## API routes
 
-API documentation: `http://127.0.0.1:8000/docs`.
-
-Use a unique, randomly generated `APP_SECRET` in each environment. Never commit secrets, database files, access tokens or customer data.
-
-## Implemented API routes
-
-| Method | Route | Purpose / limitation |
+| Method | Route | Purpose |
 |---|---|---|
-| GET | `/health` | Health check |
-| POST | `/auth/register` | Create a demo user account |
-| POST | `/auth/login` | Create a bearer-token session |
-| POST | `/auth/logout` | Revoke the current session |
-| GET | `/account/me` | Current authenticated account |
-| GET | `/account/balances` | Paper balances only |
-| GET | `/trade/orders` | Current user's simulated order history |
-| POST | `/trade/orders` | Simulated fill only; not exchange execution |
-| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |
-| POST | `/sandbox/deposits` | Credit capped virtual USD and record sandbox deposit history; no blockchain transfer |
-| POST | `/sandbox/withdrawal-requests` | Reserve virtual USD and create a pending sandbox withdrawal request |
-| GET | `/account/requests` | Current user deposit and withdrawal request history |
-| GET | `/admin/requests` | Admin-only sandbox request queue |
-| POST | `/admin/requests/{request_id}/resolve` | Admin-only simulated approval/rejection; no external transfer |
-| GET | `/account/ledger` | Current user's demo ledger entries |
-| POST | `/deposits/request` | Always blocked |
-| POST | `/withdrawals/request` | Always blocked |
-| POST | `/kyc/submit` | Records a declaration; does not verify identity |
-| GET | `/compliance/status` | Demo account compliance state |
-| POST | `/compliance/cases` | Open a demo compliance case |
-| GET | `/admin/audit` | Admin role required |
-| GET | `/admin/ledger/integrity` | Admin role required; arithmetic check only |
+| GET | `/health` | API status and DEX key configuration status (never returns the key) |
+| GET | `/dex/price` | Indicative WETH/USDC price through 0x Swap API v2 |
+| POST | `/dex/quote` | Firm WETH/USDC quote; validates token allowlist, taker and AllowanceHolder spender |
+
+Legacy paper routes remain for isolated tests, but return 404 unless `ENABLE_PAPER_TRADING=true` is deliberately set. Never enable that flag on a public deployment.
+
+## 0x integration
+
+- Create an API key in the 0x developer dashboard.
+- Set it as `ZEROX_API_KEY` in the backend host's secret environment settings.
+- Do not use a `VITE_*` prefix or put the key in browser code.
+- The backend only permits WETH/USDC on Ethereum Mainnet and Base Mainnet.
+- The frontend requests an indicative price, then a firm quote.
+- If allowance is insufficient, the frontend asks the wallet to approve the exact sell amount to the documented AllowanceHolder address, waits for the approval receipt, fetches a fresh firm quote, then submits the transaction through the wallet.
+- The user reviews and signs each approval/swap in their wallet.
+- The current implementation does not independently verify 0x response signatures. This must be reviewed before production.
+
+## Wallet behavior
+
+- Connects to an injected EIP-1193 wallet.
+- Reads ETH, WETH and USDC balances from public RPC methods.
+- Displays the connected wallet address as the user's receive address.
+- Sends ETH and ERC-20 WETH/USDC directly from the user's wallet.
+- Wraps ETH to WETH and unwraps WETH to ETH using the network's WETH contract.
+- Tracks transaction hashes and lets the user check receipts and open the relevant block explorer.
+- Keeps a limited local activity list in the current browser only. It is not a complete on-chain transaction history.
 
 ## Tests and build
 
 ```bash
-# Frontend
 npm install
 npm run build
-
-# Backend
 pip install -r backend/requirements.txt httpx pytest
 python -m py_compile backend/main.py
 pytest -q
 ```
 
-GitHub Actions runs the frontend build and backend tests for the working feature branch and pull requests to `main`.
+CI verifies the build and automated tests. It does not prove that live liquidity exists, a wallet transaction will succeed, the integration is secure, or the product is legally authorized.
 
-## Wallet connectivity
+## Remaining production gates
 
-The Wallet page can connect to an injected EIP-1193 provider and read the active public account, chain ID and native ETH balance. This is read-only. It does not request signatures, ERC-20 approvals, swaps, or transfers. No DEX router or settlement contract is deployed.
+- 0x response signature verification or independent quote authenticity review.
+- Provider API rate limits and monitoring.
+- Token-risk screening and versioned token allowlist.
+- Transaction simulation, price impact controls and stale-quote handling.
+- Chain indexer with reorg/finality-aware transaction history.
+- Wallet compatibility testing and independent security review.
+- Written U.S. legal review of the precise interface, assets, fees, governance and target states.
+- Incident response, operational monitoring and security audit.
 
-## Production environment variables
-
-- `ZEROX_API_KEY`: required on the backend for 0x Swap API v2 quote requests. Store it in the backend host's secret environment settings; never add it to frontend `VITE_` variables or commit it.
-- `ENABLE_PAPER_TRADING=false`: default-deny setting that blocks the legacy SQLite paper-account, sandbox deposit/withdrawal and simulated order routes. Set it to `true` only for isolated local tests.
-
-## DEX quote and swap API
-
-The API exposes `GET /dex/price` and `POST /dex/quote` as a server-side proxy to 0x Swap API v2. It uses a fixed 100 bps (1%) slippage parameter for the returned quote. Only WETH/USDC on Ethereum Mainnet and Base Mainnet are accepted. The backend reads `ZEROX_API_KEY` from its environment and never returns the key to the browser. The frontend requests indicative pricing, a firm quote, exact token allowance when required, and wallet-signed execution. Configure `ZEROX_API_KEY` in the backend hosting provider before the quote UI can return live prices.
-
-## Sandbox deposit and withdrawal workflow
-
-The Deposit and Withdraw screens now exercise a paper-only workflow. A sandbox deposit credits virtual USD with a capped, idempotent ledger journal. A sandbox withdrawal reserves virtual USD in a hold account and enters a pending review queue. An administrator can approve the demo request (move the hold to a simulated settlement account) or reject it (release the hold back to the user). Request history is visible to the user. These actions do not generate blockchain addresses, monitor transactions, connect to wallets or banks, or transfer real funds.
-
-## Self-custody DEX gaps — do not represent these as completed
-
-- No deployed or audited swap router, AMM pool or settlement contract.
-- No transaction simulation, slippage protection, ERC-20 allowance flow or wallet-signed swap.
-- No production chain indexer, reorg-safe confirmation service or contract event reconciliation.
-- No production token allowlist, routing/quote service or verified contract-address registry.
-- The current paper balances and sandbox transfer workflows are not connected to the browser wallet.
-
-See [docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md](docs/SELF_CUSTODY_EXCHANGE_ARCHITECTURE.md) for the selected design and release gates.
-
-## Known gaps — do not represent these as completed
-
-- No MFA/passkeys, email verification, robust login throttling, bot protection or production session/cookie hardening.
-- No production PostgreSQL migrations, serializable transaction design, operational backup/restore drills or high-availability setup.
-- No production-grade append-only audit log, external reconciliation or independent ledger attestation.
-- No live order book, matching engine, exchange connectivity or settlement engine.
-- No blockchain wallet, private-key management, custody, deposit monitoring, withdrawal execution or banking/payment integration.
-- No verified KYC/KYB, sanctions/PEP screening, transaction monitoring, Travel Rule or regulatory reporting provider.
-- No jurisdiction-specific legal opinion, licence/registration verification or approval to serve customers.
-- No independent security assessment or penetration test.
-
-## Production-readiness gates
-
-1. Obtain written jurisdiction-by-jurisdiction legal advice and all required authorizations before offering regulated services.
-2. Select authorized custody, banking, liquidity and execution providers; complete due diligence and contracts.
-3. Design and independently review the production ledger, reserves, settlement, reconciliation and withdrawal approval controls.
-4. Integrate verified identity, sanctions, transaction monitoring, case management and legally required reporting.
-5. Implement MFA/passkeys, secure session management, abuse prevention, secrets management, encryption, logging, alerting, backups and disaster recovery.
-6. Complete independent security review, penetration testing, incident-response exercises and operational readiness review.
-7. Keep live-money features deny-by-default and enable them only for specifically approved entities, jurisdictions, products and customer groups.
-
-No live-money feature should be enabled by a UI toggle alone.
+A wallet-to-wallet transfer is not a deposit into a ZenCrypto account. A DEX swap is not a centralized order-book trade. Do not claim regulatory approval or production readiness.
