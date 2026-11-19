@@ -72,7 +72,7 @@ Use a unique, randomly generated `APP_SECRET` in each environment. Never commit 
 | GET | `/account/balances` | Paper balances only |
 | GET | `/trade/orders` | Current user's simulated order history |
 | POST | `/trade/orders` | Simulated fill only; not exchange execution |
-| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |
+| POST | `/sandbox/faucet` | Issue capped virtual USD using an idempotency key |\n| POST | `/sandbox/deposits` | Credit capped virtual USD and record sandbox deposit history; no blockchain transfer |\n| POST | `/sandbox/withdrawal-requests` | Reserve virtual USD and create a pending sandbox withdrawal request |\n| GET | `/account/requests` | Current user deposit and withdrawal request history |\n| GET | `/admin/requests` | Admin-only sandbox request queue |\n| POST | `/admin/requests/{request_id}/resolve` | Admin-only simulated approval/rejection; no external transfer |
 | GET | `/account/ledger` | Current user's demo ledger entries |
 | POST | `/deposits/request` | Always blocked |
 | POST | `/withdrawals/request` | Always blocked |
@@ -97,7 +97,7 @@ pytest -q
 
 GitHub Actions runs the frontend build and backend tests for the working feature branch and pull requests to `main`.
 
-## Known gaps — do not represent these as completed
+## Sandbox deposit and withdrawal workflow\n\nThe Deposit and Withdraw screens now exercise a paper-only workflow. A sandbox deposit credits virtual USD with a capped, idempotent ledger journal. A sandbox withdrawal reserves virtual USD in a hold account and enters a pending review queue. An administrator can approve the demo request (move the hold to a simulated settlement account) or reject it (release the hold back to the user). Request history is visible to the user. These actions do not generate blockchain addresses, monitor transactions, connect to wallets or banks, or transfer real funds.\n\n## Known gaps — do not represent these as completed
 
 - No MFA/passkeys, email verification, robust login throttling, bot protection or production session/cookie hardening.
 - No production PostgreSQL migrations, serializable transaction design, operational backup/restore drills or high-availability setup.
