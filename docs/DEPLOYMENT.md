@@ -16,7 +16,7 @@ Suggested Render service settings for an existing backend service:
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-- Health check path: `/health`
+- Liveness check path: `/health`\n- Readiness check path: `/ready` (returns HTTP 503 until required backend configuration is present)
 
 Set these environment variables in the hosting provider's secret/configuration panel:
 
