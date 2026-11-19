@@ -3,7 +3,7 @@ name: Deploy ZenCrypto to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [feature/account-auth-foundation]
   workflow_dispatch:
 
 permissions:
@@ -29,6 +29,8 @@ jobs:
         run: npm install
 
       - name: Build website
+        env:
+          VITE_API_BASE_URL: https://zencrypto-api-production.onrender.com
         run: npm run build
 
       - name: Upload Pages artifact
