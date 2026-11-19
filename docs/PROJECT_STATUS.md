@@ -23,7 +23,7 @@ Last updated: 2026-11-19
 - [x] KYC declaration endpoint clearly marked as non-verification.
 - [x] Compliance status and demo case endpoints.
 - [x] Admin-role checks for audit and ledger-integrity endpoints.
-- [x] Compliance disclosure UI.\n- [x] EIP-1193 injected wallet connection and read-only native ETH balance display.\n- [x] Sandbox deposit flow with capped virtual USD credit and idempotency.\n- [x] Sandbox withdrawal request with virtual-balance reservation.\n- [x] User deposit/withdrawal history and admin-only simulated request resolution.
+- [x] Compliance disclosure UI.\n- [x] EIP-1193 wallet connection, account/network change handling, and supported EVM chain switching.\n- [x] Native ETH balance reads on Ethereum, Base, Sepolia and Base Sepolia.\n- [x] USDC balance reads on Ethereum and Base using the canonical token contract addresses configured in the frontend.\n- [x] Public receive address and copy action.\n- [x] User-signed ETH and USDC transfer requests via the connected wallet.\n- [x] Transaction hash, explorer link and receipt-status lookup.\n- [x] Sandbox deposit flow with capped virtual USD credit and idempotency.\n- [x] Sandbox withdrawal request with virtual-balance reservation.\n- [x] User deposit/withdrawal history and admin-only simulated request resolution.
 - [x] GitHub Actions frontend build and backend test workflow.
 
 ## Verification
