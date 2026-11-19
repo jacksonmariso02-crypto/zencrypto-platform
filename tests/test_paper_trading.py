@@ -51,3 +51,33 @@ def test_idempotency_and_user_isolation(tmp_path, monkeypatch):
         assert first.status_code==201 and repeat.json()==first.json()
         other=client.get("/account/balances",headers=h2).json()["balances"]
         assert all(float(x["amount"])==0 for x in other)
+
+def test_compliance_disclosure_and_real_money_routes_stay_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "compliance.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        reg = client.post("/auth/register", json={"email": "compliance@example.test", "password": "CorrectHorseBattery12"})
+        assert reg.status_code == 201
+        login = client.post("/auth/login", json={"email": "compliance@example.test", "password": "CorrectHorseBattery12"})
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+
+        status = client.get("/compliance/status", headers=headers)
+        assert status.status_code == 200
+        assert status.json()["real_money_allowed"] is False
+        assert status.json()["withdrawals_allowed"] is False
+        assert status.json()["mode"] == "PAPER_ONLY"
+
+        kyc = client.post("/kyc/submit", headers=headers, json={"legal_name": "Demo User", "country": "US"})
+        assert kyc.status_code == 200
+        assert kyc.json()["status"] == "pending_provider_verification"
+        assert "no identity verification" in kyc.json()["notice"].lower()
+
+        case = client.post("/compliance/cases", headers=headers, json={"reason": "Test review case for sandbox workflow"})
+        assert case.status_code == 201
+        assert case.json()["status"] == "open"
+
+        assert client.post("/deposits/request", headers=headers, json={"currency": "USD", "amount": "10"}).status_code == 403
+        assert client.post("/withdrawals/request", headers=headers, json={"currency": "USD", "amount": "10", "destination": "bank"}).status_code == 403
+        assert client.get("/admin/audit", headers=headers).status_code == 403
+        assert client.get("/admin/ledger/integrity", headers=headers).status_code == 403
