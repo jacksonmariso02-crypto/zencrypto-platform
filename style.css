@@ -254,3 +254,12 @@ header { background: #0b1220 !important; backdrop-filter: none; }
  .zc-chart-nav { width:100%; justify-content:flex-start; }
  .zc-chart-nav button { padding:7px 9px; }
 }
+
+
+.sma-key { color:#fb923c; }
+.zc-drawing-tools { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+.zc-drawing-tools button { background:#101a29; border:1px solid #334155; color:#91a0b8; border-radius:7px; padding:7px 9px; font-size:10px; }
+.zc-drawing-tools button.active { color:#fbbf24; border-color:#92712a; background:#352d1c; }
+.zc-drawing-tools button:disabled { opacity:.35; cursor:not-allowed; }
+.drawing-hint { color:#fbbf24; }
+@media(max-width:750px) { .zc-drawing-tools { width:100%; } }
