@@ -282,14 +282,14 @@ function MarketCandles({apiBase}){
   try{
    const data=await fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,end_time:endTime});
    const older=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
-   const merged=[...new Map([...older,...candles].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()];
+   const merged=[...new Map([...older,...candles].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()].slice(-2000);
    const added=merged.length-candles.length;
    if(added<=0){setHasMoreHistory(false);return;}
    setCandles(merged);
    candleRef.current?.setData(merged.map(({time,open,high,low,close})=>({time,open,high,low,close})));
    volumeRef.current?.setData(merged.map(x=>({time:x.time,value:x.volume,color:x.close>=x.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"})));
    if(visibleRange)chartRef.current?.timeScale().setVisibleLogicalRange({from:visibleRange.from+added,to:visibleRange.to+added});
-   setHasMoreHistory(older.length>=500);
+   setHasMoreHistory(older.length>=500&&merged.length<2000);
   }catch(e){setError(e.message||"Unable to load older market history.");}
   finally{setOlderBusy(false);}
  }
@@ -319,7 +319,7 @@ function MarketCandles({apiBase}){
       if(last&&last.time===row.time)next[next.length-1]=row;
       else if(!last||row.time>last.time)next.push(row);
       else return prev;
-      return next.slice(-500);
+      return next.slice(-2000);
      });
      setLastUpdated(new Date().toLocaleTimeString());
      setAlerts(prev=>{
