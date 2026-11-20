@@ -413,3 +413,7 @@ main,
 .deposit-monitor .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .deposit-monitor h3{font-size:14px;color:#e4edf8;margin:0}
 .deposit-monitor .tablewrap{margin-top:12px}
+
+/* KDJ and RSI technical indicator panes */
+.indicator-subchart{height:150px;width:100%;min-width:0}
+@media(max-width:650px){.indicator-subchart{height:130px}}
