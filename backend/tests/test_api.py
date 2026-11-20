@@ -70,6 +70,64 @@ def test_legacy_simulation_routes_are_permanently_retired(client, monkeypatch, p
     assert "retired" in response.json()["detail"].lower()
 
 
+def test_swap_quote_validator_rejects_transaction_chain_mismatch():
+    payload = {
+        "liquidityAvailable": True,
+        "sellToken": "0x" + "1" * 40,
+        "buyToken": "0x" + "2" * 40,
+        "sellAmount": "100",
+        "buyAmount": "90",
+        "minBuyAmount": "85",
+        "issues": {},
+        "transaction": {
+            "from": "0x" + "3" * 40,
+            "to": "0x" + "4" * 40,
+            "data": "0x12345678",
+            "value": "0",
+            "chainId": 8453,
+        },
+    }
+    with pytest.raises(main.HTTPException) as exc:
+        main.validate_dex_quote_response(
+            payload,
+            chain_id=1,
+            sell_token="0x" + "1" * 40,
+            buy_token="0x" + "2" * 40,
+            sell_amount="100",
+            taker="0x" + "3" * 40,
+        )
+    assert exc.value.status_code == 502
+    assert "chain" in exc.value.detail.lower()
+
+
+def test_swap_quote_validator_accepts_matching_hex_transaction_chain_id():
+    payload = {
+        "liquidityAvailable": True,
+        "sellToken": "0x" + "1" * 40,
+        "buyToken": "0x" + "2" * 40,
+        "sellAmount": "100",
+        "buyAmount": "90",
+        "minBuyAmount": "85",
+        "issues": {},
+        "transaction": {
+            "from": "0x" + "3" * 40,
+            "to": "0x" + "4" * 40,
+            "data": "0x12345678",
+            "value": "0",
+            "chainId": "0x1",
+        },
+    }
+    result = main.validate_dex_quote_response(
+        payload,
+        chain_id=1,
+        sell_token="0x" + "1" * 40,
+        buy_token="0x" + "2" * 40,
+        sell_amount="100",
+        taker="0x" + "3" * 40,
+    )
+    assert result is payload
+
+
 def test_mainnet_swap_quotes_fail_closed_until_release_flag_is_set(client, monkeypatch):
     monkeypatch.delenv("ENABLE_MAINNET_SWAPS", raising=False)
     params = {
