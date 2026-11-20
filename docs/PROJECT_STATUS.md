@@ -102,6 +102,15 @@ Last updated: 2026-11-20
 - [x] Paper-order history pagination prevents overlapping load-more calls, ignores stale page responses after a full refresh, and deduplicates rows by order ID.
 - Add provider rate limits, abuse controls, and API-key usage monitoring.
 
+### Cost basis accounting foundation
+- [x] Add a Decimal-based FIFO cost-basis calculation core for complete trade sequences.
+- [x] Include buy fees in lot cost and sell fees in net proceeds.
+- [x] Preserve remaining open lots and source trade references.
+- [x] Reject duplicate trade IDs, invalid quantities/prices/fees, and sells exceeding available lots.
+- [x] Add unit tests for FIFO matching, fee allocation, invalid sequences, and asset isolation.
+- [ ] Integrate with a reconciled server-side ledger covering wallet deposits, withdrawals, transfers, swaps, and fee-token payments before exposing account-wide realized P&L.
+- [ ] Add independently sourced valuation prices for unrealized P&L and retain valuation timestamps/provider provenance.
+
 ### Security and operations
 - Complete independent frontend/backend security review and wallet transaction threat modelling.
 - Run dependency, secret, and static-analysis scans.
