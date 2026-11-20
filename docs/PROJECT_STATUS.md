@@ -2,87 +2,102 @@
 
 Last updated: 2026-11-20
 
-## Current branch
+## Current branch and product boundary
 
 - Working branch: `feature/account-auth-foundation`
-- Product direction: user self-custody EVM wallet interface with a curated DEX swap flow.
-- Production status: **not production-ready**. Do not advertise the product as audited, licensed, registered or approved.
-- Trading model: non-custodial wallet interface. Users sign any supported on-chain transaction in their own wallet; the platform does not custody customer keys or balances.
-- Mainnet wallet transfers are user-signed and can move real assets. Use care and small amounts; blockchain transactions are generally irreversible.
+- Product: non-custodial EVM wallet interface with live market charts and a curated DEX integration.
+- Production status: **not production-ready**. Do not represent ZenCrypto as audited, licensed, registered, or approved.
+- Users retain their private keys and sign wallet transactions in their own wallet. ZenCrypto does not custody customer keys or balances.
+- Mainnet wallet transfers can move real assets and are generally irreversible. The DEX swap feature remains disabled by default.
 
 ## Implemented
 
-- [x] React/Vite frontend and responsive styling.
-- [x] EIP-1193 wallet connect and account/network change listeners.
-- [x] Network switching for Ethereum, Base, Sepolia and Base Sepolia.
+### Wallet and on-chain activity
+- [x] EIP-1193 wallet connection and account/network change listeners.
+- [x] Ethereum, Base, Sepolia, and Base Sepolia network switching.
 - [x] Native ETH balance reads.
 - [x] WETH and USDC balance reads on Ethereum and Base.
 - [x] User-controlled receive address and copy action.
-- [x] User-signed ETH, WETH and USDC transfers.
+- [x] User-signed ETH, WETH, and USDC transfers.
 - [x] Wallet-signed ETH wrapping and WETH unwrapping.
-- [x] Transaction hash, block explorer link and receipt-status lookup.
-- [x] Server-side 0x Swap API v2 price and firm quote proxy.
+- [x] Transaction hash, block explorer link, and receipt-status lookup.
+- [x] Public wallet activity lookup for Ethereum and Base through Routescan.
+
+### Live market charts
+- [x] Binance Spot OHLCV history with open/close times, base/quote volume, trade count, and forming/closed candle metadata.
+- [x] Ten chart symbols: BTC, ETH, SOL, BNB, XRP, ADA, DOGE, LTC, LINK, and DOT against USDT.
+- [x] Live Binance kline WebSocket updates merged into Lightweight Charts candlestick and volume series.
+- [x] Supported Spot intervals from 1m through 1M.
+- [x] REST history fallback when the live stream is unavailable; UI distinguishes live updates from snapshots/fallback.
+- [x] Historical candle pagination using Binance endTime, with older pages merged and deduplicated by candle open time.
+- [x] Load-older control preserves the visible time range.
+- [x] Synchronized candlestick, MACD, KDJ, and RSI time ranges.
+- [x] Moving averages, Bollinger Bands, volume, and reset-view controls.
+- [x] Local watchlist and browser price alerts.
+
+### DEX integration (not released)
+- [x] Server-side 0x Swap API v2 price and firm-quote proxy.
 - [x] Curated WETH/USDC pair on Ethereum and Base.
-- [x] Exact AllowanceHolder approval flow when the quote provider reports insufficient allowance.
-- [x] Wallet-signed swap transaction submission and receipt polling.
-- [x] 100 bps (1%) slippage parameter on quote requests.
+- [x] AllowanceHolder approval flow when the quote provider reports insufficient allowance.
+- [x] Wallet-signed swap submission and receipt polling in the frontend code.
 - [x] Backend token allowlist and spender validation.
 - [x] Backend-only `ZEROX_API_KEY` configuration.
-- [x] Legacy paper trading, sandbox deposit/withdrawal and simulated account routes permanently retired (HTTP 410); environment flags cannot reactivate them.
-- [x] Mainnet DEX quote and swap path protected by ENABLE_MAINNET_SWAPS, defaulting to disabled; frontend controls require VITE_ENABLE_MAINNET_SWAPS=true and the backend independently enforces its own flag.
-- [x] CI tests for backend route validation and frontend build.
-- [x] API response hardening: anti-framing, restrictive frame-ancestors/base-uri CSP, no-sniff, no-referrer, no-store and restricted browser permissions.
-- [x] GitHub Actions runs backend safety tests before the frontend production build/deploy.
-- [x] Deterministic tests for market-candle normalization, invalid chart parameters, wallet-history input validation, readiness fail-closed behavior and default-disabled legacy paper routes.
-- [x] Real Binance Spot OHLCV candlestick history through the Spot REST API, including open/close times, base/quote volume, trade count and closed/forming candle metadata.
-- [x] Live Binance kline WebSocket updates merged into the native Lightweight Charts candlestick and volume series.
-- [x] Expanded supported Spot chart intervals from 1m through 1M, with up to 500 historical candles loaded by the chart.
-- [x] Chart status changes to Live only after a valid live kline message is received; REST history remains a clearly identified snapshot/fallback.
-- [x] Cursor-based historical candle pagination using Binance `endTime`, with older pages merged and deduplicated by candle open time.
-- [x] Load-older chart control preserves the user's visible time range when older candles are prepended.
-- [x] Main candlestick, MACD, KDJ and RSI panels share synchronized visible time ranges, with a reset-view control.
-- [x] Paper order history API supports bounded pagination, symbol/side/status filters, total counts and stable ordering.
-- [x] Added owner-scoped paper order detail endpoint; requests for another user's order return not found.
-- [x] Activity screen loads paper order history in pages and can append older records without changing the paper-only execution boundary.
-- [x] Corrected paper sell quantity accounting: gross quote notional determines asset quantity and the fee is deducted from USD proceeds only.
+- [x] Independent backend and frontend release flags for mainnet swaps; both default to disabled.
 
-## External configuration required
+### Retired simulation
+- [x] Legacy simulated-account, paper-order, sandbox funding, deposit, withdrawal, KYC mock, and compliance mock endpoints return HTTP 410 Gone.
+- [x] The legacy `ENABLE_PAPER_TRADING` flag cannot reactivate retired endpoints.
+- [x] The frontend no longer presents simulated balances or simulated order history as real customer funds or activity.
+- Historical simulation source/data must not be treated as customer assets or merged into wallet balances.
 
-- Add `ZEROX_API_KEY` to the backend host's secret environment settings. Without it, the DEX quote endpoints intentionally return HTTP 503.
-- Set `CORS_ORIGINS` to the exact deployed frontend origin(s).
-- Keep `ENABLE_PAPER_TRADING=false` in public deployments.
-- Confirm the backend deployment is running the current branch/commit before using the quote UI.
+### Platform controls
+- [x] React/Vite responsive frontend.
+- [x] API security headers including anti-framing, restrictive CSP directives, no-sniff, no-referrer, no-store, and restricted browser permissions.
+- [x] `/health` liveness endpoint and `/ready` configuration-readiness endpoint.
+- [x] CI compiles/tests the backend and builds the frontend before deployment.
+
+## Required external configuration
+
+- Set `ZEROX_API_KEY` only in the backend host's secret environment settings. Never put it in frontend build variables.
+- Set `CORS_ORIGINS` to exact deployed frontend origin(s).
+- Set a high-entropy persistent `APP_SECRET`.
+- Keep `ENABLE_MAINNET_SWAPS=false` on the backend and `VITE_ENABLE_MAINNET_SWAPS=false` (or unset) in frontend builds until all release gates are approved.
+- Confirm the backend host is running the intended branch and commit before relying on API features.
 
 ## Remaining engineering and release gates
 
-### DEX integration
-- Mainnet swap release remains disabled by default. Do not set ENABLE_MAINNET_SWAPS=true or VITE_ENABLE_MAINNET_SWAPS=true until legal, security and operational gates are independently approved.
-- Verify 0x response signatures or add an independent quote authenticity verification layer.
-- Add token risk screening and a versioned, independently verified token registry.
-- Add explicit price impact, route/source and estimated gas presentation.
-- Add quote expiry/staleness handling and stricter transaction simulation.
-- Test all approval and swap paths with testnet funds and then controlled mainnet canaries.
-- Add durable transaction indexing, reorg handling, confirmations/finality policy and transaction history.
-- Add provider rate limiting, abuse controls and monitoring for API-key usage.
+### DEX safety and execution
+- Add independent quote authenticity checks and a versioned, independently verified token registry.
+- Add token risk screening, price impact, route/source, and estimated gas presentation.
+- Enforce quote expiry and stale-quote rejection; add stricter transaction simulation.
+- Test approval and swap flows on testnets before controlled mainnet canaries.
+- Add durable transaction indexing, reorg handling, confirmation/finality policy, and user-visible swap history.
+- Add provider rate limits, abuse controls, and API-key usage monitoring.
 
-### Security
-- Complete independent frontend/backend security review.
-- Complete wallet transaction threat model and smart-contract/aggregator integration review.
-- Add dependency, secret and static analysis scanning.
-- Add CSP and other production security headers.
-- Add monitoring, alerting, incident response and recovery procedures.
-- Conduct wallet compatibility testing across supported browser wallets and hardware wallets.
+### Security and operations
+- Complete independent frontend/backend security review and wallet transaction threat modelling.
+- Run dependency, secret, and static-analysis scans.
+- Add production monitoring, alerting, incident response, and recovery procedures.
+- Test supported browser wallets and hardware wallets.
+- Verify backup, restore, database, and deployment rollback procedures where applicable.
 
-### U.S. market readiness
-- Obtain written legal analysis for the exact interface, protocol integration, token list, fees, governance and target states.
+### Legal and market access
+- Obtain written legal analysis for the exact interface, protocol integration, token list, fees, governance, and target jurisdictions.
 - Determine applicable federal and state requirements before offering access to U.S. users.
-- Implement any required geofencing, sanctions, reporting, disclosures and access restrictions based on qualified legal advice.
-- Do not publish regulatory approval badges unless the underlying records have been independently verified.
+- Implement any required geofencing, sanctions screening, reporting, disclosures, and access restrictions based on qualified legal advice.
+- Do not publish regulatory approval or audit badges without independent verification.
 
-## Production configuration gate\n\nThe backend now exposes `/health` for process liveness and `/ready` for configuration readiness. `/ready` requires a server-side 0x key, explicit CORS origins, `ENABLE_PAPER_TRADING=false`, and a persistent `APP_SECRET`. A passing response means only that these environment checks are satisfied; it does not certify licensing, legal compliance, security audit completion, or successful mainnet trading.\n\nThe DEX quote request schema rejects malformed addresses, non-integer amounts, out-of-range chain IDs and unexpected fields.\n\n## Verification
+## Readiness semantics
 
-GitHub Actions has passed the frontend production build and backend test suite on recent commits. CI verifies code compilation/build and the automated tests only; it does not verify live liquidity, wallet signing on mainnet, contract safety, legal compliance or production readiness.
+A passing `/ready` response means only that configured service dependencies and environment checks pass. It does not certify legal compliance, licensing, independent security audit completion, liquidity, or successful mainnet execution.
 
-## Legacy paper backend
+The chart endpoint serves public market data only. OHLCV candles are informational and are not executable DEX quotes or guaranteed fill prices.
 
-The old SQLite paper-account and sandbox transfer routes remain in the repository for isolated tests only. They are blocked by default unless `ENABLE_PAPER_TRADING=true`. They are not connected to the self-custody wallet and must not be enabled on a public production deployment.
+## Latest verification
+
+GitHub Actions should pass:
+- Python syntax compilation.
+- Backend API and market-data tests.
+- Frontend production build.
+
+CI results verify the tested code paths only; they do not certify the live deployment, external provider availability, wallet signing on mainnet, contract safety, or production readiness.
