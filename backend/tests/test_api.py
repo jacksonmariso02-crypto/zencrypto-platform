@@ -375,3 +375,29 @@ def test_order_history_rejects_invalid_filters(client, monkeypatch, params):
     headers = _paper_user(client, monkeypatch)
     response = client.get("/trade/orders", params=params, headers=headers)
     assert response.status_code == 422
+
+def test_paper_sell_quantity_uses_gross_notional_and_fee_reduces_only_proceeds(client, monkeypatch):
+    headers = _paper_user(client, monkeypatch)
+    client.post(
+        "/sandbox/faucet",
+        headers={**headers, "Idempotency-Key": "sell-quantity-faucet-01"},
+        json={"amount": "100", "currency": "USD"},
+    )
+    bought = client.post(
+        "/trade/orders",
+        headers={**headers, "Idempotency-Key": "sell-quantity-buy-001"},
+        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
+    )
+    sold = client.post(
+        "/trade/orders",
+        headers={**headers, "Idempotency-Key": "sell-quantity-sell-001"},
+        json={"symbol": "BTC", "side": "sell", "quote_amount": "25", "reference_price": "50000"},
+    )
+    assert bought.status_code == 201
+    assert sold.status_code == 201
+    assert sold.json()["quantity"] == bought.json()["quantity"]
+    assert float(sold.json()["fee"]) > 0
+
+    balances = client.get("/account/balances", headers=headers).json()["balances"]
+    btc = next(item for item in balances if item["currency"] == "BTC")
+    assert float(btc["amount"]) == 0
