@@ -373,7 +373,7 @@ function MarketCandles({apiBase}){
   };
   connect();
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
- },[pair,interval]);
+ },[apiBase,pair,interval]);
  useEffect(()=>{volumeRef.current?.applyOptions({visible:showVolume});ma5Ref.current?.applyOptions({visible:showMa5});ma7Ref.current?.applyOptions({visible:showMa7});ma25Ref.current?.applyOptions({visible:showMa25});ma99Ref.current?.applyOptions({visible:showMa99});[bbUpperRef,bbMiddleRef,bbLowerRef].forEach(x=>x.current?.applyOptions({visible:showBollinger}));[macdLineRef,signalRef,histRef].forEach(x=>x.current?.applyOptions({visible:showMacd}));},[showVolume,showMa5,showMa7,showMa25,showMa99,showBollinger,showMacd]);
  const latest=candles.at(-1),previous=candles.at(-2),change=latest&&previous?(latest.close-previous.close)/previous.close*100:0;
  const depthDisplayStatus=bookStatus==="Live"&&orderBook.updatedAt&&quoteClock-orderBook.updatedAt>10000?"Stale":bookStatus;
