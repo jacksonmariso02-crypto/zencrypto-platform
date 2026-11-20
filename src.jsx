@@ -23,24 +23,24 @@ function rsiSeries(values,period=14){
  return out;
 }
 function CandlestickChart({candles,timeframe}){
- const [showEMA,setShowEMA]=useState(true),[showBB,setShowBB]=useState(false),[showVolume,setShowVolume]=useState(true),[showRSI,setShowRSI]=useState(false),[showMACD,setShowMACD]=useState(false),[hover,setHover]=useState(null),[visibleCount,setVisibleCount]=useState(120),[panOffset,setPanOffset]=useState(0);
+ const [showEMA,setShowEMA]=useState(true),[showBB,setShowBB]=useState(false),[showVolume,setShowVolume]=useState(true),[showRSI,setShowRSI]=useState(false),[showMACD,setShowMACD]=useState(false),[showSMA,setShowSMA]=useState(false),[hover,setHover]=useState(null),[drawingMode,setDrawingMode]=useState(false),[priceLevels,setPriceLevels]=useState([]),[visibleCount,setVisibleCount]=useState(120),[panOffset,setPanOffset]=useState(0);
  const W=1000,priceH=300,volH=showVolume?82:0,rsiH=showRSI?100:0,macdH=showMACD?100:0,top=18,gap=18,priceBottom=top+priceH,volTop=priceBottom+gap, rsiTop=volTop+volH+(showRSI?gap:0),macdTop=rsiTop+rsiH+(showMACD?gap:0),H=macdTop+macdH+42;
  const calc=useMemo(()=>{
   const rows=candles.slice(-500);const closes=rows.map(x=>Number(x.close)),volumes=rows.map(x=>Number(x.volume)||0);
-  if(!rows.length)return {rows:[],ema9:[],ema21:[],ema50:[],upper:[],lower:[],rsi:[],macd:[],signal:[],hist:[],maxVol:1,min:0,max:1,step:1};
+  if(!rows.length)return {rows:[],ema9:[],ema21:[],ema50:[],sma20:[],upper:[],lower:[],rsi:[],macd:[],signal:[],hist:[],maxVol:1,min:0,max:1,step:1};
   const e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),mid=sma(closes,20);
   const variance=closes.map((_,i)=>i<19?null:Math.sqrt(closes.slice(i-19,i+1).reduce((a,v)=>a+(v-mid[i])**2,0)/20));
   const upper=mid.map((v,i)=>v===null?null:v+2*variance[i]),lower=mid.map((v,i)=>v===null?null:v-2*variance[i]);
   const fast=ema(closes,12),slow=ema(closes,26),m=fast.map((v,i)=>v-slow[i]),sig=ema(m,9),hist=m.map((v,i)=>v-sig[i]);
   const all=rows.flatMap(x=>[Number(x.high),Number(x.low)]).filter(Number.isFinite);
   const min=Math.min(...all),max=Math.max(...all),pad=(max-min)*.08||Math.max(max*.002,.01);
-  return {rows,ema9:e9,ema21:e21,ema50:e50,upper,lower,rsi:rsiSeries(closes),macd:m,signal:sig,hist,maxVol:Math.max(...volumes,1),min:min-pad,max:max+pad,step:(max-min+2*pad)/4};
+  return {rows,ema9:e9,ema21:e21,ema50:e50,sma20:mid,upper,lower,rsi:rsiSeries(closes),macd:m,signal:sig,hist,maxVol:Math.max(...volumes,1),min:min-pad,max:max+pad,step:(max-min+2*pad)/4};
  },[candles]);
  const view=useMemo(()=>{
   const total=calc.rows.length,count=Math.min(visibleCount,total),end=Math.max(0,total-Math.min(panOffset,Math.max(0,total-count))),start=Math.max(0,end-count);
   const rows=calc.rows.slice(start,end),slice=key=>calc[key].slice(start,end),all=rows.flatMap(v=>[Number(v.high),Number(v.low)]).filter(Number.isFinite);
   const rawMin=all.length?Math.min(...all):0,rawMax=all.length?Math.max(...all):1,pad=(rawMax-rawMin)*.08||Math.max(rawMax*.002,.01);
-  return {rows,ema9:slice("ema9"),ema21:slice("ema21"),ema50:slice("ema50"),upper:slice("upper"),lower:slice("lower"),rsi:slice("rsi"),macd:slice("macd"),signal:slice("signal"),hist:slice("hist"),maxVol:Math.max(1,...rows.map(v=>Number(v.volume)||0)),min:rawMin-pad,max:rawMax+pad,start,end,total};
+  return {rows,ema9:slice("ema9"),ema21:slice("ema21"),ema50:slice("ema50"),sma20:slice("sma20"),upper:slice("upper"),lower:slice("lower"),rsi:slice("rsi"),macd:slice("macd"),signal:slice("signal"),hist:slice("hist"),maxVol:Math.max(1,...rows.map(v=>Number(v.volume)||0)),min:rawMin-pad,max:rawMax+pad,start,end,total};
  },[calc,visibleCount,panOffset]);
  useEffect(()=>{setHover(null);setPanOffset(0);},[timeframe]);
  const n=view.rows.length,plotW=W-86,left=8,right=plotW+8,x=i=>left+(i+.5)*plotW/Math.max(n,1),y=v=>top+(view.max-v)/(view.max-view.min)*priceH,vy=v=>volTop+volH-(v/view.maxVol)*Math.max(volH-8,1),ry=v=>rsiTop+(100-v)/100*Math.max(rsiH-20,1),my=v=>macdTop+macdH/2-v*(macdH*.38)/(Math.max(0.00000001,...view.macd.map(Math.abs),...view.signal.map(Math.abs)));
@@ -52,19 +52,22 @@ function CandlestickChart({candles,timeframe}){
  if(!n)return <div className="zc-chart-empty">Waiting for historical OHLC market data…</div>;
  return <div className="zc-chart-shell">
   <div className="zc-chart-toolbar">
-   <div className="zc-indicator-group">{toggle("EMA 9/21/50",showEMA,setShowEMA)}{toggle("Bollinger",showBB,setShowBB)}{toggle("Volume",showVolume,setShowVolume)}{toggle("RSI 14",showRSI,setShowRSI)}{toggle("MACD 12/26/9",showMACD,setShowMACD)}</div>
+   <div className="zc-indicator-group">{toggle("EMA 9/21/50",showEMA,setShowEMA)}{toggle("SMA 20",showSMA,setShowSMA)}{toggle("Bollinger",showBB,setShowBB)}{toggle("Volume",showVolume,setShowVolume)}{toggle("RSI 14",showRSI,setShowRSI)}{toggle("MACD 12/26/9",showMACD,setShowMACD)}</div>
    <div className="zc-chart-nav"><button type="button" title="Older candles" disabled={view.start===0} onClick={()=>{setPanOffset(v=>Math.min(Math.max(0,view.total-visibleCount),v+Math.ceil(visibleCount/2)));setHover(null);}}>← Older</button><button type="button" title="Newer candles" disabled={panOffset===0} onClick={()=>{setPanOffset(v=>Math.max(0,v-Math.ceil(visibleCount/2)));setHover(null);}}>Newer →</button><button type="button" title="Zoom out" disabled={visibleCount>=300} onClick={()=>setVisibleCount(v=>Math.min(300,v+30))}>−</button><button type="button" title="Zoom in" disabled={visibleCount<=30} onClick={()=>setVisibleCount(v=>Math.max(30,v-30))}>＋</button><button type="button" title="Reset chart view" onClick={()=>{setVisibleCount(120);setPanOffset(0);setHover(null);}}>Reset</button><span className="zc-chart-count">{n}/{view.total} candles · {timeframe}</span></div>
+   <div className="zc-drawing-tools"><button type="button" className={drawingMode?"active":""} onClick={()=>setDrawingMode(v=>!v)}>＋ Price level</button><button type="button" disabled={!priceLevels.length} onClick={()=>setPriceLevels([])}>Clear levels ({priceLevels.length})</button></div>
   </div>
   <div className="zc-chart-legend">
    <span><i className="zc-dot zc-up"/> Bullish</span><span><i className="zc-dot zc-down"/> Bearish</span>
    {showEMA&&<><span className="ema9-key">EMA 9</span><span className="ema21-key">EMA 21</span><span className="ema50-key">EMA 50</span></>}
-   {showBB&&<span className="bb-key">Bollinger Bands</span>}
+   {showSMA&&<span className="sma-key">SMA 20</span>}{showBB&&<span className="bb-key">Bollinger Bands</span>}{drawingMode&&<span className="drawing-hint">Click chart to place a horizontal level</span>}
   </div>
   <div className="zc-chart-readout">{active?<><b>{formatTime(active.timestamp)}</b><span>O {fmt(active.open,4)}</span><span>H {fmt(active.high,4)}</span><span>L {fmt(active.low,4)}</span><span>C {fmt(active.close,4)}</span><span>Vol {fmt(active.volume,2)}</span></>:<span>Move cursor over chart to inspect a candle</span>}</div>
-  <svg className="zc-candle-svg" viewBox={"0 0 "+W+" "+H} role="img" aria-label="Interactive candlestick chart with volume and technical indicators" onMouseMove={onMove} onMouseLeave={()=>setHover(null)} preserveAspectRatio="none">
+  <svg className="zc-candle-svg" viewBox={"0 0 "+W+" "+H} role="img" aria-label="Interactive candlestick chart with volume and technical indicators" onMouseMove={onMove} onMouseLeave={()=>setHover(null)} onClick={e=>{if(!drawingMode)return;const rect=e.currentTarget.getBoundingClientRect(),svgY=(e.clientY-rect.top)/rect.height*H,price=view.max-((svgY-top)/priceH)*(view.max-view.min);if(price>view.min&&price<view.max){setPriceLevels(v=>[...v,{id:Date.now(),price}]);setDrawingMode(false);}}} preserveAspectRatio="none">
    {[0,1,2,3,4].map(i=>{const val=view.max-(view.max-view.min)*i/4,yy=top+priceH*i/4;return <g key={"grid"+i}><line x1={left} x2={plotW+12} y1={yy} y2={yy} stroke="#28364a" strokeDasharray="4 5"/><text x={W-6} y={yy+4} fill="#8b9bb2" fontSize="12" textAnchor="end">{fmt(val,2)}</text></g>;})}
    {showBB&&<><path d={linePath(view.upper,y)} fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3"/><path d={linePath(view.lower,y)} fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3"/></>}
+   {showSMA&&<path d={linePath(view.sma20,y)} fill="none" stroke="#fb923c" strokeWidth="1.5" strokeDasharray="5 3"/>}
    {showEMA&&<><path d={linePath(view.ema9,y)} fill="none" stroke="#fbbf24" strokeWidth="1.5"/><path d={linePath(view.ema21,y)} fill="none" stroke="#38bdf8" strokeWidth="1.5"/><path d={linePath(view.ema50,y)} fill="none" stroke="#c084fc" strokeWidth="1.5"/></>}
+   {priceLevels.map(level=><g key={level.id}><line x1={left} x2={plotW+12} y1={y(level.price)} y2={y(level.price)} stroke="#fbbf24" strokeWidth="1.3" strokeDasharray="7 4"/><text x={W-6} y={y(level.price)-5} fill="#fbbf24" fontSize="11" textAnchor="end">{fmt(level.price,4)}</text></g>)}
    {view.rows.map((c,i)=>{const up=c.close>=c.open,color=up?"#27d6a2":"#fa7185",cx=x(i),bw=Math.max(1.4,Math.min(7,plotW/Math.max(n,1)*.68)),bodyY=y(Math.max(c.open,c.close)),bodyH=Math.max(1.2,Math.abs(y(c.open)-y(c.close)));return <g key={c.timestamp}><line x1={cx} x2={cx} y1={y(c.high)} y2={y(c.low)} stroke={color} strokeWidth="1.2"/><rect x={cx-bw/2} y={bodyY} width={bw} height={bodyH} fill={color} stroke={color}/></g>;})}
    {showVolume&&<><line x1={left} x2={plotW+12} y1={volTop} y2={volTop} stroke="#334155"/>{view.rows.map((c,i)=>{const bw=Math.max(1.4,Math.min(7,plotW/Math.max(n,1)*.68)),color=c.close>=c.open?"#27d6a2":"#fa7185",h=volTop+volH-vy(c.volume);return <rect key={"vol"+c.timestamp} x={x(i)-bw/2} y={vy(c.volume)} width={bw} height={Math.max(1,h)} fill={color} opacity=".65"/>;})}<text x={left} y={volTop+13} fill="#8b9bb2" fontSize="11">VOLUME</text></>}
    {showRSI&&<><line x1={left} x2={plotW+12} y1={ry(70)} y2={ry(70)} stroke="#64748b" strokeDasharray="4 4"/><line x1={left} x2={plotW+12} y1={ry(30)} y2={ry(30)} stroke="#64748b" strokeDasharray="4 4"/><path d={linePath(view.rsi,ry)} fill="none" stroke="#c084fc" strokeWidth="1.7"/><text x={left} y={rsiTop+12} fill="#c084fc" fontSize="11">RSI 14</text><text x={W-6} y={ry(70)+4} fill="#8b9bb2" fontSize="10" textAnchor="end">70</text><text x={W-6} y={ry(30)+4} fill="#8b9bb2" fontSize="10" textAnchor="end">30</text></>}
