@@ -605,3 +605,13 @@ main,
 @media(max-width:560px){.multi-kline-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.multi-kline-heading{align-items:flex-start;flex-direction:column}}
 
 .multi-kline-volume{font-size:9px;color:#8293aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.market-signal-summary{margin:12px 0;padding:12px;border:1px solid #293b53;border-radius:9px;background:#0c1726}
+.market-signal-summary>.panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.market-signal-summary .panelhead h3{margin:0;font-size:13px;color:#dce7f5}
+.market-signal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.market-signal-grid>div{display:flex;flex-direction:column;gap:5px;padding:10px;border:1px solid #26374e;border-radius:7px;background:#111f31;min-width:0}
+.market-signal-grid small{font-size:10px;color:#91a2b8}
+.market-signal-grid strong{font-size:12px;color:#e1eaf6;overflow-wrap:anywhere}
+.market-signal-grid span{font-size:10px;color:#8293aa}
+@media(max-width:600px){.market-signal-grid{grid-template-columns:1fr}.market-signal-summary>.panelhead{align-items:flex-start;flex-direction:column}}
