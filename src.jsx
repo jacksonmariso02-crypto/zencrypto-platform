@@ -214,20 +214,21 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
 
 
 function runMacdBacktest(source){
- const candles=source.filter(x=>x&&x.isClosed===true&&[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time);
+ const candles=source.filter(x=>x&&x.isClosed===true&&[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)&&x.open>0&&x.close>0).sort((a,b)=>a.time-b.time);
  if(candles.length<40)return {ready:false,bars:candles.length,reason:"At least 40 completed candles are required."};
  const ema=period=>{const alpha=2/(period+1);let value=candles[0].close;return candles.map((c,i)=>{value=i===0?c.close:c.close*alpha+value*(1-alpha);return value;});};
  const fast=ema(12),slow=ema(26),macd=fast.map((v,i)=>v-slow[i]);let signal=macd[0];const signalLine=macd.map((v,i)=>{signal=i===0?v:macd[i]*(2/10)+signal*(8/10);return signal;});
- const feeRate=0.001,slippageRate=0.0005,allocation=0.25;let cash=10000,position=null,peak=10000,maxDrawdown=0;const trades=[];
- const equityAt=(price)=>cash+(position?position.qty*price:0);
+ const feeRate=0.001,slippageRate=0.0005,allocation=0.25,startingCash=10000;let cash=startingCash,position=null,peak=startingCash,maxDrawdown=0;const trades=[];
+ const markEquity=price=>cash+(position?position.qty*price*(1-slippageRate)*(1-feeRate):0);
  for(let i=1;i<candles.length-1;i++){
-  const previous=macd[i-1]-signalLine[i-1],current=macd[i]-signalLine[i],next=candles[i+1];
-  if(!position&&previous<=0&&current>0){const budget=cash*allocation,fill=next.open*(1+slippageRate),qty=budget/(fill*(1+feeRate));const cost=qty*fill,fee=cost*feeRate;if(cost+fee<=cash){cash-=cost+fee;position={qty,entry:fill,entryFee:fee,entryTime:next.time};}}
-  else if(position&&previous>=0&&current<0){const fill=next.open*(1-slippageRate),gross=position.qty*fill,fee=gross*feeRate,net=gross-fee,invested=position.qty*position.entry+position.entryFee,pnl=net-invested;cash+=net;trades.push({pnl,returnPct:pnl/invested*100,entryTime:position.entryTime,exitTime:next.time});position=null;}
-  const equity=equityAt(candles[i].close);peak=Math.max(peak,equity);maxDrawdown=Math.max(maxDrawdown,(peak-equity)/peak);
+  const previous=macd[i-1]-signalLine[i-1],current=macd[i]-signalLine[i],execution=candles[i+1];
+  if(!position&&previous<=0&&current>0){const budget=cash*allocation,fill=execution.open*(1+slippageRate),qty=budget/(fill*(1+feeRate)),cost=qty*fill,fee=cost*feeRate;if(cost+fee<=cash){cash-=cost+fee;position={qty,entry:fill,entryFee:fee,entryTime:execution.time};}}
+  else if(position&&previous>=0&&current<0){const fill=execution.open*(1-slippageRate),gross=position.qty*fill,fee=gross*feeRate,net=gross-fee,invested=position.qty*position.entry+position.entryFee,pnl=net-invested;cash+=net;trades.push({pnl,returnPct:pnl/invested*100,entryTime:position.entryTime,exitTime:execution.time});position=null;}
+  const equity=markEquity(execution.close);peak=Math.max(peak,equity);maxDrawdown=Math.max(maxDrawdown,(peak-equity)/peak);
  }
- const last=candles[candles.length-1];const finalEquity=equityAt(last.close);const wins=trades.filter(t=>t.pnl>0).length;
- return {ready:true,bars:candles.length,trades:trades.length,wins,winRate:trades.length?wins/trades.length*100:null,netReturn:(finalEquity/10000-1)*100,finalEquity,maxDrawdown:maxDrawdown*100,openPosition:Boolean(position),unrealized:position?position.qty*last.close-position.qty*position.entry-position.entryFee:null,feeRate,slippageRate,allocation};
+ const last=candles[candles.length-1],finalEquity=markEquity(last.close),wins=trades.filter(t=>t.pnl>0),losses=trades.filter(t=>t.pnl<0),grossProfit=wins.reduce((v,t)=>v+t.pnl,0),grossLoss=Math.abs(losses.reduce((v,t)=>v+t.pnl,0));
+ const benchmarkFill=candles[0].close*(1+slippageRate),benchmarkQty=(startingCash*allocation)/(benchmarkFill*(1+feeRate)),benchmarkEnd=startingCash-benchmarkQty*benchmarkFill-benchmarkQty*benchmarkFill*feeRate+benchmarkQty*last.close*(1-slippageRate)*(1-feeRate);
+ return {ready:true,bars:candles.length,trades:trades.length,wins:wins.length,winRate:trades.length?wins.length/trades.length*100:null,netReturn:(finalEquity/startingCash-1)*100,finalEquity,benchmarkReturn:(benchmarkEnd/startingCash-1)*100,excessReturn:(finalEquity-benchmarkEnd)/startingCash*100,maxDrawdown:maxDrawdown*100,profitFactor:grossLoss>0?grossProfit/grossLoss:grossProfit>0?null:0,avgWin:wins.length?grossProfit/wins.length:null,avgLoss:losses.length?grossLoss/losses.length:null,openPosition:Boolean(position),unrealized:position?markEquity(last.close)-cash-(position.qty*position.entry+position.entryFee):null,recentTrades:trades.slice(-5).reverse(),feeRate,slippageRate,allocation};
 }
 function MarketCandles({apiBase}){
  const host=useRef(null),macdHost=useRef(null),kdjHost=useRef(null),rsiHost=useRef(null),chartRef=useRef(null),macdChartRef=useRef(null),kdjChartRef=useRef(null),rsiChartRef=useRef(null),candleRef=useRef(null),volumeRef=useRef(null),ma5Ref=useRef(null),ma7Ref=useRef(null),ma25Ref=useRef(null),ma99Ref=useRef(null),hasFittedRef=useRef(false),bbUpperRef=useRef(null),bbMiddleRef=useRef(null),bbLowerRef=useRef(null),macdLineRef=useRef(null),signalRef=useRef(null),histRef=useRef(null),kdjKRef=useRef(null),kdjDRef=useRef(null),kdjJRef=useRef(null),rsiLineRef=useRef(null);
