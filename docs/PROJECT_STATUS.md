@@ -46,6 +46,8 @@ Last updated: 2026-11-20
 - [x] Backend token allowlist and spender validation.
 - [x] Backend-only `ZEROX_API_KEY` configuration.
 - [x] Independent backend and frontend release flags for mainnet swaps; both default to disabled.
+- [x] Frontend quote retrieval and execution handlers independently fail closed when the frontend mainnet-swap release flag is disabled; the swap panel explains the read-only state.
+- [x] Firm-quote validation rejects a provider transaction when its optional chain ID does not match the requested network.
 
 ### Retired simulation
 - [x] Legacy simulated-account, paper-order, sandbox funding, deposit, withdrawal, KYC mock, and compliance mock endpoints return HTTP 410 Gone.
