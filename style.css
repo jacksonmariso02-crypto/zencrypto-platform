@@ -451,3 +451,7 @@ main,
 .depth-legend{display:flex;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:8px;font-size:10px}
 .depth-empty{display:grid;place-items:center;min-height:110px;color:#8192aa;font-size:12px;border:1px dashed #35465d;border-radius:8px}
 @media(max-width:620px){.depth-chart-title{align-items:flex-start;flex-direction:column;gap:4px}.depth-legend{justify-content:flex-start;gap:10px}}
+
+.portfolio-history-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
+.portfolio-history-actions .fine{margin:0}
+.portfolio-history-actions button:disabled{opacity:.45;cursor:not-allowed}
