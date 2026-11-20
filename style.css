@@ -502,3 +502,16 @@ main,
 .auth-security-note p{margin:0;color:#92a6bf;font-size:10px;line-height:1.65}
 .auth-legal-note{margin-top:17px;color:#6e829b;font-size:9px;line-height:1.65}
 @media(max-width:760px){.auth-screen{padding:12px;align-items:flex-start}.auth-shell{grid-template-columns:1fr;min-height:0;border-radius:16px}.auth-brand-panel{padding:22px 24px 18px;min-height:230px}.auth-brand-copy{margin:35px 0 15px}.auth-brand-copy h1{font-size:30px;margin:10px 0}.auth-brand-copy>p{font-size:12px;margin:0}.auth-feature-list{display:none}.auth-brand-foot{display:none}.auth-form-panel{padding:65px 24px 28px}.auth-dismiss{top:22px;right:22px}.auth-form-wrap h2{font-size:25px}}
+
+
+/* Live recent-trades tape */
+.recent-trades-panel{margin:18px 0;padding:16px;border:1px solid #26364c;border-radius:14px;background:#101a2a;color:#dbe5f2;min-width:0}
+.recent-trades-table{width:100%;min-width:0}
+.recent-trades-label,.recent-trades-row{display:grid;grid-template-columns:1.2fr 1fr 1fr .8fr;gap:10px;align-items:center}
+.recent-trades-label{padding:9px 8px;color:#71839b;font-size:9px;letter-spacing:.06em;border-top:1px solid #26364c;border-bottom:1px solid #26364c}
+.recent-trades-label span:not(:first-child),.recent-trades-row span,.recent-trades-row time{text-align:right}
+.recent-trades-row{min-height:34px;padding:5px 8px;border-bottom:1px solid rgba(38,54,76,.55);font-size:11px;font-variant-numeric:tabular-nums}
+.recent-trades-row strong{font-weight:700}
+.recent-trades-row time{color:#8fa1b8;font-size:10px}
+.recent-trades-empty{display:grid;place-items:center;min-height:130px;color:#8192aa;font-size:12px}
+@media(max-width:620px){.recent-trades-panel{padding:11px}.recent-trades-label,.recent-trades-row{grid-template-columns:1.15fr 1fr .9fr .75fr;gap:5px;padding-left:3px;padding-right:3px}.recent-trades-label{font-size:8px}.recent-trades-row{font-size:9px}.recent-trades-row time{font-size:9px}}
