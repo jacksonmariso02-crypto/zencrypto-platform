@@ -108,3 +108,78 @@ def test_chain_history_rejects_unsupported_network(client):
     )
     assert response.status_code == 422
     assert "Ethereum and Base mainnet" in response.json()["detail"]
+
+def _paper_user(client, monkeypatch):
+    monkeypatch.setenv("ENABLE_PAPER_TRADING", "true")
+    registered = client.post(
+        "/auth/register",
+        json={"email": "paper-user@example.com", "password": "a-long-test-password-123"},
+    )
+    assert registered.status_code == 201
+    login = client.post(
+        "/auth/login",
+        json={"email": "paper-user@example.com", "password": "a-long-test-password-123"},
+    )
+    assert login.status_code == 200
+    return {"Authorization": "Bearer " + login.json()["access_token"]}
+
+
+def test_paper_order_rejects_assets_outside_supported_market_list(client, monkeypatch):
+    headers = _paper_user(client, monkeypatch)
+    response = client.post(
+        "/trade/orders",
+        headers={**headers, "Idempotency-Key": "unsupported-asset-key"},
+        json={"symbol": "DOGE", "side": "buy", "quote_amount": "25", "reference_price": "0.15"},
+    )
+    assert response.status_code == 422
+    assert "Unsupported paper-trading asset" in response.json()["detail"]
+
+
+def test_paper_order_is_idempotent_and_listed_once(client, monkeypatch):
+    headers = _paper_user(client, monkeypatch)
+    faucet = client.post(
+        "/sandbox/faucet",
+        headers={**headers, "Idempotency-Key": "paper-faucet-test-001"},
+        json={"amount": "100", "currency": "USD"},
+    )
+    assert faucet.status_code == 201
+
+    order_payload = {
+        "symbol": "BTC",
+        "side": "buy",
+        "quote_amount": "25",
+        "reference_price": "50000",
+    }
+    order_headers = {**headers, "Idempotency-Key": "paper-order-test-001"}
+    first = client.post("/trade/orders", headers=order_headers, json=order_payload)
+    second = client.post("/trade/orders", headers=order_headers, json=order_payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["id"] == first.json()["id"]
+    assert first.json()["mode"] == "PAPER_ONLY"
+    listed = client.get("/trade/orders", headers=headers)
+    assert listed.status_code == 200
+    assert len([order for order in listed.json()["orders"] if order["id"] == first.json()["id"]]) == 1
+
+
+def test_paper_order_idempotency_key_cannot_be_reused_for_different_order(client, monkeypatch):
+    headers = _paper_user(client, monkeypatch)
+    client.post(
+        "/sandbox/faucet",
+        headers={**headers, "Idempotency-Key": "paper-faucet-test-002"},
+        json={"amount": "100", "currency": "USD"},
+    )
+    key_headers = {**headers, "Idempotency-Key": "paper-order-conflict-001"}
+    first = client.post(
+        "/trade/orders",
+        headers=key_headers,
+        json={"symbol": "BTC", "side": "buy", "quote_amount": "20", "reference_price": "50000"},
+    )
+    conflict = client.post(
+        "/trade/orders",
+        headers=key_headers,
+        json={"symbol": "ETH", "side": "buy", "quote_amount": "20", "reference_price": "2500"},
+    )
+    assert first.status_code == 201
+    assert conflict.status_code == 409
