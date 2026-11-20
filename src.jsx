@@ -5,7 +5,7 @@ import{LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,CartesianGrid}from
 import{LayoutDashboard,ChartCandlestick,Wallet,ArrowDownToLine,ArrowUpFromLine,Shield,Globe,Menu,FileCheck,PieChart,ShieldCheck,History}from"lucide-react";
 import"./style.css";
 const API=import.meta.env.VITE_API_BASE_URL||"https://zencrypto-api-production.onrender.com";
-const MAINNET_SWAP_UI_ENABLED=import.meta.env.VITE_ENABLE_MAINNET_SWAPS==="true";
+const MAINNET_SWAP_UI_ENABLED=import.meta.env.VITE_ENABLE_MAINNET_SWAPS==="true"&&import.meta.env.VITE_MAINNET_SWAP_RELEASE_APPROVED==="true";
 const CHAINS={"0x1":{name:"Ethereum Mainnet",explorer:"https://etherscan.io",weth:"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",usdc:"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},"0x2105":{name:"Base Mainnet",explorer:"https://basescan.org",weth:"0x4200000000000000000000000000000000000006",usdc:"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"},"0xaa36a7":{name:"Sepolia Testnet",explorer:"https://sepolia.etherscan.io",usdc:""},"0x14a34":{name:"Base Sepolia",explorer:"https://sepolia.basescan.org",usdc:""}};
 const parseUnits=(v,d)=>{v=String(v).trim();if(!/^\d+(\.\d*)?$/.test(v))throw Error("Enter a valid positive amount.");const [a,b=""]=v.split(".");if(b.length>d)throw Error("Too many decimal places.");const n=BigInt(a)*10n**BigInt(d)+BigInt((b+"0".repeat(d)).slice(0,d)||"0");if(n<=0n)throw Error("Amount must be greater than zero.");return n;};
 const formatUnits=(v,d=18)=>{const n=BigInt(v||"0"),base=10n**BigInt(d),whole=n/base,frac=(n%base).toString().padStart(d,"0").slice(0,6).replace(/0+$/,"");return whole.toString()+(frac?"."+frac:"");};
