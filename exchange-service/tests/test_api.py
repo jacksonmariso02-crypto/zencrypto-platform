@@ -1,7 +1,11 @@
 import os
+import sys
+from pathlib import Path
 
 os.environ.setdefault("EXCHANGE_SANDBOX", "true")
 os.environ.setdefault("LIVE_TRADING_ENABLED", "false")
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
 import main
