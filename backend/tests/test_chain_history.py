@@ -79,3 +79,17 @@ def test_deduplicates_events_by_transaction_and_log_index():
 def test_rejects_invalid_chain_history_inputs(chain, address, txs, tokens, limit):
     with pytest.raises(ValueError):
         normalize_chain_history_items(chain, address, txs, tokens, limit)
+
+
+
+def test_accepts_string_decimals_and_hex_log_index():
+    result = normalize_chain_history_items(
+        8453, WALLET, [],
+        [{"txHash": TX, "tokenAddress": "0x" + "3" * 40,
+          "tokenSymbol": "TEST", "tokenDecimals": "6", "amount": "2.500001",
+          "from": OTHER, "to": WALLET, "logIndex": "0x10"}],
+    )
+    item = result["items"][0]
+    assert item["decimals"] == 6
+    assert item["valueRaw"] == "2500001"
+    assert item["eventId"] == TX + ":erc20:16"
