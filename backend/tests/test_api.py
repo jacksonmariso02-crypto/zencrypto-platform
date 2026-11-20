@@ -364,3 +364,81 @@ def test_candle_endpoint_rejects_future_end_time(client):
     )
     assert response.status_code == 422
     assert "end_time" in response.json()["detail"]
+
+
+
+def test_chain_history_returns_independent_provider_cursors(client, monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        def __init__(self, payload): self.payload = payload
+        def json(self): return self.payload
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            calls.append((url, params))
+            if url.endswith("/transactions"):
+                return FakeResponse({
+                    "items": [],
+                    "link": {"nextToken": "tx-cursor-2"},
+                })
+            return FakeResponse({
+                "items": [],
+                "link": {"nextToken": "token-cursor-7"},
+            })
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get(
+        "/chain/history",
+        params={
+            "chainId": 1,
+            "address": "0x" + "1" * 40,
+            "limit": 50,
+            "tx_next": "tx-cursor-1",
+            "token_next": "token-cursor-6",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pagination"]["transactionsNext"] == "tx-cursor-2"
+    assert data["pagination"]["tokenTransfersNext"] == "token-cursor-7"
+    assert data["pagination"]["hasMoreTransactions"] is True
+    assert data["pagination"]["hasMoreTokenTransfers"] is True
+    assert data["coverage"]["complete"] is False
+    assert calls[0][1]["next"] == "tx-cursor-1"
+    assert calls[1][1]["next"] == "token-cursor-6"
+
+
+def test_chain_history_marks_each_cursor_complete_independently(client, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def __init__(self, payload): self.payload = payload
+        def json(self): return self.payload
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            return FakeResponse({"items": [], "link": {"nextToken": "more"} if url.endswith("/transactions") else {}})
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get("/chain/history", params={"chainId": 8453, "address": "0x" + "1" * 40})
+    assert response.status_code == 200
+    pagination = response.json()["pagination"]
+    assert pagination["hasMoreTransactions"] is True
+    assert pagination["hasMoreTokenTransfers"] is False
+    assert pagination["tokenTransfersNext"] is None
+
+
+@pytest.mark.parametrize("cursor", ["", " " , "x" * 513])
+def test_chain_history_rejects_invalid_cursor(client, cursor):
+    response = client.get(
+        "/chain/history",
+        params={"chainId": 1, "address": "0x" + "1" * 40, "tx_next": cursor},
+    )
+    assert response.status_code == 422
