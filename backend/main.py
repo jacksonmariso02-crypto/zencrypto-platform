@@ -329,14 +329,23 @@ async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: i
         raise HTTPException(502, "Binance market data provider is temporarily unavailable.")
 
 @app.get("/chain/history")
-async def chain_history(chainId: int, address: str, limit: int = 25):
+async def chain_history(
+    chainId: int,
+    address: str,
+    limit: int = 25,
+    tx_next: str | None = None,
+    token_next: str | None = None,
+):
     """Indexed public wallet activity from Routescan; never signs or broadcasts transactions."""
     if chainId not in (1, 8453):
         raise HTTPException(422, "Indexed history is currently available for Ethereum and Base mainnet only.")
     if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
         raise HTTPException(422, "Invalid wallet address.")
-    if limit < 1 or limit > 50:
-        raise HTTPException(422, "Limit must be between 1 and 50.")
+    if limit < 1 or limit > 100:
+        raise HTTPException(422, "Limit must be between 1 and 100.")
+    for cursor_name, cursor in (("tx_next", tx_next), ("token_next", token_next)):
+        if cursor is not None and (not cursor.strip() or len(cursor) > 512):
+            raise HTTPException(422, f"{cursor_name} must be a non-empty cursor of at most 512 characters.")
     api_key = os.getenv("ROUTESCAN_API_KEY", "").strip()
     base = f"https://api.routescan.io/v2/network/mainnet/evm/{chainId}/address/{address}"
     headers = {"Accept": "application/json"}
@@ -346,11 +355,11 @@ async def chain_history(chainId: int, address: str, limit: int = 25):
         async with httpx.AsyncClient(timeout=18.0) as client:
             tx_response, token_response = await client.get(
                 base + "/transactions",
-                params={"categories": "evm_tx", "sort": "desc", "limit": str(limit)},
+                params={"categories": "evm_tx", "sort": "desc", "limit": str(limit), **({"next": tx_next} if tx_next else {})},
                 headers=headers,
             ), await client.get(
                 base + "/erc20-transfers",
-                params={"sort": "desc", "limit": str(limit)},
+                params={"sort": "desc", "limit": str(limit), **({"next": token_next} if token_next else {})},
                 headers=headers,
             )
         if tx_response.status_code >= 400 or token_response.status_code >= 400:
@@ -361,6 +370,22 @@ async def chain_history(chainId: int, address: str, limit: int = 25):
         if not isinstance(token_data, dict) or not isinstance(token_data.get("items", []), list):
             raise HTTPException(502, "Malformed token transfer response.")
         normalized = normalize_chain_history_items(chainId, address, tx_data.get("items", []), token_data.get("items", []), limit)
+        tx_link = tx_data.get("link") if isinstance(tx_data.get("link"), dict) else {}
+        token_link = token_data.get("link") if isinstance(token_data.get("link"), dict) else {}
+        tx_cursor = tx_link.get("nextToken")
+        token_cursor = token_link.get("nextToken")
+        normalized["pagination"] = {
+            "transactionsNext": tx_cursor if isinstance(tx_cursor, str) and tx_cursor else None,
+            "tokenTransfersNext": token_cursor if isinstance(token_cursor, str) and token_cursor else None,
+            "hasMoreTransactions": bool(isinstance(tx_cursor, str) and tx_cursor),
+            "hasMoreTokenTransfers": bool(isinstance(token_cursor, str) and token_cursor),
+            "independentCursors": True,
+        }
+        normalized["coverage"] = {
+            "complete": False,
+            "scope": "one_provider_page_per_activity_type",
+            "notice": "Continue both cursors until each is null before treating indexed history as fully paginated. Provider indexing can still omit unsupported activity.",
+        }
         return normalized
     except httpx.TimeoutException:
         raise HTTPException(504, "Indexed history request timed out.")
