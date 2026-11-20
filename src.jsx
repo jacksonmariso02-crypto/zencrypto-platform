@@ -230,7 +230,7 @@ function MarketCandles({apiBase}){
    socket.onclose=()=>{if(!disposed){setTradeStatus("Reconnecting");schedule();}};
   };
   connect();
-  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
+  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(connectionTimer)window.clearTimeout(connectionTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
  useEffect(()=>{
   let socket=null,disposed=false,retryTimer=null,connectionTimer=null,retryDelay=1000,retryAttempts=0;
