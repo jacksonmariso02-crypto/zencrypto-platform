@@ -39,6 +39,10 @@ Last updated: 2026-11-20
 - [x] Cursor-based historical candle pagination using Binance `endTime`, with older pages merged and deduplicated by candle open time.
 - [x] Load-older chart control preserves the user's visible time range when older candles are prepended.
 - [x] Main candlestick, MACD, KDJ and RSI panels share synchronized visible time ranges, with a reset-view control.
+- [x] Paper order history API supports bounded pagination, symbol/side/status filters, total counts and stable ordering.
+- [x] Added owner-scoped paper order detail endpoint; requests for another user's order return not found.
+- [x] Activity screen loads paper order history in pages and can append older records without changing the paper-only execution boundary.
+- [x] Corrected paper sell quantity accounting: gross quote notional determines asset quantity and the fee is deducted from USD proceeds only.
 
 ## External configuration required
 
