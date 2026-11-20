@@ -225,39 +225,84 @@ class Kyc(BaseModel):
 
 @app.get("/market/candles")
 async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 300):
-    """Public market OHLCV candles; informational only, not an execution price."""
+    """Real Binance Spot OHLCV candles. This endpoint is market data, never an execution quote."""
     allowed_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
-    allowed_intervals = {"1m", "5m", "15m", "1h", "4h", "1d", "1w"}
+    allowed_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"}
     symbol = symbol.upper()
     if symbol not in allowed_symbols:
         raise HTTPException(422, "Unsupported chart symbol.")
     if interval not in allowed_intervals:
-        raise HTTPException(422, "Unsupported candle interval.")
-    if limit < 50 or limit > 500:
-        raise HTTPException(422, "Candle limit must be between 50 and 500.")
+        raise HTTPException(422, "Unsupported Binance Spot candle interval.")
+    if limit < 50 or limit > 1000:
+        raise HTTPException(422, "Candle limit must be between 50 and 1000.")
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get("https://api.binance.com/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": limit})
+            response = await client.get(
+                "https://api.binance.com/api/v3/klines",
+                params={"symbol": symbol, "interval": interval, "limit": limit},
+                headers={"Accept": "application/json"},
+            )
         if response.status_code >= 400:
-            raise HTTPException(502, "Market data provider is temporarily unavailable.")
+            raise HTTPException(502, "Binance market data is temporarily unavailable.")
         raw = response.json()
         if not isinstance(raw, list):
-            raise HTTPException(502, "Malformed market candle response.")
-        candles = []
+            raise HTTPException(502, "Malformed Binance candle response.")
+
+        server_time_ms = int(time.time() * 1000)
+        by_open_time = {}
         for row in raw:
             if not isinstance(row, list) or len(row) < 6:
                 continue
             try:
-                candle = {"time": int(row[0]) // 1000, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": float(row[5])}
+                open_time_ms = int(row[0])
+                close_time_ms = int(row[6]) if len(row) > 6 else open_time_ms
+                candle = {
+                    "time": open_time_ms // 1000,
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "volume": float(row[5]),
+                    "close_time": close_time_ms // 1000,
+                    "quote_volume": float(row[7]) if len(row) > 7 else 0.0,
+                    "trades": int(row[8]) if len(row) > 8 else 0,
+                    "is_closed": close_time_ms < server_time_ms,
+                }
             except (TypeError, ValueError, OverflowError):
                 continue
-            if all(math.isfinite(candle[k]) for k in ("open", "high", "low", "close", "volume")) and candle["low"] <= min(candle["open"], candle["close"]) <= max(candle["open"], candle["close"]) <= candle["high"]:
-                candles.append(candle)
-        return {"symbol": symbol, "interval": interval, "candles": candles, "source": "Binance public market data", "notice": "Indicative third-party market data. Prices may differ from DEX execution quotes."}
+            prices = (candle["open"], candle["high"], candle["low"], candle["close"])
+            volumes = (candle["volume"], candle["quote_volume"])
+            if (
+                open_time_ms <= 0
+                or close_time_ms <= open_time_ms
+                or not all(math.isfinite(value) and value > 0 for value in prices)
+                or not all(math.isfinite(value) and value >= 0 for value in volumes)
+                or candle["trades"] < 0
+                or candle["high"] < max(candle["open"], candle["close"])
+                or candle["low"] > min(candle["open"], candle["close"])
+                or candle["low"] <= 0
+            ):
+                continue
+            by_open_time[candle["time"]] = candle
+
+        candles = [by_open_time[key] for key in sorted(by_open_time)]
+        if len(candles) < 2:
+            raise HTTPException(502, "Binance returned fewer than two valid candles.")
+        return {
+            "symbol": symbol,
+            "interval": interval,
+            "market": "SPOT",
+            "provider": "Binance Spot REST API",
+            "source": "Binance public market data",
+            "server_time": server_time_ms // 1000,
+            "candle_count": len(candles),
+            "candles": candles,
+            "notice": "Real exchange OHLCV market data. Indicative only; not an executable DEX quote or guaranteed fill price.",
+        }
     except httpx.TimeoutException:
-        raise HTTPException(504, "Market data request timed out.")
+        raise HTTPException(504, "Binance market data request timed out.")
     except httpx.HTTPError:
-        raise HTTPException(502, "Market data provider is temporarily unavailable.")
+        raise HTTPException(502, "Binance market data provider is temporarily unavailable.")
 
 @app.get("/chain/history")
 async def chain_history(chainId: int, address: str, limit: int = 25):
