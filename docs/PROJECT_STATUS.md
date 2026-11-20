@@ -58,6 +58,7 @@ Last updated: 2026-11-20
 - [x] Swap history records sell/buy token addresses and decimals, parses ERC-20 Transfer logs for actual wallet outflow/inflow, stores raw integer amounts, and re-parses them when refreshing history; absent logs are not replaced with quote estimates.
 - [x] Wallet activity table and CSV export display parsed actual swap outflow/inflow separately from the requested input amount, including raw integer token quantities.
 - [x] Wallet activity displays receipt-derived gas fees in ETH and an explicitly indicative USD conversion using the current live ETH price; USD display is suppressed when market data is stale and is not represented as historical execution-time value.
+- [x] Wallet activity summary shows confirmed swap count, confirmed swaps with parsed ERC-20 settlement logs, and aggregate recorded gas fees using integer wei arithmetic; current USD estimate is shown only while ETH market data is fresh.
 - [x] Frontend swap submission uses a synchronous in-flight lock to block duplicate clicks; firm quote validation rejects invalid buy/minimum output, mismatched optional transaction chain ID, and unexpected native value before wallet signing.
 - [x] Swap execution lock is released only in the swap execution finalizer; indicative price lookups do not modify the in-flight execution lock.
 - [x] Swap activity remains `confirming` after the first successful receipt and advances to `confirmed` only after the configured 12-confirmation threshold.
