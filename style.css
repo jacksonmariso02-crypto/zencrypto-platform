@@ -417,3 +417,21 @@ main,
 /* KDJ and RSI technical indicator panes */
 .indicator-subchart{height:150px;width:100%;min-width:0}
 @media(max-width:650px){.indicator-subchart{height:130px}}
+
+
+/* Live order book depth panel */
+.orderbook-panel{margin:18px 0;padding:16px;border:1px solid #26364c;border-radius:14px;background:#101a2a;color:#dbe5f2;min-width:0}
+.orderbook-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.orderbook-heading p{margin:4px 0 0;color:#8192aa;font-size:12px}
+.orderbook-spread{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid #26364c;border-bottom:1px solid #26364c;font-size:12px;color:#9aabc3}
+.orderbook-spread strong{display:block;margin-top:4px;color:#e5edf7;font-size:14px;font-variant-numeric:tabular-nums}
+.orderbook-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px}
+.orderbook-label,.orderbook-row{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:6px;align-items:center}
+.orderbook-label{padding:5px 4px;color:#71839b;font-size:9px;letter-spacing:.06em}
+.orderbook-label span:nth-child(n+2),.orderbook-row span:nth-child(n+2){text-align:right}
+.orderbook-row{position:relative;isolation:isolate;min-height:24px;padding:3px 4px;font-size:10px;font-variant-numeric:tabular-nums;overflow:hidden}
+.orderbook-row i{position:absolute;z-index:-1;right:0;top:0;bottom:0;opacity:.14}
+.orderbook-row.ask{color:#ff8798}.orderbook-row.ask i{background:#fa7185}
+.orderbook-row.bid{color:#43d9ac}.orderbook-row.bid i{background:#27d6a2}
+.orderbook-foot{margin-top:10px;color:#71839b;font-size:10px}
+@media(max-width:620px){.orderbook-panel{padding:11px}.orderbook-columns{gap:8px}.orderbook-row,.orderbook-label{font-size:9px;grid-template-columns:1fr .9fr .9fr}.orderbook-spread{font-size:10px}.orderbook-spread strong{font-size:12px}}
