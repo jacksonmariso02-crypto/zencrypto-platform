@@ -108,6 +108,8 @@ Last updated: 2026-11-20
 - [x] Preserve remaining open lots and source trade references.
 - [x] Reject duplicate trade IDs, invalid quantities/prices/fees, and sells exceeding available lots.
 - [x] Add unit tests for FIFO matching, fee allocation, invalid sequences, and asset isolation.
+- [x] Add timestamp-checked mark-to-market valuation for remaining FIFO lots, including missing/stale/future quote rejection and explicit indicative valuation labels.
+- [x] Add unit tests for fresh price valuation, stale/missing/future price handling, and closed positions without a mark price.
 - [ ] Integrate with a reconciled server-side ledger covering wallet deposits, withdrawals, transfers, swaps, and fee-token payments before exposing account-wide realized P&L.
 - [ ] Add independently sourced valuation prices for unrealized P&L and retain valuation timestamps/provider provenance.
 
