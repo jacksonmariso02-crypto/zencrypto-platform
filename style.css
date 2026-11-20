@@ -543,3 +543,9 @@ main,
 .large-trade-row time{color:#8fa1ba;text-align:right;font-variant-numeric:tabular-nums}
 .large-trade-row b{text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:600px){.large-trade-row{grid-template-columns:54px minmax(70px,1fr) minmax(90px,1fr);gap:7px}.large-trade-row time{grid-column:2/4;text-align:left}}
+
+.large-trade-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 12px}
+.large-trade-summary>span{display:flex;flex-direction:column;gap:5px;padding:10px;border:1px solid rgba(77,96,122,.35);border-radius:8px;background:rgba(8,16,29,.35);color:#8fa1ba;font-size:11px}
+.large-trade-summary strong{font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.large-trade-summary small{font-size:10px;color:#8294ad}
+@media(max-width:600px){.large-trade-summary{grid-template-columns:1fr}}
