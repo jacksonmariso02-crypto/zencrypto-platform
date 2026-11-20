@@ -209,3 +209,37 @@ header { background: #0b1220 !important; backdrop-filter: none; }
   .panelhead { align-items:flex-start; flex-direction:column; }
   .periods { width:100%; }
 }
+
+
+/* Professional OHLC candlestick terminal */
+.zc-chart-shell { width:100%; min-width:0; }
+.zc-chart-toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0 12px; }
+.zc-indicator-group { display:flex; gap:6px; flex-wrap:wrap; }
+.zc-indicator { background:#101a29; border:1px solid #334155; color:#91a0b8; padding:7px 10px; border-radius:7px; font-size:10px; }
+.zc-indicator.active { color:#27d6a2; border-color:#287e69; background:#16352f; }
+.zc-chart-count { color:#8190a8; font-size:10px; }
+.zc-chart-legend { display:flex; align-items:center; gap:14px; flex-wrap:wrap; color:#9aabc0; font-size:10px; margin:0 0 8px; }
+.zc-chart-legend span { display:inline-flex; align-items:center; gap:5px; }
+.zc-dot { display:inline-block; width:8px; height:8px; border-radius:50%; }
+.zc-up { background:#27d6a2; }
+.zc-down { background:#fa7185; }
+.ema9-key { color:#fbbf24; }
+.ema21-key { color:#38bdf8; }
+.ema50-key { color:#c084fc; }
+.bb-key { color:#a78bfa; }
+.zc-chart-readout { min-height:28px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; color:#9aabc0; font-size:10px; padding:5px 0; border-top:1px solid #263449; }
+.zc-chart-readout b { color:#e8eef8; font-weight:600; }
+.zc-candle-svg { display:block; width:100%; height:440px; overflow:visible; cursor:crosshair; touch-action:pan-y; }
+.zc-chart-foot { color:#667b96; font-size:10px; line-height:1.6; padding-top:9px; border-top:1px solid #263449; }
+.zc-chart-empty { min-height:300px; display:grid; place-items:center; color:#8190a8; }
+.chartpanel .panelhead { align-items:center; }
+.chartpanel .panelhead .muted { margin:6px 0 0; }
+.chartpanel .periods { flex-wrap:wrap; justify-content:flex-end; }
+.chartpanel .periods button { border:1px solid transparent; }
+.chartpanel .periods button.selected { border-color:#287e69; }
+@media(max-width:750px) {
+ .zc-candle-svg { height:390px; }
+ .zc-chart-readout { gap:8px; font-size:9px; }
+ .chartpanel .panelhead { align-items:flex-start; }
+ .chartpanel .periods { justify-content:flex-start; }
+}
