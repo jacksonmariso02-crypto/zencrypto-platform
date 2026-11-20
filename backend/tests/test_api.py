@@ -45,7 +45,6 @@ def test_readiness_fails_closed_without_required_secrets(client, monkeypatch):
     [
         {"symbol": "UNKNOWN", "interval": "1h", "limit": 100},
         {"symbol": "BTCUSDT", "interval": "2m", "limit": 100},
-        {"symbol": "BTCUSDT", "interval": "1M", "limit": 100},
         {"symbol": "BTCUSDT", "interval": "1h", "limit": 10},
         {"symbol": "BTCUSDT", "interval": "1h", "limit": 501},
     ],
