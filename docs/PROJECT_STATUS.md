@@ -36,6 +36,9 @@ Last updated: 2026-11-20
 - [x] Live Binance kline WebSocket updates merged into the native Lightweight Charts candlestick and volume series.
 - [x] Expanded supported Spot chart intervals from 1m through 1M, with up to 500 historical candles loaded by the chart.
 - [x] Chart status changes to Live only after a valid live kline message is received; REST history remains a clearly identified snapshot/fallback.
+- [x] Cursor-based historical candle pagination using Binance `endTime`, with older pages merged and deduplicated by candle open time.
+- [x] Load-older chart control preserves the user's visible time range when older candles are prepended.
+- [x] Main candlestick, MACD, KDJ and RSI panels share synchronized visible time ranges, with a reset-view control.
 
 ## External configuration required
 
