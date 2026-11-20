@@ -46,6 +46,8 @@ Last updated: 2026-11-20
 - [x] Backend token allowlist and spender validation.
 - [x] Backend-only `ZEROX_API_KEY` configuration.
 - [x] Independent backend and frontend release flags for mainnet swaps; both default to disabled.
+- [x] Backend mainnet DEX access now requires two independent server-side environment gates: ENABLE_MAINNET_SWAPS=true and MAINNET_SWAP_RELEASE_APPROVED=true; either missing/false value fails closed with HTTP 503.
+- [x] Readiness reports mainnet swap execution as disabled unless both backend gates are explicitly enabled; a readiness response is still not a legal, security-audit, or production approval.
 - [x] Frontend quote retrieval and execution handlers independently fail closed when the frontend mainnet-swap release flag is disabled; the swap panel explains the read-only state.
 - [x] Firm-quote validation rejects a provider transaction when its optional chain ID does not match the requested network.
 - [x] Wallet activity records token-approval transactions separately from swaps and captures receipt block, gas usage, effective gas price, and initial confirmation state immediately after mining.
