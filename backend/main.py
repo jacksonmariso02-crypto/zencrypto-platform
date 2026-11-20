@@ -1,5 +1,5 @@
 """ZenCrypto non-custodial API: server-side DEX quotes; users sign and submit transactions in their own wallets."""
-import os, sqlite3, secrets, hashlib, hmac, time, json, re
+import os, sqlite3, secrets, hashlib, hmac, time, json, re, math
 from collections import defaultdict, deque
 import httpx
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
@@ -217,6 +217,43 @@ class Kyc(BaseModel):
     legal_name: str = Field(min_length=2, max_length=150)
     country: str = Field(min_length=2, max_length=80)
 
+
+
+@app.get("/market/candles")
+async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 300):
+    """Public market OHLCV candles; informational only, not an execution price."""
+    allowed_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
+    allowed_intervals = {"1m", "5m", "15m", "1h", "4h", "1d", "1w"}
+    symbol = symbol.upper()
+    if symbol not in allowed_symbols:
+        raise HTTPException(422, "Unsupported chart symbol.")
+    if interval not in allowed_intervals:
+        raise HTTPException(422, "Unsupported candle interval.")
+    if limit < 50 or limit > 500:
+        raise HTTPException(422, "Candle limit must be between 50 and 500.")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get("https://api.binance.com/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": limit})
+        if response.status_code >= 400:
+            raise HTTPException(502, "Market data provider is temporarily unavailable.")
+        raw = response.json()
+        if not isinstance(raw, list):
+            raise HTTPException(502, "Malformed market candle response.")
+        candles = []
+        for row in raw:
+            if not isinstance(row, list) or len(row) < 6:
+                continue
+            try:
+                candle = {"time": int(row[0]) // 1000, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": float(row[5])}
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if all(math.isfinite(candle[k]) for k in ("open", "high", "low", "close", "volume")) and candle["low"] <= min(candle["open"], candle["close"]) <= max(candle["open"], candle["close"]) <= candle["high"]:
+                candles.append(candle)
+        return {"symbol": symbol, "interval": interval, "candles": candles, "source": "Binance public market data", "notice": "Indicative third-party market data. Prices may differ from DEX execution quotes."}
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Market data request timed out.")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Market data provider is temporarily unavailable.")
 
 @app.get("/chain/history")
 async def chain_history(chainId: int, address: str, limit: int = 25):
