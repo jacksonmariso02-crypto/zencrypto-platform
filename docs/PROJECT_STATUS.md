@@ -32,6 +32,10 @@ Last updated: 2026-11-20
 - [x] API response hardening: anti-framing, restrictive frame-ancestors/base-uri CSP, no-sniff, no-referrer, no-store and restricted browser permissions.
 - [x] GitHub Actions runs backend safety tests before the frontend production build/deploy.
 - [x] Deterministic tests for market-candle normalization, invalid chart parameters, wallet-history input validation, readiness fail-closed behavior and default-disabled legacy paper routes.
+- [x] Real Binance Spot OHLCV candlestick history through the Spot REST API, including open/close times, base/quote volume, trade count and closed/forming candle metadata.
+- [x] Live Binance kline WebSocket updates merged into the native Lightweight Charts candlestick and volume series.
+- [x] Expanded supported Spot chart intervals from 1m through 1M, with up to 500 historical candles loaded by the chart.
+- [x] Chart status changes to Live only after a valid live kline message is received; REST history remains a clearly identified snapshot/fallback.
 
 ## External configuration required
 
