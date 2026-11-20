@@ -353,3 +353,12 @@ main,
 .market-chart-footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:12px}
 .chart-attribution{padding-top:5px}.chart-attribution a{color:#27d6a2;text-decoration:none}
 @media(max-width:650px){.market-chart-panel{padding:14px}.market-candle-canvas{height:330px}.market-chart-controls{width:100%}}
+
+.chart-indicator-controls{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:8px 0 14px}
+.chart-indicator-controls label{display:inline-flex;align-items:center;gap:6px;color:#aab8cb;font-size:11px;cursor:pointer}
+.chart-indicator-controls input{accent-color:#27d6a2}
+.rsi-readout{font-size:11px;color:#f5c451;font-variant-numeric:tabular-nums}
+.macd-panel{margin-top:16px;padding-top:10px;border-top:1px solid #26364d}
+.macd-panel .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.macd-panel h3{font-size:13px;margin:4px 0 10px;color:#dce6f3}
+.macd-canvas{height:170px;width:100%;min-width:0}
