@@ -31,8 +31,10 @@ function MarketCandles({apiBase}){
   const candle=chart.addSeries(CandlestickSeries,{upColor:"#27d6a2",downColor:"#fa7185",wickUpColor:"#27d6a2",wickDownColor:"#fa7185",borderVisible:false});
   const volume=chart.addSeries(HistogramSeries,{priceFormat:{type:"volume"},priceScaleId:"volume"});
   volume.priceScale().applyOptions({scaleMargins:{top:.82,bottom:0}});
-  const ma5=chart.addSeries(LineSeries,{color:"#e879f9",lineWidth:1,priceLineVisible:false,lastValueVisible:false});\n  const ma7=chart.addSeries(LineSeries,{color:"#f5c451",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
-  const ma25=chart.addSeries(LineSeries,{color:"#64a8ff",lineWidth:2,priceLineVisible:false,lastValueVisible:false});\n  const ma99=chart.addSeries(LineSeries,{color:"#fb923c",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+  const ma5=chart.addSeries(LineSeries,{color:"#e879f9",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  const ma7=chart.addSeries(LineSeries,{color:"#f5c451",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+  const ma25=chart.addSeries(LineSeries,{color:"#64a8ff",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+  const ma99=chart.addSeries(LineSeries,{color:"#fb923c",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
   const upper=chart.addSeries(LineSeries,{color:"rgba(173,130,255,.8)",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
   const middle=chart.addSeries(LineSeries,{color:"rgba(173,130,255,.45)",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
   const lower=chart.addSeries(LineSeries,{color:"rgba(173,130,255,.8)",lineWidth:1,priceLineVisible:false,lastValueVisible:false});
