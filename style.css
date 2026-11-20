@@ -634,3 +634,8 @@ main,
 .backtest-metrics strong{font-size:15px;color:#e1eaf6;overflow-wrap:anywhere}
 .backtest-metrics strong.positive{color:#27d6a2}.backtest-metrics strong.negative{color:#fa7185}
 @media(max-width:650px){.macd-backtest-panel>.panelhead{align-items:flex-start;flex-direction:column}.backtest-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.backtest-trade-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.backtest-trade-list>strong{font-size:11px;color:#dce7f5}
+.backtest-trade-list>div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 9px;border:1px solid #26374e;border-radius:6px;background:#111f31;font-size:10px;color:#91a2b8}
+.backtest-trade-list b{white-space:nowrap;font-size:11px}
+.backtest-trade-list b.positive{color:#27d6a2}.backtest-trade-list b.negative{color:#fa7185}
