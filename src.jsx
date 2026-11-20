@@ -83,6 +83,8 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
    });
   };
   const loadHistory=async()=>{
+   const unit=/^([0-9]+)([mhdw])$/.exec(interval);
+   const step=unit?Number(unit[1])*({m:60,h:3600,d:86400,w:604800}[unit[2]]):0;
    const results=await Promise.allSettled(CHART_SYMBOLS.map(async symbol=>{
     try{
      const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:200});
@@ -90,9 +92,28 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
       const raw=Number(row.time);
       return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
      }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close)&&[row.volume,row.quoteVolume,row.trades].every(Number.isFinite)&&row.volume>=0&&row.quoteVolume>=0&&row.trades>=0);
+     let merged=rows;
+     if(step>0&&rows.length>1){
+      const gaps=[];
+      for(let i=1;i<rows.length&&gaps.length<10;i++){
+       const missing=Math.round((rows[i].time-rows[i-1].time)/step)-1;
+       if(missing>0)gaps.push({start:rows[i-1].time*1000+step*1000,end:rows[i].time*1000-1,count:missing});
+      }
+      let remaining=200;
+      const repairs=await Promise.allSettled(gaps.map(async gap=>{
+       if(remaining<=0)return [];
+       const limit=Math.min(gap.count,remaining);remaining-=limit;
+       const repair=await fetchMarketCandles(apiBase,{symbol,interval,limit,start_time:gap.start,end_time:gap.end});
+       return (Array.isArray(repair?.candles)?repair.candles:[]).map(row=>{
+        const raw=Number(row.time);
+        return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
+       }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close)&&[row.volume,row.quoteVolume,row.trades].every(Number.isFinite)&&row.volume>=0&&row.quoteVolume>=0&&row.trades>=0);
+      }));
+      repairs.forEach(result=>{if(result.status==="fulfilled")merged=merged.concat(result.value);});
+     }
      setSeries(prev=>{
       const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
-      const map=new Map(rows.map(point=>[point.time,point]));
+      const map=new Map(merged.map(point=>[point.time,point]));
       current.points.forEach(point=>map.set(point.time,point));
       return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-200),historyStatus:rows.length?"Ready":"Empty"}};
      });
