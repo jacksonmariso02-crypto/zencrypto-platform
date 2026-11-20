@@ -25,6 +25,7 @@ Last updated: 2026-11-20
 - [x] Normalize indexed native and ERC-20 activity with deterministic event IDs, wallet-relative in/out direction, raw integer amounts, and explicit indexed-unverified status.
 - [x] Identify WETH/USDC using chain-specific contract allowlists; unknown token contracts remain unverified.
 - [x] Deduplicate repeated indexed events and reject invalid chain, address, timestamp, amount precision, and pagination inputs.
+- [x] Accept provider token decimals as bounded decimal strings and normalize hexadecimal log indexes for stable transfer-event IDs.
 - [ ] Persist reconciled chain events and handle pagination/cursor coverage before treating indexed activity as a complete cost-basis ledger.
 
 ### Live market charts
