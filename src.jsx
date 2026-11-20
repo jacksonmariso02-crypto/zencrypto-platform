@@ -330,8 +330,9 @@ function MarketCandles({apiBase}){
        if(!hit)return a;
        changed=true;
        setAlertNotice(a.pair+" reached your "+a.direction+" target of "+a.target);
-       if(typeof Notification!=="undefined"&&Notification.permission==="granted"){
-        try{new Notification("ZenCrypto price alert",{body:a.pair+" reached "+row.close});}catch{}
+       if(typeof Notification!=="undefined"&&Notification.permission==="granted"&&!notifiedAlertIdsRef.current.has(a.id)){
+        notifiedAlertIdsRef.current.add(a.id);
+        try{new Notification("ZenCrypto price alert",{body:a.pair+" reached "+row.close,tag:"zencrypto-price-alert-"+a.id,renotify:false});}catch{}
        }
        return {...a,triggered:true,triggeredAt:new Date().toISOString(),triggerPrice:row.close};
       });
