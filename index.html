@@ -39,31 +39,41 @@
     </noscript>
     <script>
       (function () {
-        function showBootError(message) {
+        var timer;
+        function showStartupDiagnostic(message) {
           var root = document.getElementById("root");
-          if (!root || root.querySelector(".app")) return;
-          var card = root.querySelector(".boot-card");
-          if (!card) return;
-          var p = document.createElement("p");
-          p.className = "boot-error";
-          p.textContent = "Application startup error: " + String(message || "Unknown error");
-          card.appendChild(p);
+          if (!root || root.querySelector(".app") || root.querySelector(".boot-error")) return;
+          root.innerHTML = "";
+          var screen = document.createElement("div");
+          screen.className = "boot-screen";
+          var card = document.createElement("div");
+          card.className = "boot-card";
+          var title = document.createElement("h1");
+          title.textContent = "ZenCrypto could not load";
+          var detail = document.createElement("p");
+          detail.className = "boot-error";
+          detail.textContent = String(message || "The application did not mount.");
+          var hint = document.createElement("p");
+          hint.textContent = "Open GitHub Actions and check the latest deployment build. If the problem continues, send this message to support.";
+          card.appendChild(title); card.appendChild(detail); card.appendChild(hint);
+          screen.appendChild(card); root.appendChild(screen);
         }
         window.addEventListener("error", function (event) {
-          if (event && event.message) showBootError(event.message);
-          else if (event && event.target && event.target.src) showBootError("Could not load: " + event.target.src);
+          if (event && event.message) showStartupDiagnostic(event.message);
+          else if (event && event.target && event.target.src) showStartupDiagnostic("Failed to load resource: " + event.target.src);
         }, true);
         window.addEventListener("unhandledrejection", function (event) {
-          showBootError(event && event.reason ? (event.reason.message || event.reason) : "Unhandled promise rejection");
+          showStartupDiagnostic(event && event.reason ? (event.reason.message || event.reason) : "Unhandled promise rejection");
         });
-        window.setTimeout(function () {
+        timer = window.setTimeout(function () {
           var root = document.getElementById("root");
-          if (root && root.querySelector(".boot-screen") && !root.querySelector(".app")) {
-            showBootError("The app did not mount within 10 seconds. Check the GitHub Pages build and browser Console.");
-          }
-        }, 10000);
+          if (root && !root.querySelector(".app")) showStartupDiagnostic("The React application did not mount within 12 seconds. Check the deployment build and browser Console.");
+        }, 12000);
+        window.addEventListener("DOMContentLoaded", function () {
+          window.setTimeout(function () { window.clearTimeout(timer); }, 15000);
+        });
       })();
-    </script>
+    </script>ipt>
     <script type="module" src="/src.jsx"></script>
   </body>
 </html>
