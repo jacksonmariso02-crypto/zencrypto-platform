@@ -56,3 +56,55 @@ def test_fifo_isolated_by_asset_symbol():
     assert set(result["symbols"]) == {"BTC", "ETH"}
     assert Decimal(result["symbols"]["ETH"]["open_cost_basis"]) == Decimal("100")
     assert Decimal(result["symbols"]["BTC"]["open_cost_basis"]) == Decimal("1000")
+
+
+
+def test_mark_to_market_values_open_fifo_lots_with_fresh_price():
+    from cost_basis import value_open_positions
+
+    basis = calculate_fifo_cost_basis([
+        {"id": "b1", "symbol": "ETH", "side": "buy", "quantity": "2", "price": "100", "fee": "2", "timestamp": 1},
+        {"id": "s1", "symbol": "ETH", "side": "sell", "quantity": "1", "price": "130", "fee": "1", "timestamp": 2},
+    ])
+    valued = value_open_positions(
+        basis, {"ETH": {"price": "120", "as_of": 1000}}, now=1030, max_age_seconds=60
+    )
+    eth = valued["positions"]["ETH"]
+    assert eth["status"] == "estimated"
+    assert Decimal(eth["market_value"]) == Decimal("120")
+    assert Decimal(eth["unrealized_pnl"]) == Decimal("19")
+    assert eth["price_age_seconds"] == 30
+    assert valued["account_wide_pnl_available"] is False
+
+
+@pytest.mark.parametrize(
+    "quote,now,reason",
+    [
+        (None, 100, "missing_mark_price"),
+        ({"price": "100", "as_of": 1}, 100, "stale_mark_price"),
+        ({"price": "100", "as_of": 101}, 100, "future_dated_price"),
+        ({"price": "100", "as_of": "bad"}, 100, "invalid_price_timestamp"),
+    ],
+)
+def test_mark_to_market_fails_closed_for_missing_or_stale_prices(quote, now, reason):
+    from cost_basis import value_open_positions
+
+    basis = calculate_fifo_cost_basis([
+        {"id": "b1", "symbol": "ETH", "side": "buy", "quantity": "1", "price": "100", "fee": "0", "timestamp": 1},
+    ])
+    prices = {} if quote is None else {"ETH": quote}
+    result = value_open_positions(basis, prices, now=now, max_age_seconds=30)
+    assert result["positions"]["ETH"]["status"] == "unavailable"
+    assert result["positions"]["ETH"]["reason"] == reason
+
+
+def test_mark_to_market_handles_closed_positions_without_price():
+    from cost_basis import value_open_positions
+
+    basis = calculate_fifo_cost_basis([
+        {"id": "b1", "symbol": "ETH", "side": "buy", "quantity": "1", "price": "100", "fee": "0", "timestamp": 1},
+        {"id": "s1", "symbol": "ETH", "side": "sell", "quantity": "1", "price": "110", "fee": "0", "timestamp": 2},
+    ])
+    result = value_open_positions(basis, {}, now=100, max_age_seconds=30)
+    assert result["positions"]["ETH"]["status"] == "no_open_position"
+    assert Decimal(result["positions"]["ETH"]["unrealized_pnl"]) == Decimal("0")
