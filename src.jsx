@@ -163,9 +163,10 @@ function MarketCandles({apiBase}){
   const connect=()=>{
    if(disposed)return;
    setBookStatus("Connecting");
+   setOrderBook({bids:[],asks:[],updatedAt:null});
    try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@depth20@100ms");}
    catch{setBookStatus("Unavailable");schedule();return;}
-   socket.onopen=()=>{if(!disposed){retryDelay=1000;setBookStatus("Live");}};
+   socket.onopen=()=>{if(!disposed){retryDelay=1000;setBookStatus("Connecting");}};
    socket.onmessage=event=>{
     if(disposed)return;
     try{
@@ -176,6 +177,7 @@ function MarketCandles({apiBase}){
      const asks=parse(d.asks).sort((a,b)=>a.price-b.price).slice(0,20);
      if(bids.length&&asks.length&&bids[0].price>asks[0].price)return;
      setOrderBook({bids,asks,updatedAt:Date.now()});
+     setBookStatus("Live");
     }catch{/* Keep last valid depth snapshot on malformed frames. */}
    };
    socket.onerror=()=>{if(!disposed){setBookStatus("Reconnecting");try{socket?.close();}catch{}}};
