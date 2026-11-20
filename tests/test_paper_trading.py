@@ -132,6 +132,28 @@ def test_readiness_requires_real_backend_configuration(monkeypatch):
     assert "not a legal" in ready.json()["notice"]
 
 
+@pytest.mark.parametrize(
+    "execution_flag,approval_flag,expected_disabled",
+    [
+        ("true", "false", True),
+        ("false", "true", True),
+        ("true", "true", False),
+    ],
+)
+def test_readiness_requires_both_mainnet_release_flags(
+    monkeypatch, execution_flag, approval_flag, expected_disabled
+):
+    monkeypatch.setenv("ZEROX_API_KEY", "test-provider-key")
+    monkeypatch.setenv("CORS_ORIGINS", "https://zencrypto.example")
+    monkeypatch.setenv("APP_SECRET", "test-secret")
+    monkeypatch.setenv("ENABLE_MAINNET_SWAPS", execution_flag)
+    monkeypatch.setenv("MAINNET_SWAP_RELEASE_APPROVED", approval_flag)
+    with TestClient(main.app) as client:
+        ready = client.get("/ready")
+    assert ready.json()["checks"]["mainnet_swaps_disabled_until_release_approval"] is expected_disabled
+    assert (ready.status_code == 200) is expected_disabled
+
+
 def test_readiness_fails_closed_without_provider_key(monkeypatch):
     monkeypatch.delenv("ZEROX_API_KEY", raising=False)
     monkeypatch.setenv("CORS_ORIGINS", "https://zencrypto.example")
