@@ -408,3 +408,8 @@ main,
 .activity-export{display:flex;align-items:end}
 .activity-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 @media(max-width:650px){.activity-filters{grid-template-columns:1fr}.activity-export .tablebtn{width:100%}}
+
+.deposit-monitor{margin-top:20px;padding-top:16px;border-top:1px solid #26364d;min-width:0}
+.deposit-monitor .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.deposit-monitor h3{font-size:14px;color:#e4edf8;margin:0}
+.deposit-monitor .tablewrap{margin-top:12px}
