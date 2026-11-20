@@ -1,1 +1,69 @@
-<!doctype html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>ZenCrypto | Digital Asset Trading</title><meta name="description" content="ZenCrypto digital asset trading platform prototype"/></head><body><div id="root"></div><script type="module" src="/src.jsx"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1220" />
+    <title>ZenCrypto | Digital Asset Trading</title>
+    <meta name="description" content="ZenCrypto digital asset trading platform prototype" />
+    <style>
+      html, body, #root { min-height: 100%; background: #0b1220 !important; }
+      body { margin: 0; color: #e8eef8; }
+      /* The supercar is a hero illustration, never a full-screen app background. */
+      body::before { content: none !important; display: none !important; }
+      .boot-screen {
+        min-height: 100vh; display: grid; place-items: center; padding: 24px;
+        box-sizing: border-box; background: #0b1220; color: #e8eef8;
+        font: 15px/1.6 Inter, Arial, sans-serif;
+      }
+      .boot-card {
+        width: min(560px, 100%); padding: 28px; box-sizing: border-box;
+        border: 1px solid #26364e; border-radius: 16px; background: #111c30;
+      }
+      .boot-card h1 { margin: 0 0 8px; font-size: 22px; }
+      .boot-card p { margin: 0; color: #aabbd0; }
+      .boot-error { margin-top: 14px !important; color: #fda4af !important; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot-screen">
+        <div class="boot-card">
+          <h1>ZenCrypto is starting…</h1>
+          <p>If this message remains visible, the application script did not finish loading. The page will show a diagnostic instead of leaving a full-screen background image.</p>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div class="boot-screen"><div class="boot-card"><h1>JavaScript is required</h1><p>Please enable JavaScript to use the ZenCrypto interface.</p></div></div>
+    </noscript>
+    <script>
+      (function () {
+        function showBootError(message) {
+          var root = document.getElementById("root");
+          if (!root || root.querySelector(".app")) return;
+          var card = root.querySelector(".boot-card");
+          if (!card) return;
+          var p = document.createElement("p");
+          p.className = "boot-error";
+          p.textContent = "Application startup error: " + String(message || "Unknown error");
+          card.appendChild(p);
+        }
+        window.addEventListener("error", function (event) {
+          if (event && event.message) showBootError(event.message);
+          else if (event && event.target && event.target.src) showBootError("Could not load: " + event.target.src);
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          showBootError(event && event.reason ? (event.reason.message || event.reason) : "Unhandled promise rejection");
+        });
+        window.setTimeout(function () {
+          var root = document.getElementById("root");
+          if (root && root.querySelector(".boot-screen") && !root.querySelector(".app")) {
+            showBootError("The app did not mount within 10 seconds. Check the GitHub Pages build and browser Console.");
+          }
+        }, 10000);
+      })();
+    </script>
+    <script type="module" src="/src.jsx"></script>
+  </body>
+</html>
