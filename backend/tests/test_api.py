@@ -446,11 +446,17 @@ def test_chain_history_rejects_invalid_cursor(client, cursor):
 
 
 def _create_authenticated_user(client, email="ledger@example.com"):
-    registered = client.post("/auth/register", json={"email": email, "password": "correct-horse-battery"})
-    assert registered.status_code == 201
-    logged_in = client.post("/auth/login", json={"email": email, "password": "correct-horse-battery"})
-    assert logged_in.status_code == 200
-    return {"Authorization": "Bearer " + logged_in.json()["access_token"]}
+    with main.db() as conn:
+        uid = conn.execute(
+            "INSERT INTO users(email,password_hash,created_at) VALUES(?,?,?)",
+            (email, main.hash_pw("correct-horse-battery"), 1700000000),
+        ).lastrowid
+        sid = "test-session-" + str(uid)
+        conn.execute(
+            "INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)",
+            (sid, uid, 4102444800),
+        )
+    return {"Authorization": "Bearer " + main.TOKEN.dumps(sid)}
 
 
 def test_chain_ledger_persists_pages_and_resumes_cursors(client, monkeypatch):
