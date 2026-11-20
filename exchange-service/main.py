@@ -1,5 +1,6 @@
 import os
 import hmac
+import re
 from decimal import Decimal
 from typing import Literal
 
@@ -51,11 +52,11 @@ def require_admin(authorization: str | None):
         raise HTTPException(401, "Unauthorized.")
     
 def normalize_symbol(symbol: str) -> str:
-    value = symbol.upper().replace("-", "/")
+    value = symbol.strip().upper().replace("-", "/")
     if "/" not in value and value.endswith("USDT"):
         value = value[:-4] + "/USDT"
-    if "/" not in value:
-        raise HTTPException(400, "Use a spot symbol such as BTC/USDT.")
+    if not re.fullmatch(r"[A-Z0-9]{2,15}/[A-Z0-9]{2,15}", value):
+        raise HTTPException(400, "Use a valid spot symbol such as BTC/USDT.")
     return value
 
 @app.get("/health")
