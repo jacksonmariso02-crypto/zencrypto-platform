@@ -7,6 +7,7 @@ Last updated: 2026-11-20
 - Working branch: `feature/account-auth-foundation`
 - Product direction: user self-custody EVM wallet interface with a curated DEX swap flow.
 - Production status: **not production-ready**. Do not advertise the product as audited, licensed, registered or approved.
+- Trading model: non-custodial wallet interface. Users sign any supported on-chain transaction in their own wallet; the platform does not custody customer keys or balances.
 - Mainnet wallet transfers are user-signed and can move real assets. Use care and small amounts; blockchain transactions are generally irreversible.
 
 ## Implemented
@@ -27,7 +28,8 @@ Last updated: 2026-11-20
 - [x] 100 bps (1%) slippage parameter on quote requests.
 - [x] Backend token allowlist and spender validation.
 - [x] Backend-only `ZEROX_API_KEY` configuration.
-- [x] Legacy paper trading, sandbox deposit/withdrawal and simulated account routes blocked by default.
+- [x] Legacy paper trading, sandbox deposit/withdrawal and simulated account routes permanently retired (HTTP 410); environment flags cannot reactivate them.
+- [x] Mainnet DEX quote and swap path protected by ENABLE_MAINNET_SWAPS, defaulting to disabled; frontend controls require VITE_ENABLE_MAINNET_SWAPS=true and the backend independently enforces its own flag.
 - [x] CI tests for backend route validation and frontend build.
 - [x] API response hardening: anti-framing, restrictive frame-ancestors/base-uri CSP, no-sniff, no-referrer, no-store and restricted browser permissions.
 - [x] GitHub Actions runs backend safety tests before the frontend production build/deploy.
@@ -54,6 +56,7 @@ Last updated: 2026-11-20
 ## Remaining engineering and release gates
 
 ### DEX integration
+- Mainnet swap release remains disabled by default. Do not set ENABLE_MAINNET_SWAPS=true or VITE_ENABLE_MAINNET_SWAPS=true until legal, security and operational gates are independently approved.
 - Verify 0x response signatures or add an independent quote authenticity verification layer.
 - Add token risk screening and a versioned, independently verified token registry.
 - Add explicit price impact, route/source and estimated gas presentation.
