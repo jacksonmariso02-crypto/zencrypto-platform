@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from chain_history import normalize_chain_history_items
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 DB = os.getenv("DATABASE_PATH", "zencrypto.db")
@@ -359,44 +360,8 @@ async def chain_history(chainId: int, address: str, limit: int = 25):
             raise HTTPException(502, "Malformed transaction history response.")
         if not isinstance(token_data, dict) or not isinstance(token_data.get("items", []), list):
             raise HTTPException(502, "Malformed token transfer response.")
-        token_allowlist = {
-            1: {
-                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {"symbol": "WETH", "decimals": 18},
-                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {"symbol": "USDC", "decimals": 6},
-            },
-            8453: {
-                "0x4200000000000000000000000000000000000006": {"symbol": "WETH", "decimals": 18},
-                "0x833589fcd6edb6e08f4c7c32d4f71b54bdA02913".lower(): {"symbol": "USDC", "decimals": 6},
-            },
-        }
-        items = []
-        for item in tx_data.get("items", []):
-            if not isinstance(item, dict):
-                continue
-            tx_hash = item.get("hash") or item.get("txHash")
-            if isinstance(tx_hash, str) and re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
-                items.append({"kind": "transaction", "hash": tx_hash, "timestamp": item.get("timestamp") or item.get("createdAt"), "from": item.get("from"), "to": item.get("to"), "value": item.get("value"), "status": item.get("status"), "blockNumber": item.get("blockNumber")})
-        for item in token_data.get("items", []):
-            if not isinstance(item, dict):
-                continue
-            tx_hash = item.get("txHash")
-            if isinstance(tx_hash, str) and re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
-                contract = item.get("tokenAddress") or item.get("contractAddress")
-                contract_key = contract.lower() if isinstance(contract, str) and re.fullmatch(r"0x[a-fA-F0-9]{40}", contract) else None
-                trusted = token_allowlist[chainId].get(contract_key) if contract_key else None
-                items.append({
-                    "kind": "token_transfer", "hash": tx_hash,
-                    "timestamp": item.get("timestamp") or item.get("createdAt"),
-                    "from": item.get("from"), "to": item.get("to"),
-                    "value": item.get("amount"),
-                    "token": trusted["symbol"] if trusted else (item.get("tokenSymbol") or item.get("tokenName") or "Unknown token"),
-                    "decimals": trusted["decimals"] if trusted else item.get("tokenDecimals"),
-                    "tokenAddress": contract if contract_key else None,
-                    "contractVerified": bool(trusted),
-                    "status": "indexed", "blockNumber": item.get("blockNumber")
-                })
-        items.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
-        return {"chainId": chainId, "address": address.lower(), "items": items[:limit], "source": "Routescan", "notice": "Indexed results can lag the chain and may omit unsupported transaction types. Verify final status in the block explorer."}
+        normalized = normalize_chain_history_items(chainId, address, tx_data.get("items", []), token_data.get("items", []), limit)
+        return normalized
     except httpx.TimeoutException:
         raise HTTPException(504, "Indexed history request timed out.")
     except httpx.HTTPError:
