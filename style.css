@@ -332,3 +332,5 @@ main,
 .wrap-actions{display:flex;gap:10px;flex-wrap:wrap}.receive-box input{width:100%;padding:11px;background:#0b1422;border:1px solid #334155;color:#e8eef8;border-radius:8px}
 
 .wc-backdrop{position:fixed;inset:0;background:rgba(2,8,18,.82);z-index:9999;display:grid;place-items:center;padding:20px}.wc-modal{position:relative;width:min(440px,100%);background:#111d30;border:1px solid #33445f;border-radius:16px;padding:28px;box-shadow:0 24px 90px rgba(0,0,0,.55);text-align:center}.wc-modal h2{font-size:22px}.wc-modal p,.wc-modal small{display:block;color:#9aabc3;line-height:1.6}.wc-qr{display:block;width:260px;height:260px;max-width:100%;margin:20px auto;background:white;padding:10px;border-radius:10px}.wc-qr-placeholder{height:260px;display:grid;place-items:center;color:#9aabc3}.wc-close{position:absolute;right:12px;top:8px;background:transparent;border:0;color:#dce7f5;font-size:28px}
+
+.receive-qr{display:block;width:220px;height:220px;max-width:100%;margin:14px auto;background:#fff;padding:10px;border-radius:10px}
