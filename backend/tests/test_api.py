@@ -36,7 +36,8 @@ def test_readiness_fails_closed_without_required_secrets(client, monkeypatch):
     checks = response.json()["checks"]
     assert checks["dex_provider_key_configured"] is False
     assert checks["explicit_cors_origins_configured"] is False
-    assert checks["paper_trading_disabled"] is True
+    assert checks["legacy_simulation_routes_retired"] is True
+    assert checks["mainnet_swaps_disabled_until_release_approval"] is True
     assert checks["persistent_app_secret_configured"] is False
 
 
@@ -54,10 +55,47 @@ def test_candle_endpoint_rejects_unsupported_parameters(client, params):
     assert response.status_code == 422
 
 
-def test_legacy_paper_routes_are_disabled_by_default(client):
-    response = client.post("/auth/login", json={"email": "nobody@example.com", "password": "not-a-real-password"})
-    assert response.status_code == 404
+@pytest.mark.parametrize("path,method", [
+    ("/auth/login", "post"),
+    ("/account/balances", "get"),
+    ("/trade/orders", "get"),
+    ("/sandbox/faucet", "post"),
+    ("/deposits/request", "post"),
+    ("/withdrawals/request", "post"),
+])
+def test_legacy_simulation_routes_are_permanently_retired(client, monkeypatch, path, method):
+    monkeypatch.setenv("ENABLE_PAPER_TRADING", "true")
+    response = getattr(client, method)(path, json={} if method == "post" else None)
+    assert response.status_code == 410
+    assert "retired" in response.json()["detail"].lower()
+
+
+def test_mainnet_swap_quotes_fail_closed_until_release_flag_is_set(client, monkeypatch):
+    monkeypatch.delenv("ENABLE_MAINNET_SWAPS", raising=False)
+    params = {
+        "chainId": 1,
+        "sellToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "buyToken": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "sellAmount": "10000000000000000",
+        "taker": "0x" + "1" * 40,
+    }
+    response = client.get("/dex/price", params=params)
+    assert response.status_code == 503
     assert "disabled" in response.json()["detail"].lower()
+
+
+def test_mainnet_swap_quote_gate_cannot_be_bypassed_by_paper_flag(client, monkeypatch):
+    monkeypatch.setenv("ENABLE_PAPER_TRADING", "true")
+    monkeypatch.setenv("ENABLE_MAINNET_SWAPS", "false")
+    with pytest.raises(main.HTTPException) as exc:
+        main.validate_dex_request(
+            1,
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+            "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "10000000000000000",
+            "0x" + "1" * 40,
+        )
+    assert exc.value.status_code == 503
 
 def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, monkeypatch):
     class FakeResponse:
@@ -134,81 +172,6 @@ def test_chain_history_rejects_unsupported_network(client):
     )
     assert response.status_code == 422
     assert "Ethereum and Base mainnet" in response.json()["detail"]
-
-def _paper_user(client, monkeypatch):
-    monkeypatch.setenv("ENABLE_PAPER_TRADING", "true")
-    registered = client.post(
-        "/auth/register",
-        json={"email": "paper-user@example.com", "password": "a-long-test-password-123"},
-    )
-    assert registered.status_code == 201
-    login = client.post(
-        "/auth/login",
-        json={"email": "paper-user@example.com", "password": "a-long-test-password-123"},
-    )
-    assert login.status_code == 200
-    return {"Authorization": "Bearer " + login.json()["access_token"]}
-
-
-def test_paper_order_rejects_assets_outside_supported_market_list(client, monkeypatch):
-    headers = _paper_user(client, monkeypatch)
-    response = client.post(
-        "/trade/orders",
-        headers={**headers, "Idempotency-Key": "unsupported-asset-key"},
-        json={"symbol": "DOGE", "side": "buy", "quote_amount": "25", "reference_price": "0.15"},
-    )
-    assert response.status_code == 422
-    assert "Unsupported paper-trading asset" in response.json()["detail"]
-
-
-def test_paper_order_is_idempotent_and_listed_once(client, monkeypatch):
-    headers = _paper_user(client, monkeypatch)
-    faucet = client.post(
-        "/sandbox/faucet",
-        headers={**headers, "Idempotency-Key": "paper-faucet-test-001"},
-        json={"amount": "100", "currency": "USD"},
-    )
-    assert faucet.status_code == 201
-
-    order_payload = {
-        "symbol": "BTC",
-        "side": "buy",
-        "quote_amount": "25",
-        "reference_price": "50000",
-    }
-    order_headers = {**headers, "Idempotency-Key": "paper-order-test-001"}
-    first = client.post("/trade/orders", headers=order_headers, json=order_payload)
-    second = client.post("/trade/orders", headers=order_headers, json=order_payload)
-
-    assert first.status_code == 201
-    assert second.status_code == 201
-    assert second.json()["id"] == first.json()["id"]
-    assert first.json()["mode"] == "PAPER_ONLY"
-    listed = client.get("/trade/orders", headers=headers)
-    assert listed.status_code == 200
-    assert len([order for order in listed.json()["orders"] if order["id"] == first.json()["id"]]) == 1
-
-
-def test_paper_order_idempotency_key_cannot_be_reused_for_different_order(client, monkeypatch):
-    headers = _paper_user(client, monkeypatch)
-    client.post(
-        "/sandbox/faucet",
-        headers={**headers, "Idempotency-Key": "paper-faucet-test-002"},
-        json={"amount": "100", "currency": "USD"},
-    )
-    key_headers = {**headers, "Idempotency-Key": "paper-order-conflict-001"}
-    first = client.post(
-        "/trade/orders",
-        headers=key_headers,
-        json={"symbol": "BTC", "side": "buy", "quote_amount": "20", "reference_price": "50000"},
-    )
-    conflict = client.post(
-        "/trade/orders",
-        headers=key_headers,
-        json={"symbol": "ETH", "side": "buy", "quote_amount": "20", "reference_price": "2500"},
-    )
-    assert first.status_code == 201
-    assert conflict.status_code == 409
 
 def test_candle_endpoint_supports_additional_real_exchange_intervals(client, monkeypatch):
     class FakeResponse:
@@ -287,117 +250,3 @@ def test_candle_endpoint_rejects_future_end_time(client):
     )
     assert response.status_code == 422
     assert "end_time" in response.json()["detail"]
-
-def test_order_history_supports_filters_and_pagination(client, monkeypatch):
-    headers = _paper_user(client, monkeypatch)
-    faucet = client.post(
-        "/sandbox/faucet",
-        headers={**headers, "Idempotency-Key": "order-history-faucet-01"},
-        json={"amount": "1000", "currency": "USD"},
-    )
-    assert faucet.status_code == 201
-
-    first = client.post(
-        "/trade/orders",
-        headers={**headers, "Idempotency-Key": "order-history-buy-001"},
-        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
-    )
-    second = client.post(
-        "/trade/orders",
-        headers={**headers, "Idempotency-Key": "order-history-buy-002"},
-        json={"symbol": "ETH", "side": "buy", "quote_amount": "25", "reference_price": "2500"},
-    )
-    assert first.status_code == 201
-    assert second.status_code == 201
-
-    page = client.get("/trade/orders", params={"limit": 1, "offset": 0}, headers=headers)
-    assert page.status_code == 200
-    assert page.json()["total"] == 2
-    assert len(page.json()["orders"]) == 1
-    assert page.json()["has_more"] is True
-    assert page.json()["mode"] == "PAPER_ONLY"
-
-    filtered = client.get(
-        "/trade/orders",
-        params={"symbol": "btc", "side": "BUY", "status": "FILLED"},
-        headers=headers,
-    )
-    assert filtered.status_code == 200
-    assert filtered.json()["total"] == 1
-    assert filtered.json()["orders"][0]["id"] == first.json()["id"]
-
-
-def test_order_detail_is_private_to_owning_user(client, monkeypatch):
-    owner_headers = _paper_user(client, monkeypatch)
-    client.post(
-        "/sandbox/faucet",
-        headers={**owner_headers, "Idempotency-Key": "order-detail-faucet-01"},
-        json={"amount": "100", "currency": "USD"},
-    )
-    order = client.post(
-        "/trade/orders",
-        headers={**owner_headers, "Idempotency-Key": "order-detail-buy-001"},
-        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
-    )
-    assert order.status_code == 201
-    detail = client.get("/trade/orders/" + order.json()["id"], headers=owner_headers)
-    assert detail.status_code == 200
-    assert detail.json()["order"]["id"] == order.json()["id"]
-    assert detail.json()["mode"] == "PAPER_ONLY"
-
-    other_registration = client.post(
-        "/auth/register",
-        json={"email": "second-order-user@example.com", "password": "a-long-test-password-456"},
-    )
-    assert other_registration.status_code == 201
-    other_login = client.post(
-        "/auth/login",
-        json={"email": "second-order-user@example.com", "password": "a-long-test-password-456"},
-    )
-    assert other_login.status_code == 200
-    other_headers = {"Authorization": "Bearer " + other_login.json()["access_token"]}
-    hidden = client.get("/trade/orders/" + order.json()["id"], headers=other_headers)
-    assert hidden.status_code == 404
-
-
-@pytest.mark.parametrize(
-    "params",
-    [
-        {"limit": 0},
-        {"limit": 101},
-        {"offset": -1},
-        {"symbol": "DOGE"},
-        {"side": "hold"},
-        {"status": "cancelled"},
-    ],
-)
-def test_order_history_rejects_invalid_filters(client, monkeypatch, params):
-    headers = _paper_user(client, monkeypatch)
-    response = client.get("/trade/orders", params=params, headers=headers)
-    assert response.status_code == 422
-
-def test_paper_sell_quantity_uses_gross_notional_and_fee_reduces_only_proceeds(client, monkeypatch):
-    headers = _paper_user(client, monkeypatch)
-    client.post(
-        "/sandbox/faucet",
-        headers={**headers, "Idempotency-Key": "sell-quantity-faucet-01"},
-        json={"amount": "100", "currency": "USD"},
-    )
-    bought = client.post(
-        "/trade/orders",
-        headers={**headers, "Idempotency-Key": "sell-quantity-buy-001"},
-        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
-    )
-    sold = client.post(
-        "/trade/orders",
-        headers={**headers, "Idempotency-Key": "sell-quantity-sell-001"},
-        json={"symbol": "BTC", "side": "sell", "quote_amount": "25", "reference_price": "50000"},
-    )
-    assert bought.status_code == 201
-    assert sold.status_code == 201
-    assert sold.json()["quantity"] == bought.json()["quantity"]
-    assert float(sold.json()["fee"]) > 0
-
-    balances = client.get("/account/balances", headers=headers).json()["balances"]
-    btc = next(item for item in balances if item["currency"] == "BTC")
-    assert float(btc["amount"]) == 0
