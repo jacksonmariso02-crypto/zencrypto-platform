@@ -28,7 +28,10 @@ Last updated: 2026-11-20
 - [x] Accept provider token decimals as bounded decimal strings and normalize hexadecimal log indexes for stable transfer-event IDs.
 - [x] Expose independent Routescan continuation cursors for native transactions and ERC-20 transfers; accept each cursor separately on subsequent requests.
 - [x] Return explicit per-stream has-more flags and mark every fetched page as incomplete until both cursors are exhausted.
-- [ ] Persist reconciled chain events and complete all cursor pages before treating indexed activity as a complete cost-basis ledger.
+- [x] Persist normalized chain events in SQLite with user/chain/wallet scoping and a unique event key for idempotent inserts.
+- [x] Persist independent transaction and ERC-20 continuation cursors so sync can resume after interruption.
+- [x] Add authenticated ledger read and sync endpoints; keep provider events explicitly indexed-unverified and do not claim wallet ownership or finality.
+- [ ] Verify wallet ownership with a signed challenge and reconcile provider events against on-chain receipts before using events in a cost-basis ledger.
 
 ### Live market charts
 - [x] Binance Spot OHLCV history with open/close times, base/quote volume, trade count, and forming/closed candle metadata.
