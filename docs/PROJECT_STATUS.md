@@ -92,6 +92,7 @@ Last updated: 2026-11-20
 - [x] Local wallet activity stores receipt block hashes, rechecks the 20 most recent confirmed transactions, and flags missing receipts or changed receipt block hashes as possible reorganizations.
 - [x] Local wallet activity is normalized on load and update: transaction hash, wallet address, chain ID, timestamp, and status are validated; duplicate hashes are removed and up to 200 records are retained per browser.
 - Add durable transaction indexing, reorg handling, confirmation/finality policy, and user-visible swap history.
+- [x] Paper-order history pagination prevents overlapping load-more calls, ignores stale page responses after a full refresh, and deduplicates rows by order ID.
 - Add provider rate limits, abuse controls, and API-key usage monitoring.
 
 ### Security and operations
