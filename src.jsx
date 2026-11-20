@@ -64,7 +64,9 @@ function MarketCandles({apiBase}){
   macdLineRef.current=ml;signalRef.current=sig;histRef.current=hist;
   const resize=()=>{
    if(host.current)chart.applyOptions({width:Math.max(320,Math.floor(host.current.getBoundingClientRect().width)),height:Math.max(260,Math.floor(host.current.getBoundingClientRect().height)||430)});
-   if(macdHost.current)mc.applyOptions({width:Math.max(320,Math.floor(macdHost.current.getBoundingClientRect().width)),height:Math.max(140,Math.floor(macdHost.current.getBoundingClientRect().height)||170)});\n   if(kdjHost.current)kc.applyOptions({width:Math.max(320,Math.floor(kdjHost.current.getBoundingClientRect().width)),height:Math.max(120,Math.floor(kdjHost.current.getBoundingClientRect().height)||150)});\n   if(rsiHost.current)rc.applyOptions({width:Math.max(320,Math.floor(rsiHost.current.getBoundingClientRect().width)),height:Math.max(120,Math.floor(rsiHost.current.getBoundingClientRect().height)||150)});
+   if(macdHost.current)mc.applyOptions({width:Math.max(320,Math.floor(macdHost.current.getBoundingClientRect().width)),height:Math.max(140,Math.floor(macdHost.current.getBoundingClientRect().height)||170)});
+   if(kdjHost.current)kc.applyOptions({width:Math.max(320,Math.floor(kdjHost.current.getBoundingClientRect().width)),height:Math.max(120,Math.floor(kdjHost.current.getBoundingClientRect().height)||150)});
+   if(rsiHost.current)rc.applyOptions({width:Math.max(320,Math.floor(rsiHost.current.getBoundingClientRect().width)),height:Math.max(120,Math.floor(rsiHost.current.getBoundingClientRect().height)||150)});
   };
   const observer=new ResizeObserver(resize);
   observer.observe(host.current);observer.observe(macdHost.current);observer.observe(kdjHost.current);observer.observe(rsiHost.current);
