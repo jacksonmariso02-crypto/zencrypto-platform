@@ -56,9 +56,16 @@ async def disable_legacy_paper_api_by_default(request, call_next):
         return JSONResponse(status_code=404, content={"detail": "Legacy paper-trading API is disabled. ZenCrypto wallet and DEX routes are separate."})
     return await call_next(request)
 
+configured_origins = [x.strip().rstrip("/") for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
+# Always allow the published GitHub Pages origin; deployment env overrides must not
+# accidentally disable browser access to the public frontend.
+allowed_origins = sorted(set(configured_origins + [
+    "https://jacksonmariso02-crypto.github.io",
+    "http://localhost:5173",
+]))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173,https://jacksonmariso02-crypto.github.io").split(",") if x.strip()],
+    allow_origins=allowed_origins,
     allow_credentials=False, allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"]
 )
