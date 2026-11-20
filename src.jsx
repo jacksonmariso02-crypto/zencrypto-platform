@@ -61,39 +61,49 @@ async function fetchMarketCandles(apiBase,params,parentSignal){
 }
 
 
+
 function MultiCoinKlinePanel({apiBase,interval,onSelect}){
  const [series,setSeries]=useState({});
- const [feedStatus,setFeedStatus]=useState("Loading");
- const [updatedAt,setUpdatedAt]=useState(0);
- const updatedAtRef=useRef(0);
+ const [socketStatus,setSocketStatus]=useState("Connecting");
+ const [clock,setClock]=useState(Date.now());
  useEffect(()=>{
-  let disposed=false,socket=null,retryTimer=null,handshakeTimer=null,staleTimer=null,retryDelay=1000;
+  let disposed=false,socket=null,retryTimer=null,handshakeTimer=null,retryDelay=1000;
   const streams=CHART_SYMBOLS.map(symbol=>symbol.toLowerCase()+"@kline_"+interval).join("/");
-  const mergeRows=(symbol,rows)=>{
+  const mergeRows=(symbol,rows,receivedAt=0)=>{
    if(disposed)return;
    setSeries(prev=>{
-    const map=new Map((prev[symbol]||[]).map(point=>[point.time,point]));
+    const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
+    const map=new Map(current.points.map(point=>[point.time,point]));
     rows.forEach(point=>map.set(point.time,point));
-    const next=[...map.values()].sort((a,b)=>a.time-b.time).slice(-48);
-    return {...prev,[symbol]:next};
+    return {...prev,[symbol]:{
+     points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-48),
+     updatedAt:receivedAt||current.updatedAt,
+     historyStatus:current.historyStatus
+    }};
    });
   };
   const loadHistory=async()=>{
    const results=await Promise.allSettled(CHART_SYMBOLS.map(async symbol=>{
     const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:48});
-    const rows=data.candles.map(row=>{
+    const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
      const raw=Number(row.time);
-     return {time:Math.floor(raw>1e12?raw/1000:raw),close:Number(row.close)};
-    }).filter(row=>Number.isFinite(row.time)&&row.time>0&&Number.isFinite(row.close)&&row.close>0);
-    mergeRows(symbol,rows);
+     return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close)};
+    }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close));
+    setSeries(prev=>{
+     const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
+     const map=new Map(rows.map(point=>[point.time,point]));
+     current.points.forEach(point=>map.set(point.time,point));
+     return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-48),historyStatus:rows.length?"Ready":"Empty"}};
+    });
    }));
    if(disposed)return;
-   const failed=results.filter(x=>x.status==="rejected").length;
-   if(!updatedAtRef.current)setFeedStatus(failed===CHART_SYMBOLS.length?"Unavailable":failed?"Partial":"Connecting");
+   const failed=results.filter(result=>result.status==="rejected").length;
+   if(failed===CHART_SYMBOLS.length)setSocketStatus("History unavailable");
+   else if(failed)setSocketStatus("Partial history");
   };
   const schedule=()=>{
    if(disposed)return;
-   setFeedStatus("Reconnecting");
+   setSocketStatus("Reconnecting");
    retryTimer=window.setTimeout(connect,retryDelay);
    retryDelay=Math.min(retryDelay*2,30000);
   };
@@ -103,7 +113,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
    catch{schedule();return;}
    handshakeTimer=window.setTimeout(()=>{
     if(!disposed&&socket?.readyState===0){
-     setFeedStatus("Reconnecting");
+     setSocketStatus("Reconnecting");
      try{socket.close();}catch{schedule();}
     }
    },10000);
@@ -112,66 +122,64 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
     if(handshakeTimer)window.clearTimeout(handshakeTimer);
     handshakeTimer=null;
     retryDelay=1000;
-    setFeedStatus("Connecting");
+    setSocketStatus("Connected · awaiting symbols");
    };
    socket.onmessage=event=>{
     if(disposed)return;
     try{
      const message=JSON.parse(event.data),k=message?.data?.k;
      if(!k||!CHART_SYMBOLS.includes(k.s))return;
-     const time=Math.floor(Number(k.t)/1000),close=Number(k.c);
-     if(!Number.isFinite(time)||time<=0||!Number.isFinite(close)||close<=0)return;
-     mergeRows(k.s,[{time,close}]);
-     updatedAtRef.current=Date.now();
-     setUpdatedAt(updatedAtRef.current);
-     setFeedStatus("Live");
-    }catch{/* Ignore malformed market frames without interrupting other symbols. */}
+     const point={time:Math.floor(Number(k.t)/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c)};
+     if(!Number.isFinite(point.time)||point.time<=0||![point.open,point.high,point.low,point.close].every(Number.isFinite)||point.low<=0||point.high<Math.max(point.open,point.close)||point.low>Math.min(point.open,point.close))return;
+     mergeRows(k.s,[point],Date.now());
+     setSocketStatus("Live");
+    }catch{/* Ignore malformed frames and continue processing the stream. */}
    };
-   socket.onerror=()=>{if(!disposed){setFeedStatus("Reconnecting");try{socket.close();}catch{schedule();}}};
+   socket.onerror=()=>{if(!disposed){setSocketStatus("Reconnecting");try{socket.close();}catch{schedule();}}};
    socket.onclose=()=>{
     if(handshakeTimer)window.clearTimeout(handshakeTimer);
     handshakeTimer=null;
     if(!disposed)schedule();
    };
   };
-  loadHistory().catch(()=>{if(!disposed)setFeedStatus("Unavailable");});
+  loadHistory().catch(()=>{if(!disposed)setSocketStatus("History unavailable");});
   connect();
-  staleTimer=window.setInterval(()=>{
-   if(updatedAtRef.current&&Date.now()-updatedAtRef.current>30000)setFeedStatus("Stale");
-  },5000);
+  const timer=window.setInterval(()=>setClock(Date.now()),2000);
   return()=>{
    disposed=true;
    if(retryTimer)window.clearTimeout(retryTimer);
    if(handshakeTimer)window.clearTimeout(handshakeTimer);
-   if(staleTimer)window.clearInterval(staleTimer);
-   if(socket){
-    socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;
-    try{socket.close();}catch{}
-   }
+   window.clearInterval(timer);
+   if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}
   };
  },[apiBase,interval]);
- const statusClass=feedStatus==="Live"?"healthy":feedStatus==="Stale"?"stale":feedStatus==="Reconnecting"?"reconnecting":feedStatus==="Unavailable"?"unavailable":"waiting";
+ const rows=CHART_SYMBOLS.map(symbol=>{
+  const item=series[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
+  const age=item.updatedAt?clock-item.updatedAt:Infinity;
+  const status=item.updatedAt?(age>30000?"Stale":"Live"):item.historyStatus==="Empty"?"No history":item.historyStatus==="Error"?"History error":"Waiting";
+  return {symbol,...item,status,age};
+ });
+ const counts={live:rows.filter(x=>x.status==="Live").length,stale:rows.filter(x=>x.status==="Stale").length,waiting:rows.filter(x=>["Waiting","No history","History error"].includes(x.status)).length};
  return <section className="multi-kline-panel">
   <div className="multi-kline-heading">
-   <div><strong>10-COIN LIVE K-LINES</strong><small>{interval} interval · 48 candles per symbol</small></div>
-   <span className="multi-kline-status"><i className={"health-dot "+statusClass}></i>{feedStatus}{updatedAt?" · "+new Date(updatedAt).toLocaleTimeString("en-US",{hour12:false}):""}</span>
+   <div><strong>10-COIN LIVE K-LINES</strong><small>{interval} interval · up to 48 OHLC candles per symbol</small></div>
+   <span className="multi-kline-status">{counts.live} Live · {counts.stale} Stale · {counts.waiting} Waiting · {socketStatus}</span>
   </div>
   <div className="multi-kline-grid">
-   {CHART_SYMBOLS.map(symbol=>{
-    const points=series[symbol]||[];
-    const first=points[0]?.close||0,last=points[points.length-1]?.close||0;
-    const rising=last>=first;
-    return <button type="button" className="multi-kline-card" key={symbol} onClick={()=>onSelect(symbol)}>
-     <span className="multi-kline-card-top"><strong>{symbol.replace("USDT","")}</strong><small>{points.length?points.length+" bars":"Loading"}</small></span>
+   {rows.map(item=>{
+    const points=item.points,first=points[0]?.close||0,last=points[points.length-1]?.close||0,rising=last>=first;
+    const statusClass=item.status==="Live"?"healthy":item.status==="Stale"?"stale":item.status==="History error"?"unavailable":"waiting";
+    return <button type="button" className="multi-kline-card" key={item.symbol} onClick={()=>onSelect(item.symbol)}>
+     <span className="multi-kline-card-top"><strong>{item.symbol.replace("USDT","")}</strong><small><i className={"health-dot "+statusClass}></i> {item.status}</small></span>
      <span className="multi-kline-price">{last?"$"+last.toLocaleString("en-US",{maximumFractionDigits:6}):"—"}</span>
      <span className="multi-kline-spark">
       {points.length>1?<ResponsiveContainer width="100%" height="100%"><LineChart data={points}><Line type="monotone" dataKey="close" stroke={rising?"#27d6a2":"#fa7185"} strokeWidth={1.7} dot={false} isAnimationActive={false}/></LineChart></ResponsiveContainer>:<span className="multi-kline-empty">Waiting for candles</span>}
      </span>
-     <span className={"multi-kline-change "+(rising?"positive":"negative")}>{first&&last?((last-first)/first*100).toFixed(2)+"%":"Waiting"}</span>
+     <span className={"multi-kline-change "+(rising?"positive":"negative")}>{first&&last?((last-first)/first*100).toFixed(2)+"%":item.historyStatus}</span>
     </button>;
    })}
   </div>
-  <p className="multi-kline-foot">Select a coin to open its full candlestick chart. Public exchange market data only.</p>
+  <p className="multi-kline-foot">Each coin has its own candle history and last-update health. Select a coin to open the full candlestick chart. Public exchange data only.</p>
  </section>;
 }
 
