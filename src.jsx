@@ -91,7 +91,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
       const raw=Number(row.time);
       return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
-     }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close)&&[row.volume,row.quoteVolume,row.trades].every(Number.isFinite)&&row.volume>=0&&row.quoteVolume>=0&&row.trades>=0);
+     }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close)&&[row.volume,row.quoteVolume,row.trades].every(Number.isFinite)&&row.volume>=0&&row.quoteVolume>=0&&row.trades>=0).sort((a,b)=>a.time-b.time);
      let merged=rows;
      if(step>0&&rows.length>1){
       const gaps=[];
