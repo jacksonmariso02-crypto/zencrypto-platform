@@ -549,3 +549,7 @@ main,
 .large-trade-summary strong{font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .large-trade-summary small{font-size:10px;color:#8294ad}
 @media(max-width:600px){.large-trade-summary{grid-template-columns:1fr}}
+
+.market-rank-controls{display:flex;gap:6px;margin:8px 0 12px}
+.market-rank-controls button{border:1px solid #34465f;background:#111d2e;color:#9aabc3;border-radius:7px;padding:6px 10px;font-size:11px;cursor:pointer}
+.market-rank-controls button.active{border-color:#27d6a2;color:#27d6a2;background:rgba(39,214,162,.08)}
