@@ -464,17 +464,74 @@ def balances(u=Depends(require_user)):
             for r in rows], "mode": "PAPER_ONLY"}
 
 @app.get("/trade/orders")
-def list_orders(u=Depends(require_user)):
+def list_orders(
+    limit: int = 50,
+    offset: int = 0,
+    symbol: str | None = None,
+    side: str | None = None,
+    status: str | None = None,
+    u=Depends(require_user),
+):
+    """Paginated, user-scoped paper order history. No live exchange orders are returned."""
+    if limit < 1 or limit > 100:
+        raise HTTPException(422, "Order history limit must be between 1 and 100.")
+    if offset < 0 or offset > 100000:
+        raise HTTPException(422, "Order history offset must be between 0 and 100000.")
+    clauses = ["user_id=?"]
+    params = [u["id"]]
+    if symbol is not None:
+        normalized_symbol = symbol.upper()
+        if normalized_symbol not in {"BTC", "ETH", "SOL", "BNB", "XRP"}:
+            raise HTTPException(422, "Unsupported order-history asset.")
+        clauses.append("symbol=?")
+        params.append(normalized_symbol)
+    if side is not None:
+        normalized_side = side.lower()
+        if normalized_side not in {"buy", "sell"}:
+            raise HTTPException(422, "Order side must be buy or sell.")
+        clauses.append("side=?")
+        params.append(normalized_side)
+    if status is not None:
+        normalized_status = status.lower()
+        if normalized_status not in {"filled"}:
+            raise HTTPException(422, "Unsupported paper order status filter.")
+        clauses.append("status=?")
+        params.append(normalized_status)
+    where = " AND ".join(clauses)
     with db() as c:
-        rows = c.execute("""SELECT id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at
-                            FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100""",
-                         (u["id"],)).fetchall()
-    return {"orders": [{"id": r["id"], "symbol": r["symbol"], "side": r["side"],
+        total = c.execute("SELECT COUNT(*) FROM orders WHERE " + where, params).fetchone()[0]
+        rows = c.execute(
+            """SELECT id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at
+               FROM orders WHERE """ + where + " ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+    orders = [{"id": r["id"], "symbol": r["symbol"], "side": r["side"],
             "quantity": r["quantity"], "price": r["price"],
             "notional": format(Decimal(r["notional_minor"])/100, ".2f"),
             "fee": format(Decimal(r["fee_minor"])/100, ".2f"),
-            "status": r["status"], "created_at": r["created_at"]} for r in rows],
-            "mode": "PAPER_ONLY"}
+            "status": r["status"], "created_at": r["created_at"]} for r in rows]
+    return {"orders": orders, "total": total, "limit": limit, "offset": offset,
+            "has_more": offset + len(orders) < total, "mode": "PAPER_ONLY"}
+
+
+@app.get("/trade/orders/{order_id}")
+def get_order(order_id: str, u=Depends(require_user)):
+    """Return one paper order only to its owning account."""
+    with db() as c:
+        row = c.execute(
+            """SELECT id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at
+               FROM orders WHERE id=? AND user_id=?""",
+            (order_id, u["id"]),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Order not found.")
+    return {"order": {
+        "id": row["id"], "symbol": row["symbol"], "side": row["side"],
+        "quantity": row["quantity"], "price": row["price"],
+        "notional": format(Decimal(row["notional_minor"])/100, ".2f"),
+        "fee": format(Decimal(row["fee_minor"])/100, ".2f"),
+        "status": row["status"], "created_at": row["created_at"],
+    }, "mode": "PAPER_ONLY"}
 
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
