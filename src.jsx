@@ -281,7 +281,7 @@ function MarketCandles({apiBase}){
   setOlderBusy(true);
   try{
    const data=await fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,end_time:endTime});
-   const older=data.candles.map(x=>({time:Math.floor(Number(x.time)),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)})).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume].every(Number.isFinite)&&x.low>0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
+   const older=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
    const merged=[...new Map([...older,...candles].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()];
    const added=merged.length-candles.length;
    if(added<=0){setHasMoreHistory(false);return;}
