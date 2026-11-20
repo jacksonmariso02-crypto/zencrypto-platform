@@ -943,6 +943,14 @@ def validate_dex_quote_response(data: dict, *, chain_id: int, sell_token: str, b
         raise HTTPException(502, "Quote provider did not return a transaction.")
     if not isinstance(tx.get("from"), str) or tx["from"].lower() != taker.lower():
         raise HTTPException(502, "Quote taker does not match the connected wallet.")
+    tx_chain_id = tx.get("chainId")
+    if tx_chain_id is not None:
+        try:
+            parsed_chain_id = int(tx_chain_id, 16) if isinstance(tx_chain_id, str) and tx_chain_id.lower().startswith("0x") else int(tx_chain_id)
+        except (TypeError, ValueError):
+            raise HTTPException(502, "Quote contains an invalid transaction chain ID.")
+        if parsed_chain_id != chain_id:
+            raise HTTPException(502, "Quote transaction chain does not match the requested network.")
     target = tx.get("to")
     if not isinstance(target, str) or len(target) != 42 or not target.startswith("0x") or any(c not in "0123456789abcdefABCDEF" for c in target[2:]):
         raise HTTPException(502, "Quote contains an invalid transaction target.")
