@@ -238,7 +238,7 @@ class Kyc(BaseModel):
 @app.get("/market/candles")
 async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 300, end_time: int | None = None):
     """Real Binance Spot OHLCV candles. This endpoint is market data, never an execution quote."""
-    allowed_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
+    allowed_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "LTCUSDT", "LINKUSDT", "DOTUSDT"}
     allowed_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"}
     symbol = symbol.upper()
     if symbol not in allowed_symbols:
