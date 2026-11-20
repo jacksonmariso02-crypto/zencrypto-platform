@@ -253,3 +253,37 @@ def test_candle_endpoint_rejects_invalid_ohlcv_rows(client, monkeypatch):
     response = client.get("/market/candles", params={"symbol": "BTCUSDT", "interval": "1h", "limit": 100})
     assert response.status_code == 502
     assert "fewer than two valid candles" in response.json()["detail"]
+
+def test_candle_endpoint_supports_end_time_for_historical_pages(client, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return [
+                [1699992800000, "100", "110", "95", "105", "12.5", 1699996399999, "1250", 42],
+                [1699996400000, "105", "112", "101", "108", "8.5", 1699999999999, "918", 31],
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            assert params["endTime"] == 1700000000000
+            return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get(
+        "/market/candles",
+        params={"symbol": "BTCUSDT", "interval": "1h", "limit": 100, "end_time": 1700000000000},
+    )
+    assert response.status_code == 200
+    assert response.json()["candles"][0]["time"] < 1700000000
+
+
+def test_candle_endpoint_rejects_future_end_time(client):
+    response = client.get(
+        "/market/candles",
+        params={"symbol": "BTCUSDT", "interval": "1h", "limit": 100, "end_time": 9999999999999},
+    )
+    assert response.status_code == 422
+    assert "end_time" in response.json()["detail"]
