@@ -209,7 +209,7 @@ function MarketCandles({apiBase}){
   let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
   setRecentTrades([]);
   setTradeStatus("Connecting");
-  const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
+  const schedule=()=>{if(disposed)return;retryAttempts+=1;setTickerSocketStatus(retryAttempts>=5?"Unavailable":"Reconnecting");retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
   const connect=()=>{
    if(disposed)return;
    try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@trade");}
@@ -233,7 +233,7 @@ function MarketCandles({apiBase}){
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
  useEffect(()=>{
-  let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
+  let socket=null,disposed=false,retryTimer=null,retryDelay=1000,retryAttempts=0;
   // Subscribe to every supported chart symbol so the full market watchlist
   // always has live quotes; saved watchlist stars remain a separate preference.
   const symbols=CHART_SYMBOLS;
@@ -252,6 +252,7 @@ function MarketCandles({apiBase}){
      if(!d?.s||!symbols.includes(d.s))return;
      const symbol=d.s,price=Number(d.c),change=Number(d.P),quoteVolume=Number(d.q),baseVolume=Number(d.v),high24h=Number(d.h),low24h=Number(d.l),tradeCount=Number(d.n);
      if(!Number.isFinite(price)||price<=0||!Number.isFinite(change)||!Number.isFinite(quoteVolume)||quoteVolume<0||!Number.isFinite(baseVolume)||baseVolume<0||!Number.isFinite(high24h)||!Number.isFinite(low24h)||high24h<low24h||low24h<=0)return;
+     retryAttempts=0;
      setTickerSocketStatus("Live");
      setWatchQuotes(prev=>({...prev,[symbol]:{price,change,quoteVolume,baseVolume,high24h,low24h,tradeCount,updatedAt:Number(d.E)||Date.now()}}));
      if(symbol===selectedPairRef.current){
@@ -279,8 +280,8 @@ function MarketCandles({apiBase}){
      });
     }catch{/* Ignore malformed ticker frames. */}
    };
-   socket.onerror=()=>{if(!disposed){setLiveStatus("Reconnecting");try{socket?.close();}catch{}}};
-   socket.onclose=()=>{if(!disposed){setLiveStatus("Reconnecting");schedule();}};
+   
+   
    socket.onerror=()=>{if(!disposed){setTickerSocketStatus("Reconnecting");try{socket?.close();}catch{}}};
    socket.onclose=()=>{if(!disposed){setTickerSocketStatus("Reconnecting");schedule();}};
   };
