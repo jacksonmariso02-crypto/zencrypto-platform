@@ -106,6 +106,8 @@ def normalize_chain_history_items(chain_id, address, tx_items, token_items, limi
         contract_key = contract.lower()
         trusted = TOKEN_ALLOWLIST[chain_id].get(contract_key)
         decimals = trusted["decimals"] if trusted else row.get("tokenDecimals")
+        if isinstance(decimals, str) and decimals.isascii() and decimals.isdigit():
+            decimals = int(decimals)
         if isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 36:
             decimals = None
         amount = row.get("amount")
@@ -116,6 +118,11 @@ def normalize_chain_history_items(chain_id, address, tx_items, token_items, limi
         timestamp = _timestamp(row.get("timestamp") or row.get("createdAt"))
         block_number = _timestamp(row.get("blockNumber"))
         log_index = row.get("logIndex", row.get("transferIndex", index))
+        if isinstance(log_index, str) and log_index.startswith(("0x", "0X")):
+            try:
+                log_index = str(int(log_index, 16))
+            except ValueError:
+                log_index = index
         if isinstance(log_index, bool) or not isinstance(log_index, (str, int)) or not str(log_index).isdigit():
             log_index = index
         event_id = f"{tx_hash.lower()}:erc20:{log_index}"
