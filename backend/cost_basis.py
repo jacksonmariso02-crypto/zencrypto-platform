@@ -115,3 +115,68 @@ def calculate_fifo_cost_basis(trades: Iterable[dict]):
     return {"method": "FIFO", "quote_currency": "trade_quote_currency",
             "trade_count": len(normalized), "complete_sequence_required": True,
             "account_wide_pnl_available": False, "symbols": summaries}
+
+
+
+def value_open_positions(cost_basis_result: dict, mark_prices: dict, *, now: int, max_age_seconds: int = 60):
+    """Value FIFO open lots only when a timestamped mark price is fresh.
+
+    mark_prices maps each symbol to {"price": decimal-like, "as_of": unix_seconds}.
+    This is an indicative mark-to-market estimate, not an executable quote or
+    account-wide P&L. Prices must use the same quote currency as trade costs.
+    """
+    if not isinstance(cost_basis_result, dict) or not isinstance(cost_basis_result.get("symbols"), dict):
+        raise ValueError("A valid FIFO cost-basis result is required.")
+    if not isinstance(mark_prices, dict):
+        raise ValueError("mark_prices must be an object.")
+    if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+        raise ValueError("now must be a non-negative integer timestamp.")
+    if isinstance(max_age_seconds, bool) or not isinstance(max_age_seconds, int) or max_age_seconds < 0:
+        raise ValueError("max_age_seconds must be a non-negative integer.")
+
+    positions = {}
+    for symbol, position in cost_basis_result["symbols"].items():
+        quantity = _decimal(position.get("open_quantity", "0"), "open_quantity", allow_zero=True)
+        cost_basis = _decimal(position.get("open_cost_basis", "0"), "open_cost_basis", allow_zero=True)
+        if quantity == 0:
+            positions[symbol] = {
+                "status": "no_open_position", "open_quantity": "0",
+                "open_cost_basis": str(cost_basis), "market_value": "0",
+                "unrealized_pnl": "0",
+            }
+            continue
+        quote = mark_prices.get(symbol)
+        if not isinstance(quote, dict):
+            positions[symbol] = {"status": "unavailable", "reason": "missing_mark_price"}
+            continue
+        price = _decimal(quote.get("price"), "mark_price")
+        as_of = quote.get("as_of")
+        if isinstance(as_of, bool) or not isinstance(as_of, int) or as_of < 0:
+            positions[symbol] = {"status": "unavailable", "reason": "invalid_price_timestamp"}
+            continue
+        age = now - as_of
+        if age < 0:
+            positions[symbol] = {"status": "unavailable", "reason": "future_dated_price"}
+            continue
+        if age > max_age_seconds:
+            positions[symbol] = {"status": "unavailable", "reason": "stale_mark_price", "price_age_seconds": age}
+            continue
+        market_value = quantity * price
+        positions[symbol] = {
+            "status": "estimated",
+            "open_quantity": str(quantity),
+            "open_cost_basis": str(cost_basis),
+            "mark_price": str(price),
+            "mark_price_as_of": as_of,
+            "price_age_seconds": age,
+            "market_value": str(market_value),
+            "unrealized_pnl": str(market_value - cost_basis),
+            "valuation_type": "indicative_mark_to_market",
+        }
+    return {
+        "method": "FIFO",
+        "valuation_as_of": now,
+        "max_price_age_seconds": max_age_seconds,
+        "account_wide_pnl_available": False,
+        "positions": positions,
+    }
