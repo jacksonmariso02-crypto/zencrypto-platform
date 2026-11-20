@@ -224,7 +224,7 @@ class Kyc(BaseModel):
 
 
 @app.get("/market/candles")
-async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 300):
+async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 300, end_time: int | None = None):
     """Real Binance Spot OHLCV candles. This endpoint is market data, never an execution quote."""
     allowed_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
     allowed_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"}
@@ -235,11 +235,16 @@ async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: i
         raise HTTPException(422, "Unsupported Binance Spot candle interval.")
     if limit < 50 or limit > 1000:
         raise HTTPException(422, "Candle limit must be between 50 and 1000.")
+    if end_time is not None and (end_time < 1 or end_time > int(time.time() * 1000)):
+        raise HTTPException(422, "end_time must be a valid past Unix timestamp in milliseconds.")
+    query_params = {"symbol": symbol, "interval": interval, "limit": limit}
+    if end_time is not None:
+        query_params["endTime"] = end_time
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(
                 "https://api.binance.com/api/v3/klines",
-                params={"symbol": symbol, "interval": interval, "limit": limit},
+                params=query_params,
                 headers={"Accept": "application/json"},
             )
         if response.status_code >= 400:
