@@ -551,7 +551,9 @@ def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, m
         fee_minor = max(1, int((Decimal(notional_minor) * Decimal("0.001")).quantize(Decimal("1"), rounding=ROUND_DOWN)))
     else:
         raise HTTPException(422, "Order amount is too small.")
-    qty = (Decimal(notional_minor - (fee_minor if body.side == "sell" else 0)) / 100 / price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    # quote_amount is gross trade notional on both sides. Sell fees reduce USD proceeds,
+    # not the asset quantity sold; otherwise the ledger would understate the sale size.
+    qty = (Decimal(notional_minor) / 100 / price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
     asset_minor_units = int(qty * Decimal(100000000))
     if asset_minor_units <= 0:
         raise HTTPException(422, "Order amount is too small at this price.")
