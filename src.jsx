@@ -100,7 +100,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      setSeries(prev=>({...prev,[symbol]:{...(prev[symbol]||{points:[],updatedAt:0}),historyStatus:"Error"}}));
      throw error;
     }
-   })));
+   }));
    if(disposed)return;
    const failed=results.filter(result=>result.status==="rejected").length;
    if(failed===CHART_SYMBOLS.length)setSocketStatus("History unavailable");
