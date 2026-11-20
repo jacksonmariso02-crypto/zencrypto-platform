@@ -1,0 +1,196 @@
+import os
+import hmac
+from decimal import Decimal
+from typing import Literal
+
+import ccxt
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+APP_NAME = "ZenCrypto Exchange Connector"
+EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
+API_KEY = os.getenv("EXCHANGE_API_KEY", "")
+API_SECRET = os.getenv("EXCHANGE_API_SECRET", "")
+ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
+SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
+LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
+ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://jacksonmariso02-crypto.github.io"
+).split(",") if x.strip()]
+
+app = FastAPI(title=APP_NAME, version="0.1.0", docs_url="/docs")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+def exchange_client(private: bool = False):
+    if EXCHANGE_ID != "binance":
+        raise HTTPException(503, "Only Binance Spot is configured in this first connector.")
+    config = {"enableRateLimit": True, "options": {"defaultType": "spot"}}
+    if private:
+        if not API_KEY or not API_SECRET:
+            raise HTTPException(503, "Exchange API credentials are not configured on the server.")
+        config.update({"apiKey": API_KEY, "secret": API_SECRET})
+    client = ccxt.binance(config)
+    if SANDBOX:
+        client.set_sandbox_mode(True)
+    return client
+
+def require_admin(authorization: str | None):
+    if not ADMIN_TOKEN:
+        raise HTTPException(503, "ZENCRYPTO_ADMIN_TOKEN is not configured.")
+    supplied = (authorization or "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(supplied, ADMIN_TOKEN):
+        raise HTTPException(401, "Unauthorized.")
+    
+def normalize_symbol(symbol: str) -> str:
+    value = symbol.upper().replace("-", "/")
+    if "/" not in value and value.endswith("USDT"):
+        value = value[:-4] + "/USDT"
+    if "/" not in value:
+        raise HTTPException(400, "Use a spot symbol such as BTC/USDT.")
+    return value
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "service": APP_NAME,
+        "exchange": EXCHANGE_ID,
+        "sandbox": SANDBOX,
+        "live_trading_enabled": LIVE_TRADING_ENABLED,
+        "credentials_configured": bool(API_KEY and API_SECRET),
+    }
+
+@app.get("/api/v1/markets/{symbol}/ticker")
+async def ticker(symbol: str):
+    client = exchange_client()
+    try:
+        return await run_in_threadpool(client.fetch_ticker, normalize_symbol(symbol))
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange market-data error: {exc}") from exc
+    finally:
+        client.close()
+
+@app.get("/api/v1/markets/{symbol}/orderbook")
+async def orderbook(symbol: str, limit: int = 20):
+    if limit not in (5, 10, 20, 50, 100):
+        raise HTTPException(400, "limit must be 5, 10, 20, 50 or 100.")
+    client = exchange_client()
+    try:
+        return await run_in_threadpool(client.fetch_order_book, normalize_symbol(symbol), limit)
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange order-book error: {exc}") from exc
+    finally:
+        client.close()
+
+@app.get("/api/v1/markets/{symbol}/trades")
+async def trades(symbol: str, limit: int = 50):
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    client = exchange_client()
+    try:
+        return await run_in_threadpool(client.fetch_trades, normalize_symbol(symbol), None, limit)
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange trades error: {exc}") from exc
+    finally:
+        client.close()
+
+@app.get("/api/v1/markets/{symbol}/candles")
+async def candles(symbol: str, timeframe: str = "1h", limit: int = 100):
+    allowed = {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
+    if timeframe not in allowed:
+        raise HTTPException(400, "Unsupported candle timeframe.")
+    if not 1 <= limit <= 1000:
+        raise HTTPException(400, "limit must be between 1 and 1000.")
+    client = exchange_client()
+    try:
+        rows = await run_in_threadpool(
+            client.fetch_ohlcv, normalize_symbol(symbol), timeframe, None, limit
+        )
+        return [
+            {"timestamp": r[0], "open": r[1], "high": r[2], "low": r[3],
+             "close": r[4], "volume": r[5]}
+            for r in rows
+        ]
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange candle error: {exc}") from exc
+    finally:
+        client.close()
+
+@app.get("/api/v1/account/balance")
+async def balance(authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    client = exchange_client(private=True)
+    try:
+        return await run_in_threadpool(client.fetch_balance)
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange account error: {exc}") from exc
+    finally:
+        client.close()
+
+class OrderRequest(BaseModel):
+    symbol: str = Field(min_length=5, max_length=24)
+    side: Literal["buy", "sell"]
+    type: Literal["limit", "market"]
+    amount: Decimal = Field(gt=0)
+    price: Decimal | None = Field(default=None, gt=0)
+
+@app.post("/api/v1/orders")
+async def create_order(body: OrderRequest, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    if body.type == "limit" and body.price is None:
+        raise HTTPException(400, "A limit order requires a price.")
+    if body.type == "market" and body.price is not None:
+        raise HTTPException(400, "Do not send a price with a market order.")
+    if not SANDBOX and not LIVE_TRADING_ENABLED:
+        raise HTTPException(403, "Live trading is disabled by server configuration.")
+    client = exchange_client(private=True)
+    try:
+        markets = await run_in_threadpool(client.load_markets)
+        symbol = normalize_symbol(body.symbol)
+        if symbol not in markets or not markets[symbol].get("spot"):
+            raise HTTPException(400, "This symbol is not an available spot market.")
+        amount = float(body.amount)
+        price = float(body.price) if body.price is not None else None
+        order = await run_in_threadpool(
+            client.create_order, symbol, body.type, body.side, amount, price
+        )
+        return order
+    except HTTPException:
+        raise
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange order rejected: {exc}") from exc
+    finally:
+        client.close()
+
+@app.get("/api/v1/orders")
+async def list_orders(symbol: str | None = None, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    client = exchange_client(private=True)
+    try:
+        return await run_in_threadpool(
+            client.fetch_open_orders, normalize_symbol(symbol) if symbol else None
+        )
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange order query error: {exc}") from exc
+    finally:
+        client.close()
+
+@app.delete("/api/v1/orders/{order_id}")
+async def cancel_order(order_id: str, symbol: str, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    client = exchange_client(private=True)
+    try:
+        return await run_in_threadpool(client.cancel_order, order_id, normalize_symbol(symbol))
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange cancel error: {exc}") from exc
+    finally:
+        client.close()
