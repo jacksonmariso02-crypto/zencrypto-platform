@@ -411,8 +411,10 @@ async def sync_chain_ledger(body: ChainLedgerSyncRequest, u=Depends(require_user
             "SELECT * FROM chain_wallet_sync WHERE user_id=? AND chain_id=? AND address=?",
             (u["id"], body.chainId, address),
         ).fetchone()
-    tx_next = state["tx_next"] if state and not state["tx_exhausted"] else None
-    token_next = state["token_next"] if state and not state["token_exhausted"] else None
+    tx_done = bool(state and state["tx_exhausted"])
+    token_done = bool(state and state["token_exhausted"])
+    tx_next = state["tx_next"] if state and not tx_done else None
+    token_next = state["token_next"] if state and not token_done else None
     if state and state["tx_exhausted"] and state["token_exhausted"]:
         return {"chainId": body.chainId, "address": address, "inserted": 0,
                 "pagination": {"hasMoreTransactions": False, "hasMoreTokenTransfers": False},
@@ -425,18 +427,20 @@ async def sync_chain_ledger(body: ChainLedgerSyncRequest, u=Depends(require_user
         headers["apikey"] = api_key
     try:
         async with httpx.AsyncClient(timeout=18.0) as client:
-            tx_response, token_response = await client.get(
+            tx_response = None if tx_done else await client.get(
                 base + "/transactions",
                 params={"categories": "evm_tx", "sort": "desc", "limit": str(body.limit), **({"next": tx_next} if tx_next else {})},
                 headers=headers,
-            ), await client.get(
+            )
+            token_response = None if token_done else await client.get(
                 base + "/erc20-transfers",
                 params={"sort": "desc", "limit": str(body.limit), **({"next": token_next} if token_next else {})},
                 headers=headers,
             )
-        if tx_response.status_code >= 400 or token_response.status_code >= 400:
+        if (tx_response is not None and tx_response.status_code >= 400) or (token_response is not None and token_response.status_code >= 400):
             raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
-        tx_data, token_data = tx_response.json(), token_response.json()
+        tx_data = tx_response.json() if tx_response is not None else {"items": [], "link": {}}
+        token_data = token_response.json() if token_response is not None else {"items": [], "link": {}}
         if not isinstance(tx_data, dict) or not isinstance(tx_data.get("items", []), list):
             raise HTTPException(502, "Malformed transaction history response.")
         if not isinstance(token_data, dict) or not isinstance(token_data.get("items", []), list):
