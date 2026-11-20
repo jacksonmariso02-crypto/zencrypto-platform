@@ -323,7 +323,7 @@ function MarketCandles({apiBase}){
   if(candles.length>14){for(let i=14;i<candles.length;i++){if(i>14){avgGain=(avgGain*13+gains[i-1])/14;avgLoss=(avgLoss*13+losses[i-1])/14;}const value=avgGain===0&&avgLoss===0?50:avgLoss===0?100:avgGain===0?0:100-(100/(1+avgGain/avgLoss));rsiData.push({time:candles[i].time,value});} }
   rsiLineRef.current?.setData(rsiData);if(rsiData.length)setRsi(rsiData[rsiData.length-1].value);
   if(kData.length){const z=kData.length-1;setKdjReadout({k:kData[z].value,d:dData[z].value,j:jData[z].value});}
-  if(candles.length>1){
+  if(candles.length>1&&candles[candles.length-1].isClosed===true){
    const lastIndex=candles.length-1,priorIndex=lastIndex-1,stamp=candles[lastIndex].time;
    const nextEvents=[];
    if(macd.length>priorIndex&&signalData.length>priorIndex){const prev=macd[priorIndex].value-signalData[priorIndex].value,now=macd[lastIndex].value-signalData[lastIndex].value;if(prev<=0&&now>0)nextEvents.push({type:"MACD bullish cross",detail:"MACD moved above signal",direction:"bullish"});if(prev>=0&&now<0)nextEvents.push({type:"MACD bearish cross",detail:"MACD moved below signal",direction:"bearish"});}
