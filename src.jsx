@@ -88,7 +88,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:48});
      const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
       const raw=Number(row.time);
-      return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close)};
+      return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed!==false};
      }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close));
      setSeries(prev=>{
       const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
@@ -134,7 +134,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
     try{
      const message=JSON.parse(event.data),k=message?.data?.k;
      if(!k||!CHART_SYMBOLS.includes(k.s))return;
-     const point={time:Math.floor(Number(k.t)/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c)};
+     const point={time:Math.floor(Number(k.t)/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c),volume:Number(k.v??0),quoteVolume:Number(k.q??0),trades:Number(k.n??0),closed:Boolean(k.x)};
      if(!Number.isFinite(point.time)||point.time<=0||![point.open,point.high,point.low,point.close].every(Number.isFinite)||point.low<=0||point.high<Math.max(point.open,point.close)||point.low>Math.min(point.open,point.close))return;
      mergeRows(k.s,[point],Date.now());
      setSocketStatus("Live");
@@ -172,7 +172,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
   </div>
   <div className="multi-kline-grid">
    {rows.map(item=>{
-    const points=item.points,first=points[0]?.close||0,last=points[points.length-1]?.close||0,rising=last>=first;
+    const points=item.points,first=points[0]?.close||0,last=points[points.length-1]?.close||0,rising=last>=first,totalVolume=points.reduce((sum,point)=>sum+(Number(point.volume)||0),0),closedBars=points.filter(point=>point.closed).length;
     const statusClass=item.status==="Live"?"healthy":item.status==="Stale"?"stale":item.status==="History error"?"unavailable":"waiting";
     return <button type="button" className="multi-kline-card" key={item.symbol} onClick={()=>onSelect(item.symbol)}>
      <span className="multi-kline-card-top"><strong>{item.symbol.replace("USDT","")}</strong><small><i className={"health-dot "+statusClass}></i> {item.status}</small></span>
@@ -180,7 +180,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      <span className="multi-kline-spark">
       {points.length>1?<ResponsiveContainer width="100%" height="100%"><LineChart data={points}><Line type="monotone" dataKey="close" stroke={rising?"#27d6a2":"#fa7185"} strokeWidth={1.7} dot={false} isAnimationActive={false}/></LineChart></ResponsiveContainer>:<span className="multi-kline-empty">Waiting for candles</span>}
      </span>
-     <span className={"multi-kline-change "+(rising?"positive":"negative")}>{first&&last?((last-first)/first*100).toFixed(2)+"%":item.historyStatus}</span>
+     <span className={"multi-kline-change "+(rising?"positive":"negative")}>{first&&last?((last-first)/first*100).toFixed(2)+"%":item.historyStatus}</span><span className="multi-kline-volume">Vol {totalVolume.toLocaleString("en-US",{maximumFractionDigits:2})} · {closedBars}/{points.length} closed</span>
     </button>;
    })}
   </div>
