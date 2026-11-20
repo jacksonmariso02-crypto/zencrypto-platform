@@ -18,6 +18,10 @@ ZenCrypto is a self-custody EVM wallet interface and early-stage decentralized s
 - Firm-quote flow with exact AllowanceHolder approval when required, wallet-signed swap transaction and receipt lookup.
 - Legacy SQLite paper-account API routes are disabled by default.
 
+## WalletConnect setup
+
+The app includes a QR-based WalletConnect connection path for mobile self-custody wallets. Create a project at [WalletConnect Cloud](https://cloud.walletconnect.com/), allowlist the GitHub Pages origin `https://jacksonmariso02-crypto.github.io`, then add the project ID as a GitHub Actions repository variable named `WALLETCONNECT_PROJECT_ID` (Settings → Secrets and variables → Actions → Variables). The Pages workflow passes this public project ID to Vite as `VITE_WALLETCONNECT_PROJECT_ID`. It is a public app identifier, not a wallet secret. Without it, browser-injected wallets continue to work, but WalletConnect QR pairing is intentionally unavailable.
+
 ## Important setup
 
 The DEX quote service requires a 0x API key. Configure `ZEROX_API_KEY` as a secret environment variable on the backend host. Never put it in a `VITE_*` frontend variable or commit it to Git.
