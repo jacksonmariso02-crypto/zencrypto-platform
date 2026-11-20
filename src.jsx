@@ -310,12 +310,24 @@ function MarketCandles({apiBase}){
     setLiveStatus("Connected");
     if(!backfillInFlight){
      backfillInFlight=true;
-     (()=>{const intervalMs=({"1m":60000,"3m":180000,"5m":300000,"15m":900000,"30m":1800000,"1h":3600000,"2h":7200000,"4h":14400000,"6h":21600000,"8h":28800000,"12h":43200000,"1d":86400000,"3d":259200000,"1w":604800000})[interval]||2592000000;const last=candlesRef.current.at(-1);return fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,start_time:last?last.time*1000+intervalMs:undefined});})().then(data=>{
-      if(disposed||!Array.isArray(data?.candles))return;
-      const recovered=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
-      if(recovered.length<2)return;
-      const previous=candlesRef.current;
-      const merged=[...new Map([...previous,...recovered].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()].slice(-2000);
+     (async()=>{
+      const intervalMs=({"1m":60000,"3m":180000,"5m":300000,"15m":900000,"30m":1800000,"1h":3600000,"2h":7200000,"4h":14400000,"6h":21600000,"8h":28800000,"12h":43200000,"1d":86400000,"3d":259200000,"1w":604800000})[interval]||2592000000;
+      const initialLast=candlesRef.current.at(-1);
+      let cursor=initialLast?initialLast.time*1000+intervalMs:undefined;
+      const recoveredByTime=new Map();
+      for(let page=0;page<4&&!disposed;page++){
+       const data=await fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,start_time:cursor});
+       if(disposed||!Array.isArray(data?.candles)||data.candles.length===0)break;
+       const rows=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
+       if(!rows.length)break;
+       rows.forEach(row=>recoveredByTime.set(row.time,row));
+       const nextCursor=Math.max(...rows.map(row=>row.time))*1000+intervalMs;
+       if(cursor!==undefined&&nextCursor<=cursor)break;
+       cursor=nextCursor;
+       if(data.candles.length<500||rows.length<500)break;
+      }
+      if(disposed||!recoveredByTime.size)return;
+      const merged=[...new Map([...candlesRef.current,...recoveredByTime.values()].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()].slice(-2000);
       candlesRef.current=merged;
       setCandles(merged);
       candleRef.current?.setData(merged.map(({time,open,high,low,close})=>({time,open,high,low,close})));
@@ -323,7 +335,7 @@ function MarketCandles({apiBase}){
       setLastKlineAt(Date.now());
       setLastUpdated(new Date().toLocaleTimeString());
       setLiveStatus("Live");
-     }).catch(()=>{/* Keep the WebSocket feed active if REST recovery is unavailable. */}).finally(()=>{backfillInFlight=false;});
+     })().catch(()=>{/* Keep the WebSocket feed active if REST recovery is unavailable. */}).finally(()=>{backfillInFlight=false;});
     }
    };
    socket.onmessage=event=>{
