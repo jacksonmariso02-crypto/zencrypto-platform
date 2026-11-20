@@ -711,11 +711,13 @@ def validate_dex_quote_response(data: dict, *, chain_id: int, sell_token: str, b
     return data
 
 @app.get("/dex/price")
-async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str, taker: str):
+async def dex_price(chainId: int, sellToken: str, buyToken: str, sellAmount: str, taker: str, slippageBps: int = 100):
+    if slippageBps < 10 or slippageBps > 300:
+        raise HTTPException(422, "slippageBps must be between 10 and 300 (0.1% to 3%).")
     sell, buy = validate_dex_request(chainId, sellToken, buyToken, sellAmount, taker)
     data = await call_zerox("/swap/allowance-holder/price", {
         "chainId": str(chainId), "sellToken": sell, "buyToken": buy,
-        "sellAmount": sellAmount, "taker": taker, "slippageBps": "100",
+        "sellAmount": sellAmount, "taker": taker, "slippageBps": str(slippageBps),
     })
     if not isinstance(data, dict) or data.get("liquidityAvailable") is not True:
         raise HTTPException(422, "No executable liquidity is available for this pair and amount.")
@@ -737,12 +739,13 @@ class DexQuoteRequest(BaseModel):
     buyToken: str = Field(min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
     sellAmount: str = Field(min_length=1, max_length=78, pattern=r"^[0-9]+$")
     taker: str = Field(min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
+    slippageBps: int = Field(default=100, ge=10, le=300)
 
 @app.post("/dex/quote")
 async def dex_quote(body: DexQuoteRequest):
     sell, buy = validate_dex_request(body.chainId, body.sellToken, body.buyToken, body.sellAmount, body.taker)
     data = await call_zerox("/swap/allowance-holder/quote", {
         "chainId": str(body.chainId), "sellToken": sell, "buyToken": buy,
-        "sellAmount": body.sellAmount, "taker": body.taker, "slippageBps": "100",
+        "sellAmount": body.sellAmount, "taker": body.taker, "slippageBps": str(body.slippageBps),
     })
     return validate_dex_quote_response(data, chain_id=body.chainId, sell_token=sell, buy_token=buy, sell_amount=body.sellAmount, taker=body.taker)
