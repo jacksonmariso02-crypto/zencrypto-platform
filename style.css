@@ -327,3 +327,11 @@ header { background: #0b1220 !important; backdrop-filter: none; }
 .backtest-trade-row { display:grid; grid-template-columns:.6fr 1fr 1.5fr 1fr; gap:8px; padding:8px 4px; border-bottom:1px solid #263449; font-size:10px; font-variant-numeric:tabular-nums; }
 .backtest-trade-row span:last-child { text-align:right; }
 @media(max-width:750px) { .backtest-controls { grid-template-columns:repeat(2,minmax(0,1fr)); } .backtest-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .backtest-panel { padding:14px; } .backtest-trade-row { grid-template-columns:.6fr 1fr 1.4fr; } .backtest-trade-row span:last-child { display:none; } }
+
+
+.equity-curve { margin:16px 0; padding:14px 12px 10px; border:1px solid #263449; border-radius:10px; background:#0e1725; }
+.equity-title { display:flex; justify-content:space-between; gap:10px; color:#dbe5f2; font-size:11px; margin-bottom:8px; }
+.equity-title span { color:#8190a8; font-size:10px; }
+.equity-svg { width:100%; height:190px; display:block; }
+.equity-legend { display:flex; gap:16px; font-size:10px; color:#94a3b8; margin:5px 4px 0; }
+@media(max-width:750px) { .equity-curve { padding:10px 6px; } .equity-svg { height:160px; } .equity-title { flex-direction:column; } }
