@@ -536,3 +536,10 @@ main,
 .orderbook-metrics span{display:flex;flex-direction:column;gap:5px;color:#8fa1ba;font-size:11px}
 .orderbook-metrics strong{color:#e7edf6;font-size:13px;font-weight:650;overflow-wrap:anywhere}
 @media(max-width:700px){.orderbook-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.large-trades-panel{margin:14px 0;padding:12px;border:1px solid #2b3b52;border-radius:10px;background:rgba(16,26,42,.45)}
+.large-trade-row{display:grid;grid-template-columns:64px minmax(90px,1fr) minmax(110px,1fr) 90px;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid rgba(77,96,122,.24);font-size:12px}
+.large-trade-row:last-of-type{border-bottom:0}
+.large-trade-row time{color:#8fa1ba;text-align:right;font-variant-numeric:tabular-nums}
+.large-trade-row b{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){.large-trade-row{grid-template-columns:54px minmax(70px,1fr) minmax(90px,1fr);gap:7px}.large-trade-row time{grid-column:2/4;text-align:left}}
