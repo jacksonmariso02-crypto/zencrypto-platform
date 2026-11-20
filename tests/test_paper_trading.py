@@ -39,6 +39,7 @@ def test_legacy_simulation_and_mock_account_routes_are_retired(tmp_path, monkeyp
 
 def test_dex_quote_proxy_is_disabled_without_server_side_api_key(monkeypatch):
     monkeypatch.setenv("ENABLE_MAINNET_SWAPS", "true")
+    monkeypatch.setenv("MAINNET_SWAP_RELEASE_APPROVED", "true")
     monkeypatch.delenv("ZEROX_API_KEY", raising=False)
     with TestClient(main.app) as client:
         response = client.get("/dex/price", params={
@@ -54,6 +55,7 @@ def test_dex_quote_proxy_is_disabled_without_server_side_api_key(monkeypatch):
 
 def test_dex_quote_proxy_rejects_unapproved_tokens_before_provider_call(monkeypatch):
     monkeypatch.setenv("ENABLE_MAINNET_SWAPS", "true")
+    monkeypatch.setenv("MAINNET_SWAP_RELEASE_APPROVED", "true")
     monkeypatch.setenv("ZEROX_API_KEY", "test-key")
     with TestClient(main.app) as client:
         response = client.get("/dex/price", params={
