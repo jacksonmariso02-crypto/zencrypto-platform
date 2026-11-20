@@ -88,7 +88,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:48});
      const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
       const raw=Number(row.time);
-      return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed!==false};
+      return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
      }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close));
      setSeries(prev=>{
       const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
