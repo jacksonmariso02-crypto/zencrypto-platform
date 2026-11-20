@@ -65,7 +65,7 @@ def test_candle_endpoint_rejects_unsupported_parameters(client, params):
 ])
 def test_legacy_simulation_routes_are_permanently_retired(client, monkeypatch, path, method):
     monkeypatch.setenv("ENABLE_PAPER_TRADING", "true")
-    response = getattr(client, method)(path, json={} if method == "post" else None)
+    response = client.post(path, json={}) if method == "post" else client.get(path)
     assert response.status_code == 410
     assert "retired" in response.json()["detail"].lower()
 
