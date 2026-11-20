@@ -384,3 +384,9 @@ main,
 .alert-row button{background:none;border:0;color:#91a4bd;font-size:17px;cursor:pointer}
 .alert-fired{color:#27d6a2;font-size:10px}.alert-waiting{color:#f5c451;font-size:10px}
 @media(max-width:700px){.market-tools{grid-template-columns:1fr}.alert-create{display:grid;grid-template-columns:1fr 1fr}.alert-create button{grid-column:1/-1}}
+
+.watch-notify{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0 9px;color:#8092aa;font-size:9px}
+.watch-notify button{background:#1d443f;color:#27d6a2;border:1px solid #287b69;border-radius:6px;padding:6px 8px;font-size:9px;cursor:pointer}
+.watch-notify button:disabled{opacity:.65;cursor:default}
+.watch-pair{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.watch-quote{font-size:9px;color:#8fa1b9;font-variant-numeric:tabular-nums}
