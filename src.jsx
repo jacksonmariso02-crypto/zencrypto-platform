@@ -17,8 +17,10 @@ const fmt=(n,d=2)=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:d,
 
 const BINANCE_REST_HOSTS=["https://api.binance.com","https://api1.binance.com","https://api2.binance.com"];
 async function fetchMarketCandles(apiBase,params,parentSignal){
- const query=new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>[k,String(v)]));
- const sources=[{url:apiBase.replace(/\/$/,"")+"/market/candles?"+query,kind:"backend"},...BINANCE_REST_HOSTS.map(host=>({url:host+"/api/v3/klines?"+query,kind:"binance"}))];
+ const entries=Object.entries(params).filter(([,v])=>v!==undefined&&v!==null);
+ const query=new URLSearchParams(entries.map(([k,v])=>[k,String(v)]));
+ const binanceQuery=new URLSearchParams(entries.map(([k,v])=>[k==="end_time"?"endTime":k,String(v)]));
+ const sources=[{url:apiBase.replace(/\/$/,"")+"/market/candles?"+query,kind:"backend"},...BINANCE_REST_HOSTS.map(host=>({url:host+"/api/v3/klines?"+binanceQuery,kind:"binance"}))];
  let lastError=null;
  for(const source of sources){
   if(parentSignal?.aborted)throw new DOMException("Request cancelled","AbortError");
