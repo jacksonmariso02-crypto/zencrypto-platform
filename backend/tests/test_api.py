@@ -59,3 +59,52 @@ def test_legacy_paper_routes_are_disabled_by_default(client):
     assert response.status_code == 404
     assert "disabled" in response.json()["detail"].lower()
 
+def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return [
+                [1700000000000, "100", "110", "95", "105", "12.5"],
+                ["bad-timestamp", "100", "110", "95", "105", "12.5"],
+                [1700003600000, "100", "90", "95", "105", "12.5"],
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get("/market/candles", params={"symbol": "btcusdt", "interval": "1h", "limit": 100})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "BTCUSDT"
+    assert payload["interval"] == "1h"
+    assert payload["source"] == "Binance public market data"
+    assert payload["candles"] == [
+        {"time": 1700000000, "open": 100.0, "high": 110.0, "low": 95.0, "close": 105.0, "volume": 12.5}
+    ]
+
+
+def test_chain_history_rejects_invalid_address_before_provider_call(client):
+    response = client.get("/chain/history", params={"chainId": 1, "address": "not-an-address"})
+    assert response.status_code == 422
+    assert "Invalid wallet address" in response.json()["detail"]
+
+
+def test_chain_history_rejects_unsupported_network(client):
+    response = client.get(
+        "/chain/history",
+        params={"chainId": 11155111, "address": "0x" + "1" * 40},
+    )
+    assert response.status_code == 422
+    assert "Ethereum and Base mainnet" in response.json()["detail"]
