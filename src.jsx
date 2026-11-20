@@ -8,6 +8,7 @@ const CHAINS={"0x1":{name:"Ethereum Mainnet",explorer:"https://etherscan.io",wet
 const parseUnits=(v,d)=>{v=String(v).trim();if(!/^\d+(\.\d*)?$/.test(v))throw Error("Enter a valid positive amount.");const [a,b=""]=v.split(".");if(b.length>d)throw Error("Too many decimal places.");const n=BigInt(a)*10n**BigInt(d)+BigInt((b+"0".repeat(d)).slice(0,d)||"0");if(n<=0n)throw Error("Amount must be greater than zero.");return n;};
 const formatUnits=(v,d=18)=>{const n=BigInt(v||"0"),base=10n**BigInt(d),whole=n/base,frac=(n%base).toString().padStart(d,"0").slice(0,6).replace(/0+$/,"");return whole.toString()+(frac?"."+frac:"");};
 const isAddress=v=>/^0x[a-fA-F0-9]{40}$/.test(String(v||""));
+const DEMO_WALLET_ADDRESS="0x1111111111111111111111111111111111111111";
 const SEED=[{symbol:"BTC",name:"Bitcoin",price:0,change:0},{symbol:"ETH",name:"Ethereum",price:0,change:0},{symbol:"SOL",name:"Solana",price:0,change:0},{symbol:"BNB",name:"BNB",price:0,change:0},{symbol:"XRP",name:"XRP",price:0,change:0}];
 const fmt=(n,d=2)=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 function App(){
