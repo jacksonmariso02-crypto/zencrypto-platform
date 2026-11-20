@@ -65,6 +65,7 @@ function MarketCandles({apiBase}){
  const host=useRef(null),macdHost=useRef(null),kdjHost=useRef(null),rsiHost=useRef(null),chartRef=useRef(null),macdChartRef=useRef(null),kdjChartRef=useRef(null),rsiChartRef=useRef(null),candleRef=useRef(null),volumeRef=useRef(null),ma5Ref=useRef(null),ma7Ref=useRef(null),ma25Ref=useRef(null),ma99Ref=useRef(null),hasFittedRef=useRef(false),bbUpperRef=useRef(null),bbMiddleRef=useRef(null),bbLowerRef=useRef(null),macdLineRef=useRef(null),signalRef=useRef(null),histRef=useRef(null),kdjKRef=useRef(null),kdjDRef=useRef(null),kdjJRef=useRef(null),rsiLineRef=useRef(null);
  const [pair,setPair]=useState("BTCUSDT"),[interval,setIntervalValue]=useState("1h"),[candles,setCandles]=useState([]),[busy,setBusy]=useState(false),[reloadNonce,setReloadNonce]=useState(0),[olderBusy,setOlderBusy]=useState(false),[hasMoreHistory,setHasMoreHistory]=useState(true),[error,setError]=useState(""),[lastUpdated,setLastUpdated]=useState(""),[showVolume,setShowVolume]=useState(true),[showMa5,setShowMa5]=useState(true),[showMa7,setShowMa7]=useState(true),[showMa25,setShowMa25]=useState(true),[showMa99,setShowMa99]=useState(false),[showBollinger,setShowBollinger]=useState(true),[showMacd,setShowMacd]=useState(true),[rsi,setRsi]=useState(null),[macdReadout,setMacdReadout]=useState(null),[kdjReadout,setKdjReadout]=useState(null),[liveStatus,setLiveStatus]=useState("Connecting"),[lastKlineAt,setLastKlineAt]=useState(0),[hoverCandle,setHoverCandle]=useState(null),[watchlist,setWatchlist]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_watchlist")||'["BTCUSDT","ETHUSDT"]');return Array.isArray(saved)?[...new Set(saved.filter(x=>CHART_SYMBOLS.includes(x)))]:["BTCUSDT","ETHUSDT"];}catch{return ["BTCUSDT","ETHUSDT"];}}),[alerts,setAlerts]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_price_alerts")||"[]");return Array.isArray(saved)?saved.filter(a=>a&&typeof a.id==="string"&&CHART_SYMBOLS.includes(a.pair)&&["above","below"].includes(a.direction)&&Number.isFinite(Number(a.target))&&Number(a.target)>0).slice(0,50):[];}catch{return [];}}),[alertTarget,setAlertTarget]=useState(""),[alertDirection,setAlertDirection]=useState("above"),[alertNotice,setAlertNotice]=useState(""),[watchQuotes,setWatchQuotes]=useState({}),[orderBook,setOrderBook]=useState({bids:[],asks:[],updatedAt:null}),[bookStatus,setBookStatus]=useState("Connecting"),[recentTrades,setRecentTrades]=useState([]),[tradeStatus,setTradeStatus]=useState("Connecting"),[dayStats,setDayStats]=useState(null),[dayStatus,setDayStatus]=useState("Connecting"),[notificationPermission,setNotificationPermission]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
  const selectedPairRef=useRef(pair);
+ const notifiedAlertIdsRef=useRef(new Set());
  selectedPairRef.current=pair;
  const [quoteClock,setQuoteClock]=useState(Date.now());
  const [marketRankMode,setMarketRankMode]=useState("volume");
@@ -256,9 +257,10 @@ function MarketCandles({apiBase}){
        if(!hit)return a;
        changed=true;
        const triggered={...a,triggered:true,triggeredAt:new Date().toISOString(),triggerPrice:price};
-       if(typeof Notification!=="undefined"&&Notification.permission==="granted"){
-        try{new Notification("ZenCrypto price alert",{body:symbol+" reached "+price+" ("+a.direction+" "+a.target+")"});}catch{}
-       }
+       if(typeof Notification!=="undefined"&&Notification.permission==="granted"&&!notifiedAlertIdsRef.current.has(a.id)){
+        notifiedAlertIdsRef.current.add(a.id);
+        try{new Notification("ZenCrypto price alert",{body:symbol+" reached "+price+" ("+a.direction+" "+a.target+")",tag:"zencrypto-price-alert-"+a.id,renotify:false});}catch{}
+       }}
        return triggered;
       });
       return changed?next:prev;
