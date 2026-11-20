@@ -93,9 +93,12 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
      const map=new Map(rows.map(point=>[point.time,point]));
      current.points.forEach(point=>map.set(point.time,point));
-     return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-48),historyStatus:rows.length?"Ready":"Empty"}};
+     return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a-b).slice(-48),historyStatus:rows.length?"Ready":"Empty"}};
     });
-   }));
+   }).catch(error=>{
+    setSeries(prev=>({...prev,[symbol]:{...(prev[symbol]||{points:[],updatedAt:0}),historyStatus:"Error"}}));
+    throw error;
+   })));
    if(disposed)return;
    const failed=results.filter(result=>result.status==="rejected").length;
    if(failed===CHART_SYMBOLS.length)setSocketStatus("History unavailable");
