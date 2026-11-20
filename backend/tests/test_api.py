@@ -173,6 +173,33 @@ def test_chain_history_rejects_unsupported_network(client):
     assert response.status_code == 422
     assert "Ethereum and Base mainnet" in response.json()["detail"]
 
+@pytest.mark.parametrize("symbol", ["ADAUSDT", "DOGEUSDT", "LTCUSDT", "LINKUSDT", "DOTUSDT"])
+def test_candle_endpoint_accepts_expanded_watchlist_symbols(client, monkeypatch, symbol):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            now_ms = 1_800_000_000_000
+            return [
+                [now_ms - 7_200_000, "100", "110", "95", "105", "12.5", now_ms - 3_600_001, "1250", 42],
+                [now_ms - 3_600_000, "105", "112", "101", "108", "8.5", now_ms + 3_599_999, "918", 31],
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, *args, **kwargs): return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(main.time, "time", lambda: 1_800_000_000)
+    response = client.get("/market/candles", params={"symbol": symbol, "interval": "1h", "limit": 100})
+    assert response.status_code == 200
+    rows = response.json()["candles"]
+    assert len(rows) == 2
+    assert rows[0]["is_closed"] is True
+    assert rows[1]["is_closed"] is False
+
+
 def test_candle_endpoint_supports_additional_real_exchange_intervals(client, monkeypatch):
     class FakeResponse:
         status_code = 200
