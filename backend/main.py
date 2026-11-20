@@ -283,7 +283,7 @@ async def market_candles(symbol: str = "BTCUSDT", interval: str = "1h", limit: i
                     "close_time": close_time_ms // 1000,
                     "quote_volume": float(row[7]) if len(row) > 7 else 0.0,
                     "trades": int(row[8]) if len(row) > 8 else 0,
-                    "is_closed": close_time_ms < server_time_ms,
+                    "is_closed": close_time_ms < server_time_ms * 1000,
                 }
             except (TypeError, ValueError, OverflowError):
                 continue
