@@ -290,3 +290,10 @@ header { background: #0b1220 !important; backdrop-filter: none; }
  .depth-head,.depth-row,.recent-trade-row { padding:7px 5px; font-size:10px; }
  .depth-totals { font-size:9px; }
 }
+
+
+.depth-chart-wrap { margin:18px 0 8px; padding:14px 10px 8px; border:1px solid #263449; border-radius:10px; background:#0e1725; }
+.depth-chart-title { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#dbe5f2; font-size:12px; margin:0 4px 8px; }
+.depth-chart-title span { color:#8190a8; font-size:10px; }
+.depth-svg { display:block; width:100%; height:210px; overflow:visible; }
+@media(max-width:750px) { .depth-chart-wrap { padding:10px 5px 5px; } .depth-svg { height:175px; } .depth-chart-title { align-items:flex-start; flex-direction:column; } }
