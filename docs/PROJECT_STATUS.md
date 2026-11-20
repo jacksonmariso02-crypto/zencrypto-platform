@@ -80,6 +80,7 @@ Last updated: 2026-11-20
 - Enforce quote expiry and stale-quote rejection; add stricter transaction simulation.
 - Test approval and swap flows on testnets before controlled mainnet canaries.
 - [x] Indexed on-chain history can be searched by transaction hash, sender, recipient, token, contract address, or raw transfer amount, alongside incoming/outgoing filters.
+- [x] Indexed-history requests use a monotonically increasing request ID; stale responses from a previous wallet or network are discarded and cannot overwrite the currently selected account history.
 - Add durable transaction indexing, reorg handling, confirmation/finality policy, and user-visible swap history.
 - Add provider rate limits, abuse controls, and API-key usage monitoring.
 
