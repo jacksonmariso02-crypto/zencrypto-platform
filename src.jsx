@@ -67,7 +67,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
  const [socketStatus,setSocketStatus]=useState("Connecting");
  const [clock,setClock]=useState(Date.now());
  useEffect(()=>{
-  let disposed=false,socket=null,retryTimer=null,handshakeTimer=null,retryDelay=1000;
+  let disposed=false,socket=null,retryTimer=null,handshakeTimer=null,retryDelay=1000,hasOpened=false;
   const streams=CHART_SYMBOLS.map(symbol=>symbol.toLowerCase()+"@kline_"+interval).join("/");
   const mergeRows=(symbol,rows,receivedAt=0)=>{
    if(disposed)return;
@@ -89,7 +89,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
       const raw=Number(row.time);
       return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
-     }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close));
+     }).filter(row=>Number.isFinite(row.time)&&row.time>0&&[row.open,row.high,row.low,row.close].every(Number.isFinite)&&row.low>0&&row.high>=Math.max(row.open,row.close)&&row.low<=Math.min(row.open,row.close)&&[row.volume,row.quoteVolume,row.trades].every(Number.isFinite)&&row.volume>=0&&row.quoteVolume>=0&&row.trades>=0);
      setSeries(prev=>{
       const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
       const map=new Map(rows.map(point=>[point.time,point]));
@@ -127,7 +127,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
     if(handshakeTimer)window.clearTimeout(handshakeTimer);
     handshakeTimer=null;
     retryDelay=1000;
-    setSocketStatus("Connected · awaiting symbols");
+    setSocketStatus("Connected · awaiting symbols");if(hasOpened)loadHistory();hasOpened=true;
    };
    socket.onmessage=event=>{
     if(disposed)return;
