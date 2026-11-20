@@ -48,7 +48,7 @@ async def dex_api_safety_middleware(request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-LEGACY_SIMULATION_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
+LEGACY_SIMULATION_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/")
 
 @app.middleware("http")
 async def permanently_disable_legacy_simulation_api(request, call_next):
