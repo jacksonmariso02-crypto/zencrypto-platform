@@ -89,7 +89,7 @@ function MarketCandles({apiBase}){
   kdjKRef.current?.setData(kData);kdjDRef.current?.setData(dData);kdjJRef.current?.setData(jData);
   const gains=[],losses=[];for(let i=1;i<candles.length;i++){const delta=candles[i].close-candles[i-1].close;gains.push(Math.max(delta,0));losses.push(Math.max(-delta,0));}
   let avgGain=gains.slice(0,14).reduce((a,b)=>a+b,0)/14,avgLoss=losses.slice(0,14).reduce((a,b)=>a+b,0)/14;const rsiData=[];
-  if(candles.length>14){for(let i=14;i<gains.length;i++){avgGain=(avgGain*13+gains[i])/14;avgLoss=(avgLoss*13+losses[i])/14;}for(let i=14;i<candles.length;i++){const g=gains[i-1],l=losses[i-1];if(i>14){avgGain=(avgGain*13+g)/14;avgLoss=(avgLoss*13+l)/14;}const value=avgLoss===0?100:100-(100/(1+avgGain/avgLoss));rsiData.push({time:candles[i].time,value});} }
+  if(candles.length>14){for(let i=14;i<candles.length;i++){if(i>14){avgGain=(avgGain*13+gains[i-1])/14;avgLoss=(avgLoss*13+losses[i-1])/14;}const value=avgLoss===0?100:avgGain===0?0:100-(100/(1+avgGain/avgLoss));rsiData.push({time:candles[i].time,value});} }
   rsiLineRef.current?.setData(rsiData);
   if(kData.length){const z=kData.length-1;setKdjReadout({k:kData[z].value,d:dData[z].value,j:jData[z].value});}
  },[candles]);
