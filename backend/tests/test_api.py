@@ -45,6 +45,7 @@ def test_readiness_fails_closed_without_required_secrets(client, monkeypatch):
     [
         {"symbol": "UNKNOWN", "interval": "1h", "limit": 100},
         {"symbol": "BTCUSDT", "interval": "2m", "limit": 100},
+        {"symbol": "BTCUSDT", "interval": "1M", "limit": 100},
         {"symbol": "BTCUSDT", "interval": "1h", "limit": 10},
         {"symbol": "BTCUSDT", "interval": "1h", "limit": 501},
     ],
@@ -65,9 +66,9 @@ def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, m
 
         def json(self):
             return [
-                [1700000000000, "100", "110", "95", "105", "12.5"],
-                ["bad-timestamp", "100", "110", "95", "105", "12.5"],
-                [1700003600000, "100", "90", "95", "105", "12.5"],
+                [1700000000000, "100", "110", "95", "105", "12.5", 1700003599999, "1250", 42],
+                ["bad-timestamp", "100", "110", "95", "105", "12.5", 1700003599999, "1250", 42],
+                [1700003600000, "100", "90", "95", "105", "12.5", 1700007199999, "1250", 42],
             ]
 
     class FakeAsyncClient:
@@ -90,8 +91,22 @@ def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, m
     assert payload["symbol"] == "BTCUSDT"
     assert payload["interval"] == "1h"
     assert payload["source"] == "Binance public market data"
+    assert payload["provider"] == "Binance Spot REST API"
+    assert payload["market"] == "SPOT"
+    assert payload["candle_count"] == 1
     assert payload["candles"] == [
-        {"time": 1700000000, "open": 100.0, "high": 110.0, "low": 95.0, "close": 105.0, "volume": 12.5}
+        {
+            "time": 1700000000,
+            "open": 100.0,
+            "high": 110.0,
+            "low": 95.0,
+            "close": 105.0,
+            "volume": 12.5,
+            "close_time": 1700003599,
+            "quote_volume": 1250.0,
+            "trades": 42,
+            "is_closed": True,
+        }
     ]
 
 
@@ -183,3 +198,47 @@ def test_paper_order_idempotency_key_cannot_be_reused_for_different_order(client
     )
     assert first.status_code == 201
     assert conflict.status_code == 409
+
+def test_candle_endpoint_supports_additional_real_exchange_intervals(client, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return [
+                [1700000000000, "100", "110", "95", "105", "12.5", 1700003599999, "1250", 42],
+                [1700003600000, "105", "112", "101", "108", "8.5", 1700007199999, "918", 31],
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            assert params["interval"] == "30m"
+            return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get("/market/candles", params={"symbol": "BTCUSDT", "interval": "30m", "limit": 100})
+    assert response.status_code == 200
+    assert response.json()["interval"] == "30m"
+    assert len(response.json()["candles"]) == 2
+
+
+def test_candle_endpoint_rejects_invalid_ohlcv_rows(client, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return [
+                [1700000000000, "100", "90", "95", "105", "12.5", 1700003599999, "1250", 42],
+                [1700003600000, "100", "110", "95", "105", "-1", 1700007199999, "1250", 42],
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, *args, **kwargs): return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    response = client.get("/market/candles", params={"symbol": "BTCUSDT", "interval": "1h", "limit": 100})
+    assert response.status_code == 502
+    assert "fewer than two valid candles" in response.json()["detail"]
