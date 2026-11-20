@@ -30,6 +30,7 @@ Last updated: 2026-11-20
 - [x] Return explicit per-stream has-more flags and mark every fetched page as incomplete until both cursors are exhausted.
 - [x] Persist normalized chain events in SQLite with user/chain/wallet scoping and a unique event key for idempotent inserts.
 - [x] Persist independent transaction and ERC-20 continuation cursors so sync can resume after interruption.
+- [x] Stop requesting a provider stream after its cursor is exhausted while continuing the other stream independently.
 - [x] Add authenticated ledger read and sync endpoints; keep provider events explicitly indexed-unverified and do not claim wallet ownership or finality.
 - [ ] Verify wallet ownership with a signed challenge and reconcile provider events against on-chain receipts before using events in a cost-basis ledger.
 
