@@ -442,3 +442,92 @@ def test_chain_history_rejects_invalid_cursor(client, cursor):
         params={"chainId": 1, "address": "0x" + "1" * 40, "tx_next": cursor},
     )
     assert response.status_code == 422
+
+
+
+def _create_authenticated_user(client, email="ledger@example.com"):
+    registered = client.post("/auth/register", json={"email": email, "password": "correct-horse-battery"})
+    assert registered.status_code == 201
+    logged_in = client.post("/auth/login", json={"email": email, "password": "correct-horse-battery"})
+    assert logged_in.status_code == 200
+    return {"Authorization": "Bearer " + logged_in.json()["access_token"]}
+
+
+def test_chain_ledger_persists_pages_and_resumes_cursors(client, monkeypatch):
+    wallet = "0x" + "1" * 40
+    other = "0x" + "2" * 40
+    tx_hash = "0x" + "a" * 64
+    usdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    headers = _create_authenticated_user(client)
+    calls = []
+    page = {"number": 0}
+
+    class FakeResponse:
+        status_code = 200
+        def __init__(self, payload): self.payload = payload
+        def json(self): return self.payload
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            calls.append((url, dict(params or {})))
+            is_tx = url.endswith("/transactions")
+            if page["number"] == 0:
+                if is_tx:
+                    return FakeResponse({"items": [{"hash": tx_hash, "from": other, "to": wallet, "value": "0", "timestamp": 100, "blockNumber": 10}], "link": {"nextToken": "tx-page-2"}})
+                return FakeResponse({"items": [{"txHash": tx_hash, "tokenAddress": usdc, "from": other, "to": wallet, "amount": "5.25", "timestamp": 100, "blockNumber": 10, "logIndex": 3}], "link": {"nextToken": "token-page-2"}})
+            if is_tx:
+                assert params["next"] == "tx-page-2"
+                return FakeResponse({"items": [], "link": {}})
+            assert params["next"] == "token-page-2"
+            return FakeResponse({"items": [{"txHash": tx_hash, "tokenAddress": usdc, "from": other, "to": wallet, "amount": "5.25", "timestamp": 100, "blockNumber": 10, "logIndex": 3}], "link": {}})
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    first = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 1, "address": wallet, "limit": 10})
+    assert first.status_code == 200
+    assert first.json()["inserted"] == 2
+    assert first.json()["storedEvents"] == 2
+    assert first.json()["pagination"]["hasMoreTransactions"] is True
+    page["number"] = 1
+    second = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 1, "address": wallet, "limit": 10})
+    assert second.status_code == 200
+    assert second.json()["inserted"] == 0
+    assert second.json()["storedEvents"] == 2
+    assert second.json()["coverage"]["providerPagesExhausted"] is True
+    ledger = client.get("/chain/ledger", headers=headers, params={"chainId": 1, "address": wallet})
+    assert ledger.status_code == 200
+    assert ledger.json()["total"] == 2
+    assert len(ledger.json()["items"]) == 2
+    assert ledger.json()["sync"]["providerPagesExhausted"] is True
+
+
+def test_chain_ledger_requires_authentication_and_is_user_scoped(client, monkeypatch):
+    wallet = "0x" + "1" * 40
+    response = client.get("/chain/ledger", params={"chainId": 1, "address": wallet})
+    assert response.status_code == 401
+    headers = _create_authenticated_user(client, "owner@example.com")
+    class FakeResponse:
+        status_code = 200
+        def json(self): return {"items": [], "link": {}}
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    synced = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 8453, "address": wallet})
+    assert synced.status_code == 200
+    other_headers = _create_authenticated_user(client, "other@example.com")
+    other_ledger = client.get("/chain/ledger", headers=other_headers, params={"chainId": 8453, "address": wallet})
+    assert other_ledger.status_code == 200
+    assert other_ledger.json()["total"] == 0
+
+
+def test_chain_ledger_rejects_invalid_network_and_wallet(client):
+    headers = _create_authenticated_user(client)
+    bad_network = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 10, "address": "0x" + "1" * 40})
+    assert bad_network.status_code == 422
+    bad_address = client.get("/chain/ledger", headers=headers, params={"chainId": 1, "address": "bad"})
+    assert bad_address.status_code == 422
