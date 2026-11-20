@@ -65,6 +65,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
  const [series,setSeries]=useState({});
  const [feedStatus,setFeedStatus]=useState("Loading");
  const [updatedAt,setUpdatedAt]=useState(0);
+ const updatedAtRef=useRef(0);
  useEffect(()=>{
   let disposed=false,socket=null,retryTimer=null,handshakeTimer=null,staleTimer=null,retryDelay=1000;
   const streams=CHART_SYMBOLS.map(symbol=>symbol.toLowerCase()+"@kline_"+interval).join("/");
@@ -88,7 +89,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
    }));
    if(disposed)return;
    const failed=results.filter(x=>x.status==="rejected").length;
-   setFeedStatus(failed===CHART_SYMBOLS.length?"Unavailable":failed?"Partial":"Connecting");
+   if(!updatedAtRef.current)setFeedStatus(failed===CHART_SYMBOLS.length?"Unavailable":failed?"Partial":"Connecting");
   };
   const schedule=()=>{
    if(disposed)return;
@@ -121,7 +122,8 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
      const time=Math.floor(Number(k.t)/1000),close=Number(k.c);
      if(!Number.isFinite(time)||time<=0||!Number.isFinite(close)||close<=0)return;
      mergeRows(k.s,[{time,close}]);
-     setUpdatedAt(Date.now());
+     updatedAtRef.current=Date.now();
+     setUpdatedAt(updatedAtRef.current);
      setFeedStatus("Live");
     }catch{/* Ignore malformed market frames without interrupting other symbols. */}
    };
@@ -135,7 +137,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
   loadHistory().catch(()=>{if(!disposed)setFeedStatus("Unavailable");});
   connect();
   staleTimer=window.setInterval(()=>{
-   if(updatedAt&&Date.now()-updatedAt>30000)setFeedStatus("Stale");
+   if(updatedAtRef.current&&Date.now()-updatedAtRef.current>30000)setFeedStatus("Stale");
   },5000);
   return()=>{
    disposed=true;
