@@ -515,3 +515,6 @@ main,
 .recent-trades-row time{color:#8fa1b8;font-size:10px}
 .recent-trades-empty{display:grid;place-items:center;min-height:130px;color:#8192aa;font-size:12px}
 @media(max-width:620px){.recent-trades-panel{padding:11px}.recent-trades-label,.recent-trades-row{grid-template-columns:1.15fr 1fr .9fr .75fr;gap:5px;padding-left:3px;padding-right:3px}.recent-trades-label{font-size:8px}.recent-trades-row{font-size:9px}.recent-trades-row time{font-size:9px}}
+
+.market-chart-actions{display:flex;gap:8px;flex-wrap:wrap}
+.market-chart-actions .tablebtn{flex:1;min-width:110px}
