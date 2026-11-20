@@ -34,6 +34,8 @@ Last updated: 2026-11-20
 - [x] Synchronized candlestick, MACD, KDJ, and RSI time ranges.
 - [x] Moving averages, Bollinger Bands, volume, and reset-view controls.
 - [x] Local watchlist and browser price alerts.
+- [x] Selected-pair live 24-hour ticker statistics: last price, absolute/percentage change, high/low, base/quote volume, weighted average, and trade count.
+- [x] Portfolio market-feed freshness expires after 30 seconds even if a WebSocket silently stalls; the UI reevaluates freshness every five seconds.
 
 ### DEX integration (not released)
 - [x] Server-side 0x Swap API v2 price and firm-quote proxy.
