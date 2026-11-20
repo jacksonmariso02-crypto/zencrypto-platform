@@ -172,6 +172,9 @@ def init():
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor_id INTEGER,event TEXT NOT NULL,detail TEXT NOT NULL,created_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS sandbox_operations(idempotency_key TEXT PRIMARY KEY,user_id INTEGER NOT NULL,operation TEXT NOT NULL,response TEXT NOT NULL,created_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS compliance_cases(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS chain_wallet_sync(user_id INTEGER NOT NULL,chain_id INTEGER NOT NULL,address TEXT NOT NULL,tx_next TEXT,token_next TEXT,tx_exhausted INTEGER NOT NULL DEFAULT 0,token_exhausted INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL,PRIMARY KEY(user_id,chain_id,address),FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS chain_events(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,chain_id INTEGER NOT NULL,address TEXT NOT NULL,event_id TEXT NOT NULL,tx_hash TEXT NOT NULL,block_number INTEGER,event_timestamp INTEGER,direction TEXT NOT NULL,kind TEXT NOT NULL,token TEXT NOT NULL,token_address TEXT,value_raw TEXT,value_display TEXT,status TEXT NOT NULL,event_json TEXT NOT NULL,first_seen_at INTEGER NOT NULL,UNIQUE(user_id,chain_id,address,event_id),FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE INDEX IF NOT EXISTS chain_events_wallet_time_idx ON chain_events(user_id,chain_id,address,event_timestamp DESC,id DESC);
         CREATE INDEX IF NOT EXISTS postings_account_idx ON postings(account_id);
         CREATE INDEX IF NOT EXISTS orders_user_time_idx ON orders(user_id,created_at DESC);
         CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal BEGIN SELECT RAISE(ABORT,'immutable journal'); END;
@@ -233,6 +236,11 @@ class CaseCreate(BaseModel):
 class Kyc(BaseModel):
     legal_name: str = Field(min_length=2, max_length=150)
     country: str = Field(min_length=2, max_length=80)
+
+class ChainLedgerSyncRequest(BaseModel):
+    chainId: int = Field(ge=1)
+    address: str = Field(min_length=42, max_length=42, pattern=r"^0x[a-fA-F0-9]{40}$")
+    limit: int = Field(default=50, ge=1, le=100)
 
 
 
