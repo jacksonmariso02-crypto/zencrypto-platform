@@ -408,7 +408,10 @@ def readiness():
         "dex_provider_key_configured": bool(os.getenv("ZEROX_API_KEY", "").strip()),
         "explicit_cors_origins_configured": bool(origins),
         "legacy_simulation_routes_retired": True,
-        "mainnet_swaps_disabled_until_release_approval": os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() != "true",
+        "mainnet_swaps_disabled_until_release_approval": not (
+            os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() == "true"
+            and os.getenv("MAINNET_SWAP_RELEASE_APPROVED", "false").strip().lower() == "true"
+        ),
         "persistent_app_secret_configured": bool(os.getenv("APP_SECRET", "").strip()),
     }
     ready = all(checks.values())
@@ -862,10 +865,12 @@ DEX_TOKENS = {
 ZEROX_ALLOWANCE_HOLDER = "0x0000000000001ff3684f28c67538d4d072c22734"
 
 def require_mainnet_swaps_enabled():
-    if os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() != "true":
+    execution_enabled = os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() == "true"
+    release_approved = os.getenv("MAINNET_SWAP_RELEASE_APPROVED", "false").strip().lower() == "true"
+    if not (execution_enabled and release_approved):
         raise HTTPException(
             503,
-            "Mainnet swaps are disabled pending production security, legal and operational approval.",
+            "Mainnet swaps are disabled. Both execution enablement and separate release approval are required.",
         )
 
 def validate_dex_request(chain_id: int, sell_token: str, buy_token: str, sell_amount: str, taker: str):
