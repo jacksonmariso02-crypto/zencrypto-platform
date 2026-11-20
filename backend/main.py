@@ -39,6 +39,10 @@ async def dex_api_safety_middleware(request, call_next):
         window.append(now)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'; base-uri 'none'"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    response.headers["X-XSS-Protection"] = "0"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
