@@ -34,4 +34,15 @@ function App(){
  {tab==="admin"&&<div className="panel disabledpanel"><Shield size={36}/><h2>Administration</h2><p>Admin tools require a server-assigned admin role. This interface does not grant privileges.</p><div className="noticebox">No real assets are held or controlled by ZenCrypto.</div></div>}
  <footer>© 2026 ZenCrypto · PAPER ONLY · No real-money services</footer></div></main></div>;
 }
-createRoot(document.getElementById("root")).render(<App/>);
+class AppErrorBoundary extends React.Component {
+ constructor(props){super(props);this.state={error:null};}
+ static getDerivedStateFromError(error){return {error};}
+ componentDidCatch(error,info){console.error("ZenCrypto render failure:",error,info);}
+ render(){
+  if(this.state.error)return <div className="boot-screen"><div className="boot-card"><h1>ZenCrypto could not start</h1><p>The interface encountered a rendering error. Your saved account session has not been changed.</p><pre className="boot-error">{String(this.state.error?.message||this.state.error)}</pre><button className="auth-button" onClick={()=>window.location.reload()}>Reload application</button></div></div>;
+  return this.props.children;
+ }
+}
+const rootElement=document.getElementById("root");
+if(rootElement)createRoot(rootElement).render(<AppErrorBoundary><App/></AppErrorBoundary>);
+else console.error("ZenCrypto root element #root was not found.");
