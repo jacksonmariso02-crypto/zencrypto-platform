@@ -16,7 +16,7 @@ const fmt=(n,d=2)=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:d,
 
 function MarketCandles({apiBase}){
  const host=useRef(null),macdHost=useRef(null),kdjHost=useRef(null),rsiHost=useRef(null),chartRef=useRef(null),macdChartRef=useRef(null),kdjChartRef=useRef(null),rsiChartRef=useRef(null),candleRef=useRef(null),volumeRef=useRef(null),ma5Ref=useRef(null),ma7Ref=useRef(null),ma25Ref=useRef(null),ma99Ref=useRef(null),hasFittedRef=useRef(false),bbUpperRef=useRef(null),bbMiddleRef=useRef(null),bbLowerRef=useRef(null),macdLineRef=useRef(null),signalRef=useRef(null),histRef=useRef(null),kdjKRef=useRef(null),kdjDRef=useRef(null),kdjJRef=useRef(null),rsiLineRef=useRef(null);
- const [pair,setPair]=useState("BTCUSDT"),[interval,setIntervalValue]=useState("1h"),[candles,setCandles]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[lastUpdated,setLastUpdated]=useState(""),[showVolume,setShowVolume]=useState(true),[showMa5,setShowMa5]=useState(true),[showMa7,setShowMa7]=useState(true),[showMa25,setShowMa25]=useState(true),[showMa99,setShowMa99]=useState(false),[showBollinger,setShowBollinger]=useState(true),[showMacd,setShowMacd]=useState(true),[rsi,setRsi]=useState(null),[macdReadout,setMacdReadout]=useState(null),[kdjReadout,setKdjReadout]=useState(null),[liveStatus,setLiveStatus]=useState("Connecting"),[hoverCandle,setHoverCandle]=useState(null),[watchlist,setWatchlist]=useState(()=>{try{return JSON.parse(localStorage.getItem("zencrypto_watchlist")||'["BTCUSDT","ETHUSDT"]');}catch{return ["BTCUSDT","ETHUSDT"];}}),[alerts,setAlerts]=useState(()=>{try{return JSON.parse(localStorage.getItem("zencrypto_price_alerts")||"[]");}catch{return [];}}),[alertTarget,setAlertTarget]=useState(""),[alertDirection,setAlertDirection]=useState("above"),[alertNotice,setAlertNotice]=useState(""),[watchQuotes,setWatchQuotes]=useState({}),[orderBook,setOrderBook]=useState({bids:[],asks:[],updatedAt:null}),[bookStatus,setBookStatus]=useState("Connecting"),[notificationPermission,setNotificationPermission]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
+ const [pair,setPair]=useState("BTCUSDT"),[interval,setIntervalValue]=useState("1h"),[candles,setCandles]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[lastUpdated,setLastUpdated]=useState(""),[showVolume,setShowVolume]=useState(true),[showMa5,setShowMa5]=useState(true),[showMa7,setShowMa7]=useState(true),[showMa25,setShowMa25]=useState(true),[showMa99,setShowMa99]=useState(false),[showBollinger,setShowBollinger]=useState(true),[showMacd,setShowMacd]=useState(true),[rsi,setRsi]=useState(null),[macdReadout,setMacdReadout]=useState(null),[kdjReadout,setKdjReadout]=useState(null),[liveStatus,setLiveStatus]=useState("Connecting"),[hoverCandle,setHoverCandle]=useState(null),[watchlist,setWatchlist]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_watchlist")||'["BTCUSDT","ETHUSDT"]');return Array.isArray(saved)?[...new Set(saved.filter(x=>["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"].includes(x)))]:["BTCUSDT","ETHUSDT"];}catch{return ["BTCUSDT","ETHUSDT"];}}),[alerts,setAlerts]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_price_alerts")||"[]");return Array.isArray(saved)?saved.filter(a=>a&&typeof a.id==="string"&&["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"].includes(a.pair)&&["above","below"].includes(a.direction)&&Number.isFinite(Number(a.target))&&Number(a.target)>0).slice(0,50):[];}catch{return [];}}),[alertTarget,setAlertTarget]=useState(""),[alertDirection,setAlertDirection]=useState("above"),[alertNotice,setAlertNotice]=useState(""),[watchQuotes,setWatchQuotes]=useState({}),[orderBook,setOrderBook]=useState({bids:[],asks:[],updatedAt:null}),[bookStatus,setBookStatus]=useState("Connecting"),[notificationPermission,setNotificationPermission]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
  useEffect(()=>{
   if(!host.current||!macdHost.current||!kdjHost.current||!rsiHost.current)return;
   const chart=createChart(host.current,{
@@ -98,8 +98,75 @@ function MarketCandles({apiBase}){
  useEffect(()=>{try{localStorage.setItem("zencrypto_watchlist",JSON.stringify(watchlist));}catch{}},[watchlist]);
  useEffect(()=>{try{localStorage.setItem("zencrypto_price_alerts",JSON.stringify(alerts));}catch{}},[alerts]);
  async function enablePriceNotifications(){if(!("Notification" in window)){setAlertNotice("Browser notifications are not supported here.");return;}try{const permission=await Notification.requestPermission();setNotificationPermission(permission);setAlertNotice(permission==="granted"?"Browser price notifications enabled.":"Browser notifications were not enabled.");}catch{setAlertNotice("Unable to request notification permission.");}}
- useEffect(()=>{let socket,disposed=false,retry;const connect=()=>{if(disposed)return;setBookStatus("Connecting");try{socket=new WebSocket("wss://stream.binance.com:9443/ws/"+pair.toLowerCase()+"@depth20@100ms");}catch{setBookStatus("Unavailable");return;}socket.onopen=()=>{if(!disposed)setBookStatus("Live");};socket.onmessage=event=>{try{const d=JSON.parse(event.data);if(!Array.isArray(d.bids)||!Array.isArray(d.asks))return;const parse=rows=>rows.map(x=>({price:Number(x[0]),qty:Number(x[1])})).filter(x=>Number.isFinite(x.price)&&Number.isFinite(x.qty)&&x.price>0&&x.qty>0);setOrderBook({bids:parse(d.bids).sort((a,b)=>b.price-a.price).slice(0,20),asks:parse(d.asks).sort((a,b)=>a.price-b.price).slice(0,20),updatedAt:Date.now()});}catch{}};socket.onclose=()=>{if(!disposed){setBookStatus("Reconnecting");retry=setTimeout(connect,3000);}};socket.onerror=()=>{if(!disposed)setBookStatus("Unavailable");};};connect();return()=>{disposed=true;clearTimeout(retry);if(socket){socket.onclose=null;socket.close();}};},[pair]);
- useEffect(()=>{if(!watchlist.length)return;let socket,disposed=false,retry;const streams=watchlist.map(x=>x.toLowerCase()+"@ticker").join("/");const connect=()=>{if(disposed)return;try{socket=new WebSocket("wss://stream.binance.com:9443/stream?streams="+streams);}catch{return;}socket.onmessage=event=>{try{const msg=JSON.parse(event.data),d=msg.data;if(!d?.s)return;const symbol=d.s,price=Number(d.c),change=Number(d.P);if(!Number.isFinite(price))return;setWatchQuotes(prev=>({...prev,[symbol]:{price,change,updatedAt:Date.now()}}));setAlerts(prev=>{let changed=false;const next=prev.map(a=>{if(a.triggered||a.pair!==symbol)return a;const hit=a.direction==="above"?price>=a.target:price<=a.target;if(!hit)return a;changed=true;const triggered={...a,triggered:true,triggeredAt:new Date().toISOString(),triggerPrice:price};if(typeof Notification!=="undefined"&&Notification.permission==="granted"){try{new Notification("ZenCrypto price alert",{body:symbol+" reached "+price+" ("+a.direction+" "+a.target+")"});}catch{}}return triggered;});return changed?next:prev;});}catch{}};socket.onclose=()=>{if(!disposed)retry=setTimeout(connect,5000);};};connect();return()=>{disposed=true;clearTimeout(retry);if(socket){socket.onclose=null;socket.close();}};},[watchlist.join("|")]);
+ useEffect(()=>{
+  let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
+  const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
+  const connect=()=>{
+   if(disposed)return;
+   setBookStatus("Connecting");
+   try{socket=new WebSocket("wss://stream.binance.com:9443/ws/"+pair.toLowerCase()+"@depth20@100ms");}
+   catch{setBookStatus("Unavailable");schedule();return;}
+   socket.onopen=()=>{if(!disposed){retryDelay=1000;setBookStatus("Live");}};
+   socket.onmessage=event=>{
+    if(disposed)return;
+    try{
+     const d=JSON.parse(event.data);
+     if(!Array.isArray(d.bids)||!Array.isArray(d.asks))return;
+     const parse=rows=>rows.map(x=>({price:Number(x[0]),qty:Number(x[1])})).filter(x=>Number.isFinite(x.price)&&Number.isFinite(x.qty)&&x.price>0&&x.qty>0);
+     const bids=parse(d.bids).sort((a,b)=>b.price-a.price).slice(0,20);
+     const asks=parse(d.asks).sort((a,b)=>a.price-b.price).slice(0,20);
+     if(bids.length&&asks.length&&bids[0].price>asks[0].price)return;
+     setOrderBook({bids,asks,updatedAt:Date.now()});
+    }catch{/* Keep last valid depth snapshot on malformed frames. */}
+   };
+   socket.onerror=()=>{if(!disposed){setBookStatus("Reconnecting");try{socket?.close();}catch{}}};
+   socket.onclose=()=>{if(!disposed){setBookStatus("Reconnecting");schedule();}};
+  };
+  connect();
+  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
+ },[pair]);
+ useEffect(()=>{
+  if(!watchlist.length){setWatchQuotes({});return;}
+  let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
+  const streams=watchlist.filter(x=>["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"].includes(x)).map(x=>x.toLowerCase()+"@ticker").join("/");
+  if(!streams)return;
+  const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
+  const connect=()=>{
+   if(disposed)return;
+   try{socket=new WebSocket("wss://stream.binance.com:9443/stream?streams="+streams);}
+   catch{schedule();return;}
+   socket.onopen=()=>{if(!disposed)retryDelay=1000;};
+   socket.onmessage=event=>{
+    if(disposed)return;
+    try{
+     const msg=JSON.parse(event.data),d=msg.data;
+     if(!d?.s||!watchlist.includes(d.s))return;
+     const symbol=d.s,price=Number(d.c),change=Number(d.P);
+     if(!Number.isFinite(price)||price<=0||!Number.isFinite(change))return;
+     setWatchQuotes(prev=>({...prev,[symbol]:{price,change,updatedAt:Date.now()}}));
+     setAlerts(prev=>{
+      let changed=false;
+      const next=prev.map(a=>{
+       if(a.triggered||a.pair!==symbol)return a;
+       const hit=a.direction==="above"?price>=a.target:price<=a.target;
+       if(!hit)return a;
+       changed=true;
+       const triggered={...a,triggered:true,triggeredAt:new Date().toISOString(),triggerPrice:price};
+       if(typeof Notification!=="undefined"&&Notification.permission==="granted"){
+        try{new Notification("ZenCrypto price alert",{body:symbol+" reached "+price+" ("+a.direction+" "+a.target+")"});}catch{}
+       }
+       return triggered;
+      });
+      return changed?next:prev;
+     });
+    }catch{/* Ignore malformed ticker frames. */}
+   };
+   socket.onerror=()=>{try{socket?.close();}catch{}};
+   socket.onclose=()=>{if(!disposed)schedule();};
+  };
+  connect();
+  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
+ },[watchlist.join("|")]);
  function toggleWatch(pairValue){setWatchlist(prev=>prev.includes(pairValue)?prev.filter(x=>x!==pairValue):[...prev,pairValue]);}
  function addPriceAlert(){const target=Number(alertTarget);if(!Number.isFinite(target)||target<=0){setAlertNotice("Enter a valid target price greater than zero.");return;}setAlerts(prev=>[{id:Date.now()+"-"+Math.random().toString(36).slice(2,7),pair,direction:alertDirection,target,createdAt:new Date().toISOString(),triggered:false},...prev].slice(0,50));setAlertTarget("");setAlertNotice("Price alert saved on this browser.");}
  useEffect(()=>{
