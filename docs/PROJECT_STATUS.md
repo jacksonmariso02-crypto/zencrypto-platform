@@ -22,6 +22,10 @@ Last updated: 2026-11-20
 - [x] Wallet-signed ETH wrapping and WETH unwrapping.
 - [x] Transaction hash, block explorer link, and receipt-status lookup.
 - [x] Public wallet activity lookup for Ethereum and Base through Routescan.
+- [x] Normalize indexed native and ERC-20 activity with deterministic event IDs, wallet-relative in/out direction, raw integer amounts, and explicit indexed-unverified status.
+- [x] Identify WETH/USDC using chain-specific contract allowlists; unknown token contracts remain unverified.
+- [x] Deduplicate repeated indexed events and reject invalid chain, address, timestamp, amount precision, and pagination inputs.
+- [ ] Persist reconciled chain events and handle pagination/cursor coverage before treating indexed activity as a complete cost-basis ledger.
 
 ### Live market charts
 - [x] Binance Spot OHLCV history with open/close times, base/quote volume, trade count, and forming/closed candle metadata.
