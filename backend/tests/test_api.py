@@ -155,6 +155,35 @@ def test_mainnet_swap_quote_gate_cannot_be_bypassed_by_paper_flag(client, monkey
         )
     assert exc.value.status_code == 503
 
+def test_mainnet_swap_gate_requires_separate_release_approval(client, monkeypatch):
+    monkeypatch.setenv("ENABLE_MAINNET_SWAPS", "true")
+    monkeypatch.delenv("MAINNET_SWAP_RELEASE_APPROVED", raising=False)
+    params = {
+        "chainId": 1,
+        "sellToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "buyToken": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eB48",
+        "sellAmount": "10000000000000000",
+        "taker": "0x" + "1" * 40,
+    }
+    response = client.get("/dex/price", params=params)
+    assert response.status_code == 503
+    assert "release approval" in response.json()["detail"].lower()
+
+
+def test_mainnet_swap_gate_requires_execution_flag_even_if_release_approved(client, monkeypatch):
+    monkeypatch.delenv("ENABLE_MAINNET_SWAPS", raising=False)
+    monkeypatch.setenv("MAINNET_SWAP_RELEASE_APPROVED", "true")
+    params = {
+        "chainId": 1,
+        "sellToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "buyToken": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eB48",
+        "sellAmount": "10000000000000000",
+        "taker": "0x" + "1" * 40,
+    }
+    response = client.get("/dex/price", params=params)
+    assert response.status_code == 503
+
+
 def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, monkeypatch):
     class FakeResponse:
         status_code = 200
