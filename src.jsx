@@ -186,32 +186,7 @@ function MarketCandles({apiBase}){
   connect();
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
- useEffect(()=>{
-  let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
-  setDayStats(null);
-  setDayStatus("Connecting");
-  const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
-  const connect=()=>{
-   if(disposed)return;
-   try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@ticker");}
-   catch{setDayStatus("Unavailable");schedule();return;}
-   socket.onopen=()=>{if(!disposed)setDayStatus("Connecting");};
-   socket.onmessage=event=>{
-    if(disposed)return;
-    try{
-     const d=JSON.parse(event.data);
-     const values={last:Number(d.c),change:Number(d.p),changePercent:Number(d.P),high:Number(d.h),low:Number(d.l),volume:Number(d.v),quoteVolume:Number(d.q),weightedAverage:Number(d.w),open:Number(d.o),trades:Number(d.n)};
-     if(!Number.isFinite(values.last)||values.last<=0||!Number.isFinite(values.changePercent)||!Number.isFinite(values.high)||!Number.isFinite(values.low)||values.high<values.low||values.low<=0||!Number.isFinite(values.volume)||values.volume<0||!Number.isFinite(values.quoteVolume)||values.quoteVolume<0)return;
-     setDayStats({...values,updatedAt:Number(d.E)||Date.now()});
-     setDayStatus("Live");
-    }catch{/* Ignore malformed 24-hour ticker frames. */}
-   };
-   socket.onerror=()=>{if(!disposed){setDayStatus("Reconnecting");try{socket?.close();}catch{}}};
-   socket.onclose=()=>{if(!disposed){setDayStatus("Reconnecting");schedule();}};
-  };
-  connect();
-  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
- },[pair]);
+
  useEffect(()=>{
   let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
   setRecentTrades([]);
@@ -260,6 +235,13 @@ function MarketCandles({apiBase}){
      const symbol=d.s,price=Number(d.c),change=Number(d.P);
      if(!Number.isFinite(price)||price<=0||!Number.isFinite(change))return;
      setWatchQuotes(prev=>({...prev,[symbol]:{price,change,updatedAt:Date.now()}}));
+     if(symbol===pair){
+      const values={last:price,change:Number(d.p),changePercent:change,high:Number(d.h),low:Number(d.l),volume:Number(d.v),quoteVolume:Number(d.q),weightedAverage:Number(d.w),open:Number(d.o),trades:Number(d.n)};
+      if(Number.isFinite(values.change)&&Number.isFinite(values.high)&&Number.isFinite(values.low)&&values.high>=values.low&&values.low>0&&Number.isFinite(values.volume)&&values.volume>=0&&Number.isFinite(values.quoteVolume)&&values.quoteVolume>=0){
+       setDayStats({...values,updatedAt:Number(d.E)||Date.now()});
+       setDayStatus("Live");
+      }
+     }
      setAlerts(prev=>{
       let changed=false;
       const next=prev.map(a=>{
