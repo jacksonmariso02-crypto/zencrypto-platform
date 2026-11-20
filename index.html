@@ -37,43 +37,49 @@
     <noscript>
       <div class="boot-screen"><div class="boot-card"><h1>JavaScript is required</h1><p>Please enable JavaScript to use the ZenCrypto interface.</p></div></div>
     </noscript>
+    <div id="startup-diagnostics" role="alert" aria-live="assertive" hidden>
+      <div class="startup-diagnostics-card">
+        <h2>ZenCrypto startup issue</h2>
+        <p id="startup-diagnostics-message"></p>
+        <p>Try opening the page in a private window with browser translation and extensions disabled. If the issue remains, check the latest GitHub Pages deployment.</p>
+      </div>
+    </div>
+    <style>
+      #startup-diagnostics[hidden] { display:none; }
+      #startup-diagnostics { position:fixed; inset:0; z-index:2147483000; display:grid; place-items:center; padding:24px; background:#080f1dcc; color:#e8eef8; font:14px/1.6 Arial,sans-serif; }
+      .startup-diagnostics-card { width:min(560px,100%); padding:26px; border:1px solid #334155; border-radius:16px; background:#111c30; }
+      .startup-diagnostics-card h2 { margin:0 0 12px; }
+      #startup-diagnostics-message { color:#fda4af; white-space:pre-wrap; overflow-wrap:anywhere; }
+    </style>
     <script>
       (function () {
         var timer;
-        function showStartupDiagnostic(message) {
+        var diagnostics = document.getElementById("startup-diagnostics");
+        var message = document.getElementById("startup-diagnostics-message");
+        function showDiagnostic(text) {
           var root = document.getElementById("root");
-          if (!root || root.querySelector(".app") || root.querySelector(".boot-error")) return;
-          root.innerHTML = "";
-          var screen = document.createElement("div");
-          screen.className = "boot-screen";
-          var card = document.createElement("div");
-          card.className = "boot-card";
-          var title = document.createElement("h1");
-          title.textContent = "ZenCrypto could not load";
-          var detail = document.createElement("p");
-          detail.className = "boot-error";
-          detail.textContent = String(message || "The application did not mount.");
-          var hint = document.createElement("p");
-          hint.textContent = "Open GitHub Actions and check the latest deployment build. If the problem continues, send this message to support.";
-          card.appendChild(title); card.appendChild(detail); card.appendChild(hint);
-          screen.appendChild(card); root.appendChild(screen);
+          if (!diagnostics || !root || root.querySelector(".app") || root.querySelector(".boot-error")) return;
+          message.textContent = String(text || "The application did not start.");
+          diagnostics.hidden = false;
         }
         window.addEventListener("error", function (event) {
-          if (event && event.message) showStartupDiagnostic(event.message);
-          else if (event && event.target && event.target.src) showStartupDiagnostic("Failed to load resource: " + event.target.src);
+          if (event && event.message) showDiagnostic(event.message);
+          else if (event && event.target && event.target.src) showDiagnostic("Failed to load resource: " + event.target.src);
         }, true);
         window.addEventListener("unhandledrejection", function (event) {
-          showStartupDiagnostic(event && event.reason ? (event.reason.message || event.reason) : "Unhandled promise rejection");
+          showDiagnostic(event && event.reason ? (event.reason.message || event.reason) : "Unhandled promise rejection");
         });
         timer = window.setTimeout(function () {
           var root = document.getElementById("root");
-          if (root && !root.querySelector(".app")) showStartupDiagnostic("The React application did not mount within 12 seconds. Check the deployment build and browser Console.");
+          if (root && !root.querySelector(".app") && !root.querySelector(".boot-error")) {
+            showDiagnostic("The application did not mount within 12 seconds. Check the GitHub Pages build and browser Console.");
+          }
         }, 12000);
-        window.addEventListener("DOMContentLoaded", function () {
+        window.addEventListener("load", function () {
           window.setTimeout(function () { window.clearTimeout(timer); }, 15000);
-        });
+        }, { once: true });
       })();
-    </script>ipt>
+    </script>ipt>ipt>
     <script type="module" src="/src.jsx"></script>
   </body>
 </html>
