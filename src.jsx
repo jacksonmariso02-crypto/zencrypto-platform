@@ -27,7 +27,7 @@ function createMarketSocket(path){
 async function fetchMarketCandles(apiBase,params,parentSignal){
  const entries=Object.entries(params).filter(([,v])=>v!==undefined&&v!==null);
  const query=new URLSearchParams(entries.map(([k,v])=>[k,String(v)]));
- const binanceQuery=new URLSearchParams(entries.map(([k,v])=>[k==="end_time"?"endTime":k,String(v)]));
+ const binanceQuery=new URLSearchParams(entries.map(([k,v])=>[k==="end_time"?"endTime":k==="start_time"?"startTime":k,String(v)]));
  const sources=[{url:apiBase.replace(/\/$/,"")+"/market/candles?"+query,kind:"backend"},...BINANCE_REST_HOSTS.map(host=>({url:host+"/api/v3/klines?"+binanceQuery,kind:"binance"}))];
  let lastError=null;
  for(const source of sources){
@@ -310,7 +310,7 @@ function MarketCandles({apiBase}){
     setLiveStatus("Connected");
     if(!backfillInFlight){
      backfillInFlight=true;
-     fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500}).then(data=>{
+     (()=>{const intervalMs=({"1m":60000,"3m":180000,"5m":300000,"15m":900000,"30m":1800000,"1h":3600000,"2h":7200000,"4h":14400000,"6h":21600000,"8h":28800000,"12h":43200000,"1d":86400000,"3d":259200000,"1w":604800000})[interval]||2592000000;const last=candlesRef.current.at(-1);return fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,start_time:last?last.time*1000+intervalMs:undefined});})().then(data=>{
       if(disposed||!Array.isArray(data?.candles))return;
       const recovered=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
       if(recovered.length<2)return;
