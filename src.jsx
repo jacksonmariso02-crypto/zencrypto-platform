@@ -65,8 +65,10 @@ function MarketCandles({apiBase}){
  const host=useRef(null),macdHost=useRef(null),kdjHost=useRef(null),rsiHost=useRef(null),chartRef=useRef(null),macdChartRef=useRef(null),kdjChartRef=useRef(null),rsiChartRef=useRef(null),candleRef=useRef(null),volumeRef=useRef(null),ma5Ref=useRef(null),ma7Ref=useRef(null),ma25Ref=useRef(null),ma99Ref=useRef(null),hasFittedRef=useRef(false),bbUpperRef=useRef(null),bbMiddleRef=useRef(null),bbLowerRef=useRef(null),macdLineRef=useRef(null),signalRef=useRef(null),histRef=useRef(null),kdjKRef=useRef(null),kdjDRef=useRef(null),kdjJRef=useRef(null),rsiLineRef=useRef(null);
  const [pair,setPair]=useState("BTCUSDT"),[interval,setIntervalValue]=useState("1h"),[candles,setCandles]=useState([]),[busy,setBusy]=useState(false),[reloadNonce,setReloadNonce]=useState(0),[olderBusy,setOlderBusy]=useState(false),[hasMoreHistory,setHasMoreHistory]=useState(true),[error,setError]=useState(""),[lastUpdated,setLastUpdated]=useState(""),[showVolume,setShowVolume]=useState(true),[showMa5,setShowMa5]=useState(true),[showMa7,setShowMa7]=useState(true),[showMa25,setShowMa25]=useState(true),[showMa99,setShowMa99]=useState(false),[showBollinger,setShowBollinger]=useState(true),[showMacd,setShowMacd]=useState(true),[rsi,setRsi]=useState(null),[macdReadout,setMacdReadout]=useState(null),[kdjReadout,setKdjReadout]=useState(null),[liveStatus,setLiveStatus]=useState("Connecting"),[lastKlineAt,setLastKlineAt]=useState(0),[hoverCandle,setHoverCandle]=useState(null),[watchlist,setWatchlist]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_watchlist")||'["BTCUSDT","ETHUSDT"]');return Array.isArray(saved)?[...new Set(saved.filter(x=>CHART_SYMBOLS.includes(x)))]:["BTCUSDT","ETHUSDT"];}catch{return ["BTCUSDT","ETHUSDT"];}}),[alerts,setAlerts]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_price_alerts")||"[]");return Array.isArray(saved)?saved.filter(a=>a&&typeof a.id==="string"&&CHART_SYMBOLS.includes(a.pair)&&["above","below"].includes(a.direction)&&Number.isFinite(Number(a.target))&&Number(a.target)>0).slice(0,50):[];}catch{return [];}}),[alertTarget,setAlertTarget]=useState(""),[alertDirection,setAlertDirection]=useState("above"),[alertNotice,setAlertNotice]=useState(""),[watchQuotes,setWatchQuotes]=useState({}),[orderBook,setOrderBook]=useState({bids:[],asks:[],updatedAt:null}),[bookStatus,setBookStatus]=useState("Connecting"),[recentTrades,setRecentTrades]=useState([]),[tradeStatus,setTradeStatus]=useState("Connecting"),[dayStats,setDayStats]=useState(null),[dayStatus,setDayStatus]=useState("Connecting"),[notificationPermission,setNotificationPermission]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
  const selectedPairRef=useRef(pair);
+ const candlesRef=useRef([]);
  const notifiedAlertIdsRef=useRef(new Set());
  selectedPairRef.current=pair;
+ useEffect(()=>{candlesRef.current=candles;},[candles]);
  const [quoteClock,setQuoteClock]=useState(Date.now());
  const [marketRankMode,setMarketRankMode]=useState("volume");
  useEffect(()=>{const timer=window.setInterval(()=>setQuoteClock(Date.now()),2000);return()=>window.clearInterval(timer);},[]);
@@ -296,13 +298,34 @@ function MarketCandles({apiBase}){
  function toggleWatch(pairValue){setWatchlist(prev=>prev.includes(pairValue)?prev.filter(x=>x!==pairValue):[...prev,pairValue]);}
  function addPriceAlert(){const target=Number(alertTarget);if(!Number.isFinite(target)||target<=0){setAlertNotice("Enter a valid target price greater than zero.");return;}if(alerts.some(a=>!a.triggered&&a.pair===pair&&a.direction===alertDirection&&Number(a.target)===target)){setAlertNotice("An identical active alert already exists for this market.");return;}if(alerts.filter(a=>!a.triggered).length>=50){setAlertNotice("You have reached the limit of 50 active price alerts. Remove an existing alert first.");return;}setAlerts(prev=>[{id:Date.now()+"-"+Math.random().toString(36).slice(2,7),pair,direction:alertDirection,target,createdAt:new Date().toISOString(),triggered:false},...prev].slice(0,100));setAlertTarget("");setAlertNotice("Price alert saved on this browser.");}
  useEffect(()=>{
-  let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
+  let socket=null,disposed=false,retryTimer=null,retryDelay=1000,backfillInFlight=false;
   const connect=()=>{
    if(disposed)return;
    setLiveStatus("Connecting");
    try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@kline_"+interval);}
    catch{setLiveStatus("Unavailable");scheduleReconnect();return;}
-   socket.onopen=()=>{if(!disposed){retryDelay=1000;setLiveStatus("Connected");}};
+   socket.onopen=()=>{
+    if(disposed)return;
+    retryDelay=1000;
+    setLiveStatus("Connected");
+    if(!backfillInFlight){
+     backfillInFlight=true;
+     fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500}).then(data=>{
+      if(disposed||!Array.isArray(data?.candles))return;
+      const recovered=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));
+      if(recovered.length<2)return;
+      const previous=candlesRef.current;
+      const merged=[...new Map([...previous,...recovered].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()].slice(-2000);
+      candlesRef.current=merged;
+      setCandles(merged);
+      candleRef.current?.setData(merged.map(({time,open,high,low,close})=>({time,open,high,low,close})));
+      volumeRef.current?.setData(merged.map(x=>({time:x.time,value:x.volume,color:x.close>=x.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"})));
+      setLastKlineAt(Date.now());
+      setLastUpdated(new Date().toLocaleTimeString());
+      setLiveStatus("Live");
+     }).catch(()=>{/* Keep the WebSocket feed active if REST recovery is unavailable. */}).finally(()=>{backfillInFlight=false;});
+    }
+   };
    socket.onmessage=event=>{
     if(disposed)return;
     try{
