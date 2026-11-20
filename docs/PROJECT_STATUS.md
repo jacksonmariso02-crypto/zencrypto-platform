@@ -79,6 +79,7 @@ Last updated: 2026-11-20
 - Add token risk screening, price impact, route/source, and estimated gas presentation.
 - Enforce quote expiry and stale-quote rejection; add stricter transaction simulation.
 - Test approval and swap flows on testnets before controlled mainnet canaries.
+- [x] Indexed on-chain history can be searched by transaction hash, sender, recipient, token, contract address, or raw transfer amount, alongside incoming/outgoing filters.
 - Add durable transaction indexing, reorg handling, confirmation/finality policy, and user-visible swap history.
 - Add provider rate limits, abuse controls, and API-key usage monitoring.
 
