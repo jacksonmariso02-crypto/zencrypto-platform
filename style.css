@@ -556,3 +556,7 @@ main,
 
 .market-rank-controls{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
 .market-rank-controls button{white-space:nowrap}
+
+.alert-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.alert-heading button{margin-left:auto;border:1px solid #34465f;background:#111d2e;color:#9aabc3;border-radius:6px;padding:5px 8px;font-size:10px;cursor:pointer}
+.alert-heading button:disabled{opacity:.4;cursor:not-allowed}
