@@ -345,7 +345,17 @@ def test_order_detail_is_private_to_owning_user(client, monkeypatch):
     assert detail.json()["order"]["id"] == order.json()["id"]
     assert detail.json()["mode"] == "PAPER_ONLY"
 
-    other_headers = _paper_user(client, monkeypatch)
+    other_registration = client.post(
+        "/auth/register",
+        json={"email": "second-order-user@example.com", "password": "a-long-test-password-456"},
+    )
+    assert other_registration.status_code == 201
+    other_login = client.post(
+        "/auth/login",
+        json={"email": "second-order-user@example.com", "password": "a-long-test-password-456"},
+    )
+    assert other_login.status_code == 200
+    other_headers = {"Authorization": "Bearer " + other_login.json()["access_token"]}
     hidden = client.get("/trade/orders/" + order.json()["id"], headers=other_headers)
     assert hidden.status_code == 404
 
