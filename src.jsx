@@ -294,7 +294,7 @@ function MarketCandles({apiBase}){
   finally{setOlderBusy(false);}
  }
  function toggleWatch(pairValue){setWatchlist(prev=>prev.includes(pairValue)?prev.filter(x=>x!==pairValue):[...prev,pairValue]);}
- function addPriceAlert(){const target=Number(alertTarget);if(!Number.isFinite(target)||target<=0){setAlertNotice("Enter a valid target price greater than zero.");return;}setAlerts(prev=>[{id:Date.now()+"-"+Math.random().toString(36).slice(2,7),pair,direction:alertDirection,target,createdAt:new Date().toISOString(),triggered:false},...prev].slice(0,50));setAlertTarget("");setAlertNotice("Price alert saved on this browser.");}
+ function addPriceAlert(){const target=Number(alertTarget);if(!Number.isFinite(target)||target<=0){setAlertNotice("Enter a valid target price greater than zero.");return;}if(alerts.some(a=>!a.triggered&&a.pair===pair&&a.direction===alertDirection&&Number(a.target)===target)){setAlertNotice("An identical active alert already exists for this market.");return;}if(alerts.filter(a=>!a.triggered).length>=50){setAlertNotice("You have reached the limit of 50 active price alerts. Remove an existing alert first.");return;}setAlerts(prev=>[{id:Date.now()+"-"+Math.random().toString(36).slice(2,7),pair,direction:alertDirection,target,createdAt:new Date().toISOString(),triggered:false},...prev].slice(0,100));setAlertTarget("");setAlertNotice("Price alert saved on this browser.");}
  useEffect(()=>{
   let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
   const connect=()=>{
