@@ -26,7 +26,9 @@ Last updated: 2026-11-20
 - [x] Identify WETH/USDC using chain-specific contract allowlists; unknown token contracts remain unverified.
 - [x] Deduplicate repeated indexed events and reject invalid chain, address, timestamp, amount precision, and pagination inputs.
 - [x] Accept provider token decimals as bounded decimal strings and normalize hexadecimal log indexes for stable transfer-event IDs.
-- [ ] Persist reconciled chain events and handle pagination/cursor coverage before treating indexed activity as a complete cost-basis ledger.
+- [x] Expose independent Routescan continuation cursors for native transactions and ERC-20 transfers; accept each cursor separately on subsequent requests.
+- [x] Return explicit per-stream has-more flags and mark every fetched page as incomplete until both cursors are exhausted.
+- [ ] Persist reconciled chain events and complete all cursor pages before treating indexed activity as a complete cost-basis ledger.
 
 ### Live market charts
 - [x] Binance Spot OHLCV history with open/close times, base/quote volume, trade count, and forming/closed candle metadata.
