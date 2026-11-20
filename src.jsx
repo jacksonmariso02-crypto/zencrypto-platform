@@ -214,9 +214,11 @@ function MarketCandles({apiBase}){
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
  useEffect(()=>{
-  if(!watchlist.length){setWatchQuotes({});return;}
   let socket=null,disposed=false,retryTimer=null,retryDelay=1000;
-  const streams=watchlist.filter(x=>CHART_SYMBOLS.includes(x)).map(x=>x.toLowerCase()+"@ticker").join("/");
+  // Subscribe to every supported chart symbol so the full market watchlist
+  // always has live quotes; saved watchlist stars remain a separate preference.
+  const symbols=CHART_SYMBOLS;
+  const streams=symbols.map(x=>x.toLowerCase()+"@ticker").join("/");
   if(!streams)return;
   const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
   const connect=()=>{
@@ -228,7 +230,7 @@ function MarketCandles({apiBase}){
     if(disposed)return;
     try{
      const msg=JSON.parse(event.data),d=msg.data;
-     if(!d?.s||!watchlist.includes(d.s))return;
+     if(!d?.s||!symbols.includes(d.s))return;
      const symbol=d.s,price=Number(d.c),change=Number(d.P);
      if(!Number.isFinite(price)||price<=0||!Number.isFinite(change))return;
      setWatchQuotes(prev=>({...prev,[symbol]:{price,change,updatedAt:Date.now()}}));
@@ -254,7 +256,7 @@ function MarketCandles({apiBase}){
   };
   connect();
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
- },[watchlist.join("|")]);
+ },[]);
  async function loadOlderCandles(){
   if(olderBusy||!hasMoreHistory||candles.length===0)return;
   const first=candles[0],endTime=first.time*1000-1;
