@@ -537,3 +537,42 @@ def test_chain_ledger_rejects_invalid_network_and_wallet(client):
     assert bad_network.status_code == 422
     bad_address = client.get("/chain/ledger", headers=headers, params={"chainId": 1, "address": "bad"})
     assert bad_address.status_code == 422
+
+
+
+def test_chain_ledger_stops_requesting_exhausted_stream(client, monkeypatch):
+    wallet = "0x" + "1" * 40
+    headers = _create_authenticated_user(client, "independent-cursors@example.com")
+    calls = []
+    page = {"number": 0}
+
+    class FakeResponse:
+        status_code = 200
+        def __init__(self, payload): self.payload = payload
+        def json(self): return self.payload
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url, params=None, **kwargs):
+            calls.append((url, dict(params or {})))
+            if url.endswith("/transactions"):
+                return FakeResponse({"items": [], "link": {}})
+            if page["number"] == 0:
+                return FakeResponse({"items": [], "link": {"nextToken": "token-page-2"}})
+            assert params["next"] == "token-page-2"
+            return FakeResponse({"items": [], "link": {}})
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    first = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 1, "address": wallet})
+    assert first.status_code == 200
+    assert first.json()["pagination"]["hasMoreTransactions"] is False
+    assert first.json()["pagination"]["hasMoreTokenTransfers"] is True
+    page["number"] = 1
+    second = client.post("/chain/ledger/sync", headers=headers, json={"chainId": 1, "address": wallet})
+    assert second.status_code == 200
+    transaction_calls = [call for call in calls if call[0].endswith("/transactions")]
+    token_calls = [call for call in calls if call[0].endswith("/erc20-transfers")]
+    assert len(transaction_calls) == 1
+    assert len(token_calls) == 2
