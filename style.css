@@ -639,3 +639,9 @@ main,
 .backtest-trade-list>div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 9px;border:1px solid #26374e;border-radius:6px;background:#111f31;font-size:10px;color:#91a2b8}
 .backtest-trade-list b{white-space:nowrap;font-size:11px}
 .backtest-trade-list b.positive{color:#27d6a2}.backtest-trade-list b.negative{color:#fa7185}
+.backtest-curves{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.backtest-curves>div{min-width:0;padding:10px;border:1px solid #26374e;border-radius:7px;background:#111f31}
+.backtest-curves strong{display:block;margin-bottom:6px;font-size:11px;color:#dce7f5}
+.backtest-curves svg{display:block;width:100%;height:auto;overflow:visible}
+.backtest-curves small{display:block;margin-top:5px;font-size:10px;color:#91a2b8}
+@media(max-width:650px){.backtest-curves{grid-template-columns:1fr}}
