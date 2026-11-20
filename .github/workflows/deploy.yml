@@ -31,6 +31,7 @@ jobs:
       - name: Build website
         env:
           VITE_API_BASE_URL: https://zencrypto-api-production.onrender.com
+          VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.WALLETCONNECT_PROJECT_ID }}
         run: npm run build
 
       - name: Upload Pages artifact
