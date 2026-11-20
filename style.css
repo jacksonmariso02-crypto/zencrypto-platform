@@ -426,7 +426,7 @@ main,
 .orderbook-spread{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid #26364c;border-bottom:1px solid #26364c;font-size:12px;color:#9aabc3}
 .orderbook-spread strong{display:block;margin-top:4px;color:#e5edf7;font-size:14px;font-variant-numeric:tabular-nums}
 .orderbook-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px}
-.orderbook-label,.orderbook-row{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:6px;align-items:center}
+.orderbook-label,.orderbook-row{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr;gap:6px;align-items:center}
 .orderbook-label{padding:5px 4px;color:#71839b;font-size:9px;letter-spacing:.06em}
 .orderbook-label span:nth-child(n+2),.orderbook-row span:nth-child(n+2){text-align:right}
 .orderbook-row{position:relative;isolation:isolate;min-height:24px;padding:3px 4px;font-size:10px;font-variant-numeric:tabular-nums;overflow:hidden}
@@ -441,3 +441,13 @@ main,
 .portfolio-history-panel h3{margin:0 0 5px;font-size:14px}
 .portfolio-history-chart{display:block;width:100%;height:150px;overflow:visible;color:var(--accent,#6aa9ff);margin:10px 0}
 .portfolio-history-panel .fine{font-size:11px;opacity:.75}
+
+
+/* Cumulative market depth chart */
+.depth-chart-wrap{margin-top:16px;padding-top:14px;border-top:1px solid #26364c}
+.depth-chart-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;color:#dbe5f2;font-size:12px}
+.depth-chart-title span{color:#8192aa;font-size:10px}
+.depth-chart{display:block;width:100%;height:auto;min-height:120px;overflow:visible}
+.depth-legend{display:flex;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:8px;font-size:10px}
+.depth-empty{display:grid;place-items:center;min-height:110px;color:#8192aa;font-size:12px;border:1px dashed #35465d;border-radius:8px}
+@media(max-width:620px){.depth-chart-title{align-items:flex-start;flex-direction:column;gap:4px}.depth-legend{justify-content:flex-start;gap:10px}}
