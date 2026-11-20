@@ -66,9 +66,18 @@ function MarketCandles({apiBase}){
  const [pair,setPair]=useState("BTCUSDT"),[interval,setIntervalValue]=useState("1h"),[candles,setCandles]=useState([]),[busy,setBusy]=useState(false),[reloadNonce,setReloadNonce]=useState(0),[olderBusy,setOlderBusy]=useState(false),[hasMoreHistory,setHasMoreHistory]=useState(true),[error,setError]=useState(""),[lastUpdated,setLastUpdated]=useState(""),[showVolume,setShowVolume]=useState(true),[showMa5,setShowMa5]=useState(true),[showMa7,setShowMa7]=useState(true),[showMa25,setShowMa25]=useState(true),[showMa99,setShowMa99]=useState(false),[showBollinger,setShowBollinger]=useState(true),[showMacd,setShowMacd]=useState(true),[rsi,setRsi]=useState(null),[macdReadout,setMacdReadout]=useState(null),[kdjReadout,setKdjReadout]=useState(null),[liveStatus,setLiveStatus]=useState("Connecting"),[lastKlineAt,setLastKlineAt]=useState(0),[hoverCandle,setHoverCandle]=useState(null),[watchlist,setWatchlist]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_watchlist")||'["BTCUSDT","ETHUSDT"]');return Array.isArray(saved)?[...new Set(saved.filter(x=>CHART_SYMBOLS.includes(x)))]:["BTCUSDT","ETHUSDT"];}catch{return ["BTCUSDT","ETHUSDT"];}}),[alerts,setAlerts]=useState(()=>{try{const saved=JSON.parse(localStorage.getItem("zencrypto_price_alerts")||"[]");return Array.isArray(saved)?saved.filter(a=>a&&typeof a.id==="string"&&CHART_SYMBOLS.includes(a.pair)&&["above","below"].includes(a.direction)&&Number.isFinite(Number(a.target))&&Number(a.target)>0).slice(0,50):[];}catch{return [];}}),[alertTarget,setAlertTarget]=useState(""),[alertDirection,setAlertDirection]=useState("above"),[alertNotice,setAlertNotice]=useState(""),[watchQuotes,setWatchQuotes]=useState({}),[orderBook,setOrderBook]=useState({bids:[],asks:[],updatedAt:null}),[bookStatus,setBookStatus]=useState("Connecting"),[recentTrades,setRecentTrades]=useState([]),[tradeStatus,setTradeStatus]=useState("Connecting"),[dayStats,setDayStats]=useState(null),[dayStatus,setDayStatus]=useState("Connecting"),[notificationPermission,setNotificationPermission]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
  const selectedPairRef=useRef(pair);
  const candlesRef=useRef([]);
+ const lastKlineAtRef=useRef(0);
  const notifiedAlertIdsRef=useRef(new Set());
  selectedPairRef.current=pair;
  useEffect(()=>{candlesRef.current=candles;},[candles]);
+ useEffect(()=>{
+  const timer=window.setInterval(()=>{
+   const last=lastKlineAtRef.current;
+   if(!last)return;
+   if(Date.now()-last>20000)setLiveStatus("Stale");
+  },5000);
+  return()=>window.clearInterval(timer);
+ },[]);
  const [quoteClock,setQuoteClock]=useState(Date.now());
  const [marketRankMode,setMarketRankMode]=useState("volume");
  useEffect(()=>{const timer=window.setInterval(()=>setQuoteClock(Date.now()),2000);return()=>window.clearInterval(timer);},[]);
@@ -269,8 +278,8 @@ function MarketCandles({apiBase}){
      });
     }catch{/* Ignore malformed ticker frames. */}
    };
-   socket.onerror=()=>{try{socket?.close();}catch{}};
-   socket.onclose=()=>{if(!disposed)schedule();};
+   socket.onerror=()=>{if(!disposed){setLiveStatus("Reconnecting");try{socket?.close();}catch{}}};
+   socket.onclose=()=>{if(!disposed){setLiveStatus("Reconnecting");schedule();}};
   };
   connect();
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
@@ -332,7 +341,9 @@ function MarketCandles({apiBase}){
       setCandles(merged);
       candleRef.current?.setData(merged.map(({time,open,high,low,close})=>({time,open,high,low,close})));
       volumeRef.current?.setData(merged.map(x=>({time:x.time,value:x.volume,color:x.close>=x.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"})));
-      setLastKlineAt(Date.now());
+      lastKlineAtRef.current=Date.now();
+      lastKlineAtRef.current=Date.now();
+     setLastKlineAt(Date.now());
       setLastUpdated(new Date().toLocaleTimeString());
       setLiveStatus("Live");
      })().catch(()=>{/* Keep the WebSocket feed active if REST recovery is unavailable. */}).finally(()=>{backfillInFlight=false;});
