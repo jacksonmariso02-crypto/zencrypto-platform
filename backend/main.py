@@ -429,8 +429,9 @@ def list_orders(u=Depends(require_user)):
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
     symbol = body.symbol.upper()
-    if symbol in {"USD", "USDT", "USDC"}:
-        raise HTTPException(422, "Select a crypto asset symbol.")
+    allowed_symbols = {"BTC", "ETH", "SOL", "BNB", "XRP"}
+    if symbol not in allowed_symbols:
+        raise HTTPException(422, "Unsupported paper-trading asset. Supported assets: BTC, ETH, SOL, BNB, XRP.")
     try:
         price = Decimal(body.reference_price)
         quote = Decimal(body.quote_amount)
