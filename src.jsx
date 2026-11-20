@@ -260,7 +260,7 @@ function MarketCandles({apiBase}){
        if(typeof Notification!=="undefined"&&Notification.permission==="granted"&&!notifiedAlertIdsRef.current.has(a.id)){
         notifiedAlertIdsRef.current.add(a.id);
         try{new Notification("ZenCrypto price alert",{body:symbol+" reached "+price+" ("+a.direction+" "+a.target+")",tag:"zencrypto-price-alert-"+a.id,renotify:false});}catch{}
-       }}
+       }
        return triggered;
       });
       return changed?next:prev;
