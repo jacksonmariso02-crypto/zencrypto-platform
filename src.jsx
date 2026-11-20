@@ -202,7 +202,7 @@ function MarketCandles({apiBase}){
    socket.onclose=()=>{if(!disposed){setBookStatus("Reconnecting");schedule();}};
   };
   connect();
-  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
+  return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(connectionTimer)window.clearTimeout(connectionTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
 
  useEffect(()=>{
@@ -233,18 +233,19 @@ function MarketCandles({apiBase}){
   return()=>{disposed=true;if(retryTimer)window.clearTimeout(retryTimer);if(socket){socket.onopen=null;socket.onmessage=null;socket.onerror=null;socket.onclose=null;try{socket.close();}catch{}}};
  },[pair]);
  useEffect(()=>{
-  let socket=null,disposed=false,retryTimer=null,retryDelay=1000,retryAttempts=0;
+  let socket=null,disposed=false,retryTimer=null,connectionTimer=null,retryDelay=1000,retryAttempts=0;
   // Subscribe to every supported chart symbol so the full market watchlist
   // always has live quotes; saved watchlist stars remain a separate preference.
   const symbols=CHART_SYMBOLS;
   const streams=symbols.map(x=>x.toLowerCase()+"@ticker").join("/");
   if(!streams)return;
-  const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
+  const schedule=()=>{if(disposed)return;retryAttempts+=1;setTickerSocketStatus(retryAttempts>=5?"Unavailable":"Reconnecting");retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
   const connect=()=>{
    if(disposed)return;
    try{socket=createMarketSocket("/stream?streams="+streams);}
    catch{schedule();return;}
-   socket.onopen=()=>{if(!disposed){retryDelay=1000;setTickerSocketStatus("Connecting");}};
+   connectionTimer=window.setTimeout(()=>{if(!disposed&&socket?.readyState===0){setTickerSocketStatus("Reconnecting");try{socket.close();}catch{schedule();}}},10000);
+   socket.onopen=()=>{if(!disposed){if(connectionTimer)window.clearTimeout(connectionTimer);connectionTimer=null;retryDelay=1000;setTickerSocketStatus("Connecting");}};
    socket.onmessage=event=>{
     if(disposed)return;
     try{
@@ -283,7 +284,7 @@ function MarketCandles({apiBase}){
    
    
    socket.onerror=()=>{if(!disposed){setTickerSocketStatus("Reconnecting");try{socket?.close();}catch{}}};
-   socket.onclose=()=>{if(!disposed){setTickerSocketStatus("Reconnecting");schedule();}};
+   socket.onclose=()=>{if(connectionTimer)window.clearTimeout(connectionTimer);connectionTimer=null;if(!disposed)schedule();};
   };
   setTickerSocketStatus("Connecting");
   connect();
