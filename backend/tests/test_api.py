@@ -67,7 +67,7 @@ def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, m
             return [
                 [1700000000000, "100", "110", "95", "105", "12.5", 1700003599999, "1250", 42],
                 ["bad-timestamp", "100", "110", "95", "105", "12.5", 1700003599999, "1250", 42],
-                [1700003600000, "100", "90", "95", "105", "12.5", 1700007199999, "1250", 42],
+                [1700003600000, "100", "110", "95", "105", "12.5", 1700007199999, "1250", 42],
             ]
 
     class FakeAsyncClient:
@@ -92,7 +92,7 @@ def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, m
     assert payload["source"] == "Binance public market data"
     assert payload["provider"] == "Binance Spot REST API"
     assert payload["market"] == "SPOT"
-    assert payload["candle_count"] == 1
+    assert payload["candle_count"] == 2
     assert payload["candles"] == [
         {
             "time": 1700000000,
@@ -102,6 +102,18 @@ def test_candle_endpoint_normalizes_valid_binance_rows_without_network(client, m
             "close": 105.0,
             "volume": 12.5,
             "close_time": 1700003599,
+            "quote_volume": 1250.0,
+            "trades": 42,
+            "is_closed": True,
+        },
+        {
+            "time": 1700003600,
+            "open": 100.0,
+            "high": 110.0,
+            "low": 95.0,
+            "close": 105.0,
+            "volume": 12.5,
+            "close_time": 1700007199,
             "quote_volume": 1250.0,
             "trades": 42,
             "is_closed": True,
