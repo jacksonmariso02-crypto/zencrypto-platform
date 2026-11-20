@@ -581,3 +581,25 @@ main,
 .health-dot.reconnecting{background:#e5b85c;animation:zencrypto-health-pulse 1.2s ease-in-out infinite}
 .health-dot.unavailable{background:#fa7185}
 @keyframes zencrypto-health-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+.multi-kline-panel{margin:12px 0;padding:12px;border:1px solid #26364c;border-radius:10px;background:#0c1726}
+.multi-kline-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:#dce7f5;font-size:11px}
+.multi-kline-heading>div{display:flex;flex-direction:column;gap:3px}
+.multi-kline-heading small,.multi-kline-status{color:#91a2b8;font-size:10px}
+.multi-kline-status{display:flex;align-items:center;gap:6px}
+.multi-kline-status .health-dot{display:inline-block}
+.multi-kline-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.multi-kline-card{display:flex;flex-direction:column;gap:5px;min-width:0;text-align:left;padding:9px;border:1px solid #24354b;border-radius:8px;background:#111f31;color:#dce7f5;cursor:pointer;transition:border-color .15s,transform .15s}
+.multi-kline-card:hover{border-color:#64a8ff;transform:translateY(-1px)}
+.multi-kline-card-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.multi-kline-card-top strong{font-size:11px}
+.multi-kline-card-top small{font-size:9px;color:#8192aa}
+.multi-kline-price{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-kline-spark{display:block;width:100%;height:48px;min-width:0}
+.multi-kline-empty{display:flex;align-items:center;justify-content:center;height:100%;font-size:9px;color:#718096}
+.multi-kline-change{font-size:10px;font-weight:600}
+.multi-kline-change.positive{color:#27d6a2}
+.multi-kline-change.negative{color:#fa7185}
+.multi-kline-foot{margin:9px 0 0;color:#718096;font-size:9px}
+@media(max-width:900px){.multi-kline-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.multi-kline-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.multi-kline-heading{align-items:flex-start;flex-direction:column}}
