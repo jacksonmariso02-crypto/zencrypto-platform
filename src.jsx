@@ -76,7 +76,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
     const map=new Map(current.points.map(point=>[point.time,point]));
     rows.forEach(point=>map.set(point.time,point));
     return {...prev,[symbol]:{
-     points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-48),
+     points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-200),
      updatedAt:receivedAt||current.updatedAt,
      historyStatus:current.historyStatus
     }};
@@ -85,7 +85,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
   const loadHistory=async()=>{
    const results=await Promise.allSettled(CHART_SYMBOLS.map(async symbol=>{
     try{
-     const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:48});
+     const data=await fetchMarketCandles(apiBase,{symbol,interval,limit:200});
      const rows=(Array.isArray(data?.candles)?data.candles:[]).map(row=>{
       const raw=Number(row.time);
       return {time:Math.floor(raw>1e12?raw/1000:raw),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:Number(row.volume??0),quoteVolume:Number(row.quote_volume??row.quoteVolume??0),trades:Number(row.trades??0),closed:row.is_closed===true};
@@ -94,7 +94,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
       const current=prev[symbol]||{points:[],updatedAt:0,historyStatus:"Loading"};
       const map=new Map(rows.map(point=>[point.time,point]));
       current.points.forEach(point=>map.set(point.time,point));
-      return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-48),historyStatus:rows.length?"Ready":"Empty"}};
+      return {...prev,[symbol]:{...current,points:[...map.values()].sort((a,b)=>a.time-b.time).slice(-200),historyStatus:rows.length?"Ready":"Empty"}};
      });
     }catch(error){
      setSeries(prev=>({...prev,[symbol]:{...(prev[symbol]||{points:[],updatedAt:0}),historyStatus:"Error"}}));
@@ -167,7 +167,7 @@ function MultiCoinKlinePanel({apiBase,interval,onSelect}){
  const counts={live:rows.filter(x=>x.status==="Live").length,stale:rows.filter(x=>x.status==="Stale").length,waiting:rows.filter(x=>["Waiting","No history","History error"].includes(x.status)).length};
  return <section className="multi-kline-panel">
   <div className="multi-kline-heading">
-   <div><strong>10-COIN LIVE K-LINES</strong><small>{interval} interval · up to 48 OHLC candles per symbol</small></div>
+   <div><strong>10-COIN LIVE K-LINES</strong><small>{interval} interval · up to 200 OHLC candles per symbol</small></div>
    <span className="multi-kline-status">{counts.live} Live · {counts.stale} Stale · {counts.waiting} Waiting · {socketStatus}</span>
   </div>
   <div className="multi-kline-grid">
