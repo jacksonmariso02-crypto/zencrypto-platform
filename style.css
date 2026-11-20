@@ -577,3 +577,7 @@ main,
 .health-dot.stale{background:#fa7185}
 .health-dot.waiting{background:#e5b85c}
 @media(max-width:640px){.market-feed-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.market-feed-health-head{align-items:flex-start;flex-direction:column}}
+
+.health-dot.reconnecting{background:#e5b85c;animation:zencrypto-health-pulse 1.2s ease-in-out infinite}
+.health-dot.unavailable{background:#fa7185}
+@keyframes zencrypto-health-pulse{0%,100%{opacity:1}50%{opacity:.35}}
