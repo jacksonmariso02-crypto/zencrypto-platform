@@ -455,3 +455,6 @@ main,
 .portfolio-history-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
 .portfolio-history-actions .fine{margin:0}
 .portfolio-history-actions button:disabled{opacity:.45;cursor:not-allowed}
+
+.portfolio-range-controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.portfolio-range-controls .tablebtn.active{border-color:var(--accent,#6aa9ff);color:var(--accent,#6aa9ff);background:rgba(90,150,240,.10)}
