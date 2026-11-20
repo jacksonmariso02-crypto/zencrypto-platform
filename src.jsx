@@ -355,6 +355,32 @@ function MarketCandles({apiBase}){
      if(!k||!Number.isFinite(Number(k.t)))return;
      const row={time:Math.floor(Number(k.t)/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c),volume:Number(k.v),quoteVolume:Number(k.q||0),trades:Number(k.n||0),isClosed:Boolean(k.x)};
      if(![row.open,row.high,row.low,row.close,row.volume].every(Number.isFinite)||row.low<=0||row.volume<0||row.high<Math.max(row.open,row.close)||row.low>Math.min(row.open,row.close))return;
+     const intervalSeconds=({"1m":60,"3m":180,"5m":300,"15m":900,"30m":1800,"1h":3600,"2h":7200,"4h":14400,"6h":21600,"8h":28800,"12h":43200,"1d":86400,"3d":259200,"1w":604800})[interval]||2592000;
+     const latestKnown=candlesRef.current.at(-1);
+     if(latestKnown&&row.time>latestKnown.time+intervalSeconds&&!backfillInFlight){
+      backfillInFlight=true;
+      (async()=>{
+       const recoveredByTime=new Map();
+       let cursor=latestKnown.time*1000+intervalSeconds*1000;
+       for(let page=0;page<4&&!disposed&&cursor<row.time*1000;page++){
+        const data=await fetchMarketCandles(apiBase,{symbol:pair,interval,limit:500,start_time:cursor,end_time:row.time*1000});
+        if(disposed||!Array.isArray(data?.candles)||!data.candles.length)break;
+        const valid=data.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0),quoteVolume:Number(x.quote_volume||0),trades:Number(x.trades||0),isClosed:Boolean(x.is_closed)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume,x.quoteVolume,x.trades].every(Number.isFinite)&&x.low>0&&x.volume>=0&&x.quoteVolume>=0&&x.trades>=0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close)&&x.time<row.time);
+        if(!valid.length)break;
+        valid.forEach(x=>recoveredByTime.set(x.time,x));
+        const nextCursor=Math.max(...valid.map(x=>x.time))*1000+intervalSeconds*1000;
+        if(nextCursor<=cursor)break;
+        cursor=nextCursor;
+        if(data.candles.length<500||valid.length<500)break;
+       }
+       if(disposed||!recoveredByTime.size)return;
+       const merged=[...new Map([...candlesRef.current,...recoveredByTime.values(),row].sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()].slice(-2000);
+       candlesRef.current=merged;
+       setCandles(merged);
+       candleRef.current?.setData(merged.map(({time,open,high,low,close})=>({time,open,high,low,close})));
+       volumeRef.current?.setData(merged.map(x=>({time:x.time,value:x.volume,color:x.close>=x.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"})));
+      })().catch(()=>{/* Continue live streaming if gap recovery fails. */}).finally(()=>{backfillInFlight=false;});
+     }
      lastKlineAtRef.current=Date.now();
      setLiveStatus("Live");
      setLastKlineAt(lastKlineAtRef.current);
