@@ -1,5 +1,5 @@
 """ZenCrypto non-custodial API: server-side DEX quotes; users sign and submit transactions in their own wallets."""
-import os, sqlite3, secrets, hashlib, hmac, time, json
+import os, sqlite3, secrets, hashlib, hmac, time, json, re
 from collections import defaultdict, deque
 import httpx
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
@@ -216,6 +216,59 @@ class CaseCreate(BaseModel):
 class Kyc(BaseModel):
     legal_name: str = Field(min_length=2, max_length=150)
     country: str = Field(min_length=2, max_length=80)
+
+
+@app.get("/chain/history")
+async def chain_history(chainId: int, address: str, limit: int = 25):
+    """Indexed public wallet activity from Routescan; never signs or broadcasts transactions."""
+    if chainId not in (1, 8453):
+        raise HTTPException(422, "Indexed history is currently available for Ethereum and Base mainnet only.")
+    if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
+        raise HTTPException(422, "Invalid wallet address.")
+    if limit < 1 or limit > 50:
+        raise HTTPException(422, "Limit must be between 1 and 50.")
+    api_key = os.getenv("ROUTESCAN_API_KEY", "").strip()
+    base = f"https://api.routescan.io/v2/network/mainnet/evm/{chainId}/address/{address}"
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["apikey"] = api_key
+    try:
+        async with httpx.AsyncClient(timeout=18.0) as client:
+            tx_response, token_response = await client.get(
+                base + "/transactions",
+                params={"categories": "evm_tx", "sort": "desc", "limit": str(limit)},
+                headers=headers,
+            ), await client.get(
+                base + "/erc20-transfers",
+                params={"sort": "desc", "limit": str(limit)},
+                headers=headers,
+            )
+        if tx_response.status_code >= 400 or token_response.status_code >= 400:
+            raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
+        tx_data, token_data = tx_response.json(), token_response.json()
+        if not isinstance(tx_data, dict) or not isinstance(tx_data.get("items", []), list):
+            raise HTTPException(502, "Malformed transaction history response.")
+        if not isinstance(token_data, dict) or not isinstance(token_data.get("items", []), list):
+            raise HTTPException(502, "Malformed token transfer response.")
+        items = []
+        for item in tx_data.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            tx_hash = item.get("hash") or item.get("txHash")
+            if isinstance(tx_hash, str) and re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
+                items.append({"kind": "transaction", "hash": tx_hash, "timestamp": item.get("timestamp") or item.get("createdAt"), "from": item.get("from"), "to": item.get("to"), "value": item.get("value"), "status": item.get("status"), "blockNumber": item.get("blockNumber")})
+        for item in token_data.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            tx_hash = item.get("txHash")
+            if isinstance(tx_hash, str) and re.fullmatch(r"0x[a-fA-F0-9]{64}", tx_hash):
+                items.append({"kind": "token_transfer", "hash": tx_hash, "timestamp": item.get("timestamp") or item.get("createdAt"), "from": item.get("from"), "to": item.get("to"), "value": item.get("amount"), "token": item.get("tokenSymbol") or item.get("tokenName") or item.get("tokenAddress"), "decimals": item.get("tokenDecimals"), "status": "indexed", "blockNumber": item.get("blockNumber")})
+        items.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
+        return {"chainId": chainId, "address": address.lower(), "items": items[:limit], "source": "Routescan", "notice": "Indexed results can lag the chain and may omit unsupported transaction types. Verify final status in the block explorer."}
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Indexed history request timed out.")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
 
 @app.get("/health")
 def health():
