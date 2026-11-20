@@ -1,6 +1,6 @@
 # ZenCrypto project status
 
-Last updated: 2026-11-19
+Last updated: 2026-11-20
 
 ## Current branch
 
@@ -28,7 +28,10 @@ Last updated: 2026-11-19
 - [x] Backend token allowlist and spender validation.
 - [x] Backend-only `ZEROX_API_KEY` configuration.
 - [x] Legacy paper trading, sandbox deposit/withdrawal and simulated account routes blocked by default.
-- [x] CI tests for backend routes and frontend build.
+- [x] CI tests for backend route validation and frontend build.
+- [x] API response hardening: anti-framing, restrictive frame-ancestors/base-uri CSP, no-sniff, no-referrer, no-store and restricted browser permissions.
+- [x] GitHub Actions runs backend safety tests before the frontend production build/deploy.
+- [x] Deterministic tests for market-candle normalization, invalid chart parameters, wallet-history input validation, readiness fail-closed behavior and default-disabled legacy paper routes.
 
 ## External configuration required
 
