@@ -53,6 +53,7 @@ Last updated: 2026-11-20
 - [x] Firm-quote validation rejects a provider transaction when its optional chain ID does not match the requested network.
 - [x] Wallet activity records token-approval transactions separately from swaps and captures receipt block, gas usage, effective gas price, and initial confirmation state immediately after mining.
 - [x] Frontend swap execution now waits for 12 approval confirmations, verifies the receipt remains in the same block hash, and aborts if the wallet network changes or the approval is not finalized; the swap is not submitted on approval timeout/revert.
+- [x] Frontend swap submission uses a synchronous in-flight lock to block duplicate clicks; firm quote validation rejects invalid buy/minimum output, mismatched optional transaction chain ID, and unexpected native value before wallet signing.
 - [x] Swap activity remains `confirming` after the first successful receipt and advances to `confirmed` only after the configured 12-confirmation threshold.
 - [x] Local wallet activity table displays submission time (`createdAt`), asset/amount, mined block, estimated native gas fee, status, confirmations, and explorer link; wrap/unwrap receipts also capture gas metadata.
 - [x] Portfolio and wallet-activity CSV exports neutralize formula-leading untrusted text fields before quoting, reducing spreadsheet formula-injection risk.
