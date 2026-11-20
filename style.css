@@ -362,3 +362,7 @@ main,
 .macd-panel .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .macd-panel h3{font-size:13px;margin:4px 0 10px;color:#dce6f3}
 .macd-canvas{height:170px;width:100%;min-width:0}
+
+.stream-status{font-size:10px;color:#f5c451;white-space:nowrap;font-weight:700;letter-spacing:.04em}
+.stream-status.stream-live{color:#27d6a2}
+.chart-crosshair-readout{padding:8px 0;color:#aebbd0;font-size:11px;font-variant-numeric:tabular-nums;min-height:30px}
