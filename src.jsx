@@ -16,7 +16,14 @@ const SEED=[{symbol:"BTC",name:"Bitcoin",price:0,change:0},{symbol:"ETH",name:"E
 const fmt=(n,d=2)=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 
 const CHART_SYMBOLS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","LTCUSDT","LINKUSDT","DOTUSDT"];
-const BINANCE_REST_HOSTS=["https://api.binance.com","https://api1.binance.com","https://api2.binance.com"];
+const BINANCE_REST_HOSTS=["https://data-api.binance.vision","https://api.binance.com","https://api1.binance.com","https://api2.binance.com"];
+const MARKET_WS_HOSTS=["wss://data-stream.binance.vision:443","wss://stream.binance.com:443","wss://stream.binance.com:9443"];
+let marketWsHostIndex=0;
+function createMarketSocket(path){
+ const host=MARKET_WS_HOSTS[marketWsHostIndex%MARKET_WS_HOSTS.length];
+ marketWsHostIndex=(marketWsHostIndex+1)%MARKET_WS_HOSTS.length;
+ return new WebSocket(host+path);
+}
 async function fetchMarketCandles(apiBase,params,parentSignal){
  const entries=Object.entries(params).filter(([,v])=>v!==undefined&&v!==null);
  const query=new URLSearchParams(entries.map(([k,v])=>[k,String(v)]));
@@ -156,7 +163,7 @@ function MarketCandles({apiBase}){
   const connect=()=>{
    if(disposed)return;
    setBookStatus("Connecting");
-   try{socket=new WebSocket("wss://stream.binance.com:9443/ws/"+pair.toLowerCase()+"@depth20@100ms");}
+   try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@depth20@100ms");}
    catch{setBookStatus("Unavailable");schedule();return;}
    socket.onopen=()=>{if(!disposed){retryDelay=1000;setBookStatus("Live");}};
    socket.onmessage=event=>{
@@ -185,7 +192,7 @@ function MarketCandles({apiBase}){
   const schedule=()=>{if(disposed)return;retryTimer=window.setTimeout(connect,retryDelay);retryDelay=Math.min(retryDelay*2,30000);};
   const connect=()=>{
    if(disposed)return;
-   try{socket=new WebSocket("wss://stream.binance.com:9443/stream?streams="+streams);}
+   try{socket=createMarketSocket("/stream?streams="+streams);}
    catch{schedule();return;}
    socket.onopen=()=>{if(!disposed)retryDelay=1000;};
    socket.onmessage=event=>{
@@ -246,7 +253,7 @@ function MarketCandles({apiBase}){
   const connect=()=>{
    if(disposed)return;
    setLiveStatus("Connecting");
-   try{socket=new WebSocket("wss://stream.binance.com:9443/ws/"+pair.toLowerCase()+"@kline_"+interval);}
+   try{socket=createMarketSocket("/ws/"+pair.toLowerCase()+"@kline_"+interval);}
    catch{setLiveStatus("Unavailable");scheduleReconnect();return;}
    socket.onopen=()=>{if(!disposed){retryDelay=1000;setLiveStatus("Connected");}};
    socket.onmessage=event=>{
