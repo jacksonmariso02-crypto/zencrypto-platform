@@ -287,3 +287,81 @@ def test_candle_endpoint_rejects_future_end_time(client):
     )
     assert response.status_code == 422
     assert "end_time" in response.json()["detail"]
+
+def test_order_history_supports_filters_and_pagination(client, monkeypatch):
+    headers = _paper_user(client, monkeypatch)
+    faucet = client.post(
+        "/sandbox/faucet",
+        headers={**headers, "Idempotency-Key": "order-history-faucet-01"},
+        json={"amount": "1000", "currency": "USD"},
+    )
+    assert faucet.status_code == 201
+
+    first = client.post(
+        "/trade/orders",
+        headers={**headers, "Idempotency-Key": "order-history-buy-001"},
+        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
+    )
+    second = client.post(
+        "/trade/orders",
+        headers={**headers, "Idempotency-Key": "order-history-buy-002"},
+        json={"symbol": "ETH", "side": "buy", "quote_amount": "25", "reference_price": "2500"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    page = client.get("/trade/orders", params={"limit": 1, "offset": 0}, headers=headers)
+    assert page.status_code == 200
+    assert page.json()["total"] == 2
+    assert len(page.json()["orders"]) == 1
+    assert page.json()["has_more"] is True
+    assert page.json()["mode"] == "PAPER_ONLY"
+
+    filtered = client.get(
+        "/trade/orders",
+        params={"symbol": "btc", "side": "BUY", "status": "FILLED"},
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["orders"][0]["id"] == first.json()["id"]
+
+
+def test_order_detail_is_private_to_owning_user(client, monkeypatch):
+    owner_headers = _paper_user(client, monkeypatch)
+    client.post(
+        "/sandbox/faucet",
+        headers={**owner_headers, "Idempotency-Key": "order-detail-faucet-01"},
+        json={"amount": "100", "currency": "USD"},
+    )
+    order = client.post(
+        "/trade/orders",
+        headers={**owner_headers, "Idempotency-Key": "order-detail-buy-001"},
+        json={"symbol": "BTC", "side": "buy", "quote_amount": "25", "reference_price": "50000"},
+    )
+    assert order.status_code == 201
+    detail = client.get("/trade/orders/" + order.json()["id"], headers=owner_headers)
+    assert detail.status_code == 200
+    assert detail.json()["order"]["id"] == order.json()["id"]
+    assert detail.json()["mode"] == "PAPER_ONLY"
+
+    other_headers = _paper_user(client, monkeypatch)
+    hidden = client.get("/trade/orders/" + order.json()["id"], headers=other_headers)
+    assert hidden.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"limit": 0},
+        {"limit": 101},
+        {"offset": -1},
+        {"symbol": "DOGE"},
+        {"side": "hold"},
+        {"status": "cancelled"},
+    ],
+)
+def test_order_history_rejects_invalid_filters(client, monkeypatch, params):
+    headers = _paper_user(client, monkeypatch)
+    response = client.get("/trade/orders", params=params, headers=headers)
+    assert response.status_code == 422
