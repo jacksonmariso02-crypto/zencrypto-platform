@@ -23,10 +23,10 @@ function rsiSeries(values,period=14){
  return out;
 }
 function CandlestickChart({candles,timeframe}){
- const [showEMA,setShowEMA]=useState(true),[showBB,setShowBB]=useState(false),[showVolume,setShowVolume]=useState(true),[showRSI,setShowRSI]=useState(false),[showMACD,setShowMACD]=useState(false),[hover,setHover]=useState(null);
+ const [showEMA,setShowEMA]=useState(true),[showBB,setShowBB]=useState(false),[showVolume,setShowVolume]=useState(true),[showRSI,setShowRSI]=useState(false),[showMACD,setShowMACD]=useState(false),[hover,setHover]=useState(null),[visibleCount,setVisibleCount]=useState(120),[panOffset,setPanOffset]=useState(0);
  const W=1000,priceH=300,volH=showVolume?82:0,rsiH=showRSI?100:0,macdH=showMACD?100:0,top=18,gap=18,priceBottom=top+priceH,volTop=priceBottom+gap, rsiTop=volTop+volH+(showRSI?gap:0),macdTop=rsiTop+rsiH+(showMACD?gap:0),H=macdTop+macdH+42;
  const calc=useMemo(()=>{
-  const rows=candles.slice(-300);const closes=rows.map(x=>Number(x.close)),volumes=rows.map(x=>Number(x.volume)||0);
+  const rows=candles.slice(-500);const closes=rows.map(x=>Number(x.close)),volumes=rows.map(x=>Number(x.volume)||0);
   if(!rows.length)return {rows:[],ema9:[],ema21:[],ema50:[],upper:[],lower:[],rsi:[],macd:[],signal:[],hist:[],maxVol:1,min:0,max:1,step:1};
   const e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),mid=sma(closes,20);
   const variance=closes.map((_,i)=>i<19?null:Math.sqrt(closes.slice(i-19,i+1).reduce((a,v)=>a+(v-mid[i])**2,0)/20));
@@ -36,7 +36,14 @@ function CandlestickChart({candles,timeframe}){
   const min=Math.min(...all),max=Math.max(...all),pad=(max-min)*.08||Math.max(max*.002,.01);
   return {rows,ema9:e9,ema21:e21,ema50:e50,upper,lower,rsi:rsiSeries(closes),macd:m,signal:sig,hist,maxVol:Math.max(...volumes,1),min:min-pad,max:max+pad,step:(max-min+2*pad)/4};
  },[candles]);
- const n=calc.rows.length,plotW=W-86,left=8,right=plotW+8,x=i=>left+(i+.5)*plotW/Math.max(n,1),y=v=>top+(calc.max-v)/(calc.max-calc.min)*priceH,vy=v=>volTop+volH-(v/calc.maxVol)*Math.max(volH-8,1),ry=v=>rsiTop+(100-v)/100*Math.max(rsiH-20,1),my=v=>macdTop+macdH/2-v*(macdH*.38)/(Math.max(0.00000001,...calc.macd.map(Math.abs),...calc.signal.map(Math.abs)));
+ const view=useMemo(()=>{
+  const total=calc.rows.length,count=Math.min(visibleCount,total),end=Math.max(0,total-Math.min(panOffset,Math.max(0,total-count))),start=Math.max(0,end-count);
+  const rows=calc.rows.slice(start,end),slice=key=>calc[key].slice(start,end),all=rows.flatMap(v=>[Number(v.high),Number(v.low)]).filter(Number.isFinite);
+  const rawMin=all.length?Math.min(...all):0,rawMax=all.length?Math.max(...all):1,pad=(rawMax-rawMin)*.08||Math.max(rawMax*.002,.01);
+  return {rows,ema9:slice("ema9"),ema21:slice("ema21"),ema50:slice("ema50"),upper:slice("upper"),lower:slice("lower"),rsi:slice("rsi"),macd:slice("macd"),signal:slice("signal"),hist:slice("hist"),maxVol:Math.max(1,...rows.map(v=>Number(v.volume)||0)),min:rawMin-pad,max:rawMax+pad,start,end,total};
+ },[calc,visibleCount,panOffset]);
+ useEffect(()=>{setHover(null);},[timeframe]);
+ const n=view.rows.length,plotW=W-86,left=8,right=plotW+8,x=i=>left+(i+.5)*plotW/Math.max(n,1),y=v=>top+(calc.max-v)/(calc.max-calc.min)*priceH,vy=v=>volTop+volH-(v/calc.maxVol)*Math.max(volH-8,1),ry=v=>rsiTop+(100-v)/100*Math.max(rsiH-20,1),my=v=>macdTop+macdH/2-v*(macdH*.38)/(Math.max(0.00000001,...calc.macd.map(Math.abs),...calc.signal.map(Math.abs)));
  const linePath=(arr,mapper)=>arr.map((v,i)=>v===null||!Number.isFinite(v)?"":(i===0||arr[i-1]===null?"M":"L")+x(i).toFixed(1)+","+mapper(v).toFixed(1)).filter(Boolean).join(" ");
  const toggle=(label,value,set)=> <button type="button" className={"zc-indicator "+(value?"active":"")} onClick={()=>set(!value)}>{label}</button>;
  const active=hover===null?null:calc.rows[hover];
@@ -46,7 +53,7 @@ function CandlestickChart({candles,timeframe}){
  return <div className="zc-chart-shell">
   <div className="zc-chart-toolbar">
    <div className="zc-indicator-group">{toggle("EMA 9/21/50",showEMA,setShowEMA)}{toggle("Bollinger",showBB,setShowBB)}{toggle("Volume",showVolume,setShowVolume)}{toggle("RSI 14",showRSI,setShowRSI)}{toggle("MACD 12/26/9",showMACD,setShowMACD)}</div>
-   <span className="zc-chart-count">{n} candles · {timeframe}</span>
+   <div className="zc-chart-nav"><button type="button" title="Older candles" disabled={view.start===0} onClick={()=>{setPanOffset(v=>Math.min(Math.max(0,view.total-visibleCount),v+Math.ceil(visibleCount/2)));setHover(null);}}>← Older</button><button type="button" title="Newer candles" disabled={panOffset===0} onClick={()=>{setPanOffset(v=>Math.max(0,v-Math.ceil(visibleCount/2)));setHover(null);}}>Newer →</button><button type="button" title="Zoom out" disabled={visibleCount>=300} onClick={()=>setVisibleCount(v=>Math.min(300,v+30))}>−</button><button type="button" title="Zoom in" disabled={visibleCount<=30} onClick={()=>setVisibleCount(v=>Math.max(30,v-30))}>＋</button><button type="button" title="Reset chart view" onClick={()=>{setVisibleCount(120);setPanOffset(0);setHover(null);}}>Reset</button><span className="zc-chart-count">{n}/{view.total} candles · {timeframe}</span></div>
   </div>
   <div className="zc-chart-legend">
    <span><i className="zc-dot zc-up"/> Bullish</span><span><i className="zc-dot zc-down"/> Bearish</span>
