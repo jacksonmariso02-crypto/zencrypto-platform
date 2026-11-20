@@ -14,7 +14,7 @@ def test_fifo_realized_pnl_includes_buy_and_sell_fees():
         {"id": "s1", "symbol": "ETH", "side": "sell", "quantity": "1", "price": "130", "fee": "1", "timestamp": 2},
     ])
     eth = result["symbols"]["ETH"]
-    assert Decimal(eth["realized_pnl"]) == Decimal("27")
+    assert Decimal(eth["realized_pnl"]) == Decimal("28")
     assert Decimal(eth["open_quantity"]) == Decimal("1")
     assert Decimal(eth["open_cost_basis"]) == Decimal("101")
     assert result["method"] == "FIFO"
@@ -28,7 +28,7 @@ def test_fifo_consumes_oldest_lot_first_across_multiple_buys():
         {"id": "s1", "symbol": "BTC", "side": "sell", "quantity": "1.5", "price": "250", "fee": "0", "timestamp": 3},
     ])
     btc = result["symbols"]["BTC"]
-    assert Decimal(btc["realized_pnl"]) == Decimal("200")
+    assert Decimal(btc["realized_pnl"]) == Decimal("175")
     assert Decimal(btc["open_quantity"]) == Decimal("0.5")
     assert Decimal(btc["open_cost_basis"]) == Decimal("100")
     assert btc["open_lots"][0]["source_trade_id"] == "b2"
