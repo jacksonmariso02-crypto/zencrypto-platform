@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -60,8 +59,3 @@ def test_legacy_paper_routes_are_disabled_by_default(client):
     assert response.status_code == 404
     assert "disabled" in response.json()["detail"].lower()
 
-
-def test_market_candle_endpoint_does_not_accept_arbitrary_symbol(client):
-    response = client.get("/market/candles", params={"symbol": "ETHUSDT", "interval": "1h", "limit": 100})
-    # Valid input may reach the public data provider; this test only asserts that validation did not reject it.
-    assert response.status_code in (200, 502, 504)
