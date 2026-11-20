@@ -75,6 +75,85 @@ function MarketCandles({apiBase}){
  },[]);
  useEffect(()=>{let dead=false,inFlight=false,controller=null;hasFittedRef.current=false;async function load(){if(dead||inFlight)return;inFlight=true;controller=new AbortController();setBusy(true);setError("");try{const r=await fetch(apiBase+"/market/candles?"+new URLSearchParams({symbol:pair,interval,limit:"300"}),{cache:"no-store",signal:controller.signal,headers:{Accept:"application/json"}});const d=await r.json().catch(()=>({detail:"Invalid candle response"}));if(!r.ok)throw Error(d.detail||"Market data unavailable.");if(!Array.isArray(d.candles))throw Error("Market data response is missing the candles array.");const normalized=d.candles.map(x=>{const rawTime=Number(x.time);return {time:Math.floor(rawTime>1e12?rawTime/1000:rawTime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0)};}).filter(x=>Number.isFinite(x.time)&&x.time>0&&[x.open,x.high,x.low,x.close,x.volume].every(Number.isFinite)&&x.low>0&&x.high>=Math.max(x.open,x.close)&&x.low<=Math.min(x.open,x.close));const rows=[...new Map(normalized.sort((a,b)=>a.time-b.time).map(x=>[x.time,x])).values()];if(rows.length<2)throw Error("The market-data provider returned fewer than two valid candles. Retry in a moment.");const sma=p=>rows.map((x,i)=>i+1>=p?{time:x.time,value:rows.slice(i+1-p,i+1).reduce((sum,v)=>sum+v.close,0)/p}:null).filter(Boolean);const bb=rows.map((x,i)=>{if(i<19)return null;const a=rows.slice(i-19,i+1).map(v=>v.close),m=a.reduce((v,n)=>v+n,0)/20,sd=Math.sqrt(a.reduce((v,n)=>v+(n-m)**2,0)/20);return {time:x.time,u:m+2*sd,m,l:m-2*sd};}).filter(Boolean);let ag=0,al=0;for(let i=1;i<=14&&i<rows.length;i++){const d=rows[i].close-rows[i-1].close;ag+=Math.max(d,0)/14;al+=Math.max(-d,0)/14;}for(let i=15;i<rows.length;i++){const d=rows[i].close-rows[i-1].close;ag=(ag*13+Math.max(d,0))/14;al=(al*13+Math.max(-d,0))/14;}const rv=al===0?100:100-100/(1+ag/al);const ema=p=>{const k=2/(p+1);let v=rows[0].close;return rows.map((x,i)=>{v=i===0?x.close:x.close*k+v*(1-k);return {time:x.time,value:v};});};const e12=ema(12),e26=ema(26),ml=e12.map((x,i)=>({time:x.time,value:x.value-e26[i].value}));const k=2/10;let sv=ml[0].value;const sg=ml.map((x,i)=>{sv=i===0?x.value:x.value*k+sv*(1-k);return {time:x.time,value:sv};});const hh=ml.map((x,i)=>({time:x.time,value:x.value-sg[i].value,color:x.value>=sg[i].value?"rgba(39,214,162,.65)":"rgba(250,113,133,.65)"}));if(!dead){setCandles(rows);candleRef.current?.setData(rows);volumeRef.current?.setData(rows.map(x=>({time:x.time,value:Number(x.volume||0),color:x.close>=x.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"})));ma5Ref.current?.setData(sma(5));ma7Ref.current?.setData(sma(7));ma25Ref.current?.setData(sma(25));ma99Ref.current?.setData(sma(99));bbUpperRef.current?.setData(bb.map(x=>({time:x.time,value:x.u})));bbMiddleRef.current?.setData(bb.map(x=>({time:x.time,value:x.m})));bbLowerRef.current?.setData(bb.map(x=>({time:x.time,value:x.l})));macdLineRef.current?.setData(ml);signalRef.current?.setData(sg);histRef.current?.setData(hh);setRsi(rv);setMacdReadout({line:ml.at(-1)?.value,signal:sg.at(-1)?.value,hist:hh.at(-1)?.value});if(!hasFittedRef.current){chartRef.current?.timeScale().fitContent();macdChartRef.current?.timeScale().fitContent();hasFittedRef.current=true;}setLastUpdated(new Date().toLocaleTimeString());}}catch(e){if(!dead&&e.name!=="AbortError")setError(e.message||"Unable to load candles.");}finally{inFlight=false;if(!dead)setBusy(false);}}load();const timer=setInterval(load,60000);return()=>{dead=true;controller?.abort();clearInterval(timer);};},[apiBase,pair,interval]);
  useEffect(()=>{
+  let disposed=false;
+  let socket=null;
+  let retryTimer=null;
+  let retryDelay=1000;
+  const connect=()=>{
+   if(disposed)return;
+   setLiveStatus("Connecting");
+   try{
+    socket=new WebSocket("wss://stream.binance.com:9443/ws/"+pair.toLowerCase()+"@kline_"+interval);
+   }catch{
+    setLiveStatus("Unavailable");
+    retryTimer=window.setTimeout(connect,retryDelay);
+    retryDelay=Math.min(retryDelay*2,30000);
+    return;
+   }
+   socket.onopen=()=>{
+    if(disposed)return;
+    retryDelay=1000;
+    setLiveStatus("Live");
+   };
+   socket.onmessage=event=>{
+    if(disposed)return;
+    try{
+     const message=JSON.parse(event.data);
+     const k=message?.k;
+     if(!k||!Number.isFinite(Number(k.t)))return;
+     const next={
+      time:Math.floor(Number(k.t)/1000),
+      open:Number(k.o),
+      high:Number(k.h),
+      low:Number(k.l),
+      close:Number(k.c),
+      volume:Number(k.v)
+     };
+     if(![next.open,next.high,next.low,next.close,next.volume].every(Number.isFinite)||
+        next.low<=0||next.high<Math.max(next.open,next.close)||
+        next.low>Math.min(next.open,next.close)||next.volume<0)return;
+     setCandles(previous=>{
+      const merged=new Map(previous.map(c=>[c.time,c]));
+      merged.set(next.time,next);
+      const rows=Array.from(merged.values()).sort((a,b)=>a.time-b.time).slice(-500);
+      candleRef.current?.setData(rows);
+      volumeRef.current?.setData(rows.map(c=>({
+       time:c.time,
+       value:c.volume,
+       color:c.close>=c.open?"rgba(39,214,162,.38)":"rgba(250,113,133,.38)"
+      })));
+      return rows;
+     });
+     setLastUpdated(new Date().toLocaleTimeString());
+    }catch{
+     // Ignore malformed stream frames; the REST snapshot remains the fallback.
+    }
+   };
+   socket.onerror=()=>{
+    if(!disposed)setLiveStatus("Reconnecting");
+    try{socket?.close();}catch{}
+   };
+   socket.onclose=()=>{
+    if(disposed)return;
+    setLiveStatus("Reconnecting");
+    retryTimer=window.setTimeout(connect,retryDelay);
+    retryDelay=Math.min(retryDelay*2,30000);
+   };
+  };
+  connect();
+  return()=>{
+   disposed=true;
+   if(retryTimer)window.clearTimeout(retryTimer);
+   if(socket){
+    socket.onopen=null;
+    socket.onmessage=null;
+    socket.onerror=null;
+    socket.onclose=null;
+    try{socket.close();}catch{}
+   }
+  };
+ },[pair,interval]);
+ useEffect(()=>{
   if(!candles.length)return;
   const sma=p=>candles.map((v,i)=>i+1>=p?{time:v.time,value:candles.slice(i+1-p,i+1).reduce((sum,item)=>sum+item.close,0)/p}:null).filter(Boolean);
   ma5Ref.current?.setData(sma(5));ma7Ref.current?.setData(sma(7));ma25Ref.current?.setData(sma(25));ma99Ref.current?.setData(sma(99));
