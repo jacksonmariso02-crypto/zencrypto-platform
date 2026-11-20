@@ -86,6 +86,7 @@ Last updated: 2026-11-20
 - Test approval and swap flows on testnets before controlled mainnet canaries.
 - [x] Indexed on-chain history can be searched by transaction hash, sender, recipient, token, contract address, or raw transfer amount, alongside incoming/outgoing filters.
 - [x] Indexed-history requests use a monotonically increasing request ID; stale responses from a previous wallet or network are discarded and cannot overwrite the currently selected account history.
+- [x] Local wallet activity stores receipt block hashes, rechecks the 20 most recent confirmed transactions, and flags missing receipts or changed receipt block hashes as possible reorganizations.
 - Add durable transaction indexing, reorg handling, confirmation/finality policy, and user-visible swap history.
 - Add provider rate limits, abuse controls, and API-key usage monitoring.
 
