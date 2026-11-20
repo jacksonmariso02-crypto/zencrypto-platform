@@ -51,6 +51,7 @@ Last updated: 2026-11-20
 - [x] Wallet activity records token-approval transactions separately from swaps and captures receipt block, gas usage, effective gas price, and initial confirmation state immediately after mining.
 - [x] Swap activity remains `confirming` after the first successful receipt and advances to `confirmed` only after the configured 12-confirmation threshold.
 - [x] Local wallet activity table displays submission time (`createdAt`), asset/amount, mined block, estimated native gas fee, status, confirmations, and explorer link; wrap/unwrap receipts also capture gas metadata.
+- [x] Portfolio and wallet-activity CSV exports neutralize formula-leading untrusted text fields before quoting, reducing spreadsheet formula-injection risk.
 
 ### Retired simulation
 - [x] Legacy simulated-account, paper-order, sandbox funding, deposit, withdrawal, KYC mock, and compliance mock endpoints return HTTP 410 Gone.
