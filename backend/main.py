@@ -48,12 +48,17 @@ async def dex_api_safety_middleware(request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-PAPER_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
+LEGACY_SIMULATION_ROUTE_PREFIXES = ("/auth/", "/account/", "/trade/", "/sandbox/", "/admin/", "/deposits/", "/withdrawals/", "/kyc/", "/compliance/cases")
 
 @app.middleware("http")
-async def disable_legacy_paper_api_by_default(request, call_next):
-    if request.url.path.startswith(PAPER_ROUTE_PREFIXES) and os.getenv("ENABLE_PAPER_TRADING", "false").lower() != "true":
-        return JSONResponse(status_code=404, content={"detail": "Legacy paper-trading API is disabled. ZenCrypto wallet and DEX routes are separate."})
+async def permanently_disable_legacy_simulation_api(request, call_next):
+    # The former internal account ledger and sandbox trading endpoints are retired.
+    # Do not allow an environment variable to reactivate simulated balances/orders.
+    if request.url.path.startswith(LEGACY_SIMULATION_ROUTE_PREFIXES):
+        return JSONResponse(
+            status_code=410,
+            content={"detail": "This legacy simulated-trading endpoint has been retired. Use the self-custody wallet and supported DEX flow."},
+        )
     return await call_next(request)
 
 configured_origins = [x.strip().rstrip("/") for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
@@ -399,11 +404,11 @@ def health():
 @app.get("/ready")
 def readiness():
     origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
-    paper_enabled = os.getenv("ENABLE_PAPER_TRADING", "false").lower() == "true"
     checks = {
         "dex_provider_key_configured": bool(os.getenv("ZEROX_API_KEY", "").strip()),
         "explicit_cors_origins_configured": bool(origins),
-        "paper_trading_disabled": not paper_enabled,
+        "legacy_simulation_routes_retired": True,
+        "mainnet_swaps_disabled_until_release_approval": os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() != "true",
         "persistent_app_secret_configured": bool(os.getenv("APP_SECRET", "").strip()),
     }
     ready = all(checks.values())
@@ -856,7 +861,15 @@ DEX_TOKENS = {
 }
 ZEROX_ALLOWANCE_HOLDER = "0x0000000000001ff3684f28c67538d4d072c22734"
 
+def require_mainnet_swaps_enabled():
+    if os.getenv("ENABLE_MAINNET_SWAPS", "false").strip().lower() != "true":
+        raise HTTPException(
+            503,
+            "Mainnet swaps are disabled pending production security, legal and operational approval.",
+        )
+
 def validate_dex_request(chain_id: int, sell_token: str, buy_token: str, sell_amount: str, taker: str):
+    require_mainnet_swaps_enabled()
     if chain_id not in DEX_TOKENS:
         raise HTTPException(422, "DEX quotes are enabled only for Ethereum Mainnet and Base Mainnet.")
     sell = sell_token.lower()
