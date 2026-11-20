@@ -88,9 +88,9 @@ function StrategyBacktest({candles,symbol,timeframe}){
   if(!Number.isInteger(f)||!Number.isInteger(sl)||f<2||sl<=f||sl>200||!Number.isFinite(initial)||initial<=0||!Number.isFinite(feeRate)||feeRate<0||feeRate>0.02||candles.length<sl+3)return null;
   const close=candles.map(x=>Number(x.close)),ef=ema(close,f),es=ema(close,sl);
   let cash=initial,qty=0,entry=0,entryFee=0,peak=initial,maxDD=0;const trades=[],equity=[];
-  for(let i=1;i<close.length;i++){
+  for(let i=2;i<close.length;i++){
    const value=cash+qty*close[i];peak=Math.max(peak,value);maxDD=Math.max(maxDD,peak?((peak-value)/peak):0);
-   const up=ef[i-1]<=es[i-1]&&ef[i]>es[i],down=ef[i-1]>=es[i-1]&&ef[i]<es[i];
+   const up=ef[i-2]<=es[i-2]&&ef[i-1]>es[i-1],down=ef[i-2]>=es[i-2]&&ef[i-1]<es[i-1];
    if(!qty&&up){const spend=cash/(1+feeRate);qty=spend/close[i];entry=close[i];entryFee=spend*feeRate;cash=0;trades.push({type:"BUY",price:close[i],time:candles[i].timestamp,qty});}
    else if(qty&&down){const gross=qty*close[i],exitFee=gross*feeRate,net=gross-exitFee,profit=net-(qty*entry+entryFee);cash=net;trades.push({type:"SELL",price:close[i],time:candles[i].timestamp,qty,profit});qty=0;entry=0;entryFee=0;}
    equity.push(cash+qty*close[i]);
