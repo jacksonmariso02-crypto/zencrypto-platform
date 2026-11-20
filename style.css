@@ -560,3 +560,7 @@ main,
 .alert-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .alert-heading button{margin-left:auto;border:1px solid #34465f;background:#111d2e;color:#9aabc3;border-radius:6px;padding:5px 8px;font-size:10px;cursor:pointer}
 .alert-heading button:disabled{opacity:.4;cursor:not-allowed}
+
+.alert-list{max-height:320px;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.alert-list::-webkit-scrollbar{width:6px}
+.alert-list::-webkit-scrollbar-thumb{background:#34465f;border-radius:8px}
