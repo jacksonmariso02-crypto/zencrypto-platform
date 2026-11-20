@@ -4,6 +4,15 @@ name: Deploy ZenCrypto to GitHub Pages
 on:
   push:
     branches: [main]
+    paths:
+      - 'index.html'
+      - 'src.jsx'
+      - 'style.css'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'public/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
