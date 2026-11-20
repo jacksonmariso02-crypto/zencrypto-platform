@@ -400,6 +400,138 @@ async def chain_history(
     except httpx.HTTPError:
         raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
 
+@app.post("/chain/ledger/sync")
+async def sync_chain_ledger(body: ChainLedgerSyncRequest, u=Depends(require_user)):
+    """Persist one page of public indexed activity; does not prove wallet ownership or finality."""
+    if body.chainId not in (1, 8453):
+        raise HTTPException(422, "Indexed ledger sync is currently available for Ethereum and Base only.")
+    address = body.address.lower()
+    with db() as c:
+        state = c.execute(
+            "SELECT * FROM chain_wallet_sync WHERE user_id=? AND chain_id=? AND address=?",
+            (u["id"], body.chainId, address),
+        ).fetchone()
+    tx_next = state["tx_next"] if state and not state["tx_exhausted"] else None
+    token_next = state["token_next"] if state and not state["token_exhausted"] else None
+    if state and state["tx_exhausted"] and state["token_exhausted"]:
+        return {"chainId": body.chainId, "address": address, "inserted": 0,
+                "pagination": {"hasMoreTransactions": False, "hasMoreTokenTransfers": False},
+                "coverage": {"providerPagesExhausted": True, "complete": False,
+                             "notice": "Provider cursors are exhausted, but provider indexing may omit activity and wallet ownership/finality are not verified."}}
+    api_key = os.getenv("ROUTESCAN_API_KEY", "").strip()
+    base = f"https://api.routescan.io/v2/network/mainnet/evm/{body.chainId}/address/{address}"
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["apikey"] = api_key
+    try:
+        async with httpx.AsyncClient(timeout=18.0) as client:
+            tx_response, token_response = await client.get(
+                base + "/transactions",
+                params={"categories": "evm_tx", "sort": "desc", "limit": str(body.limit), **({"next": tx_next} if tx_next else {})},
+                headers=headers,
+            ), await client.get(
+                base + "/erc20-transfers",
+                params={"sort": "desc", "limit": str(body.limit), **({"next": token_next} if token_next else {})},
+                headers=headers,
+            )
+        if tx_response.status_code >= 400 or token_response.status_code >= 400:
+            raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
+        tx_data, token_data = tx_response.json(), token_response.json()
+        if not isinstance(tx_data, dict) or not isinstance(tx_data.get("items", []), list):
+            raise HTTPException(502, "Malformed transaction history response.")
+        if not isinstance(token_data, dict) or not isinstance(token_data.get("items", []), list):
+            raise HTTPException(502, "Malformed token transfer response.")
+        normalized = normalize_chain_history_items(
+            body.chainId, address, tx_data.get("items", []), token_data.get("items", []), body.limit
+        )
+        tx_link = tx_data.get("link") if isinstance(tx_data.get("link"), dict) else {}
+        token_link = token_data.get("link") if isinstance(token_data.get("link"), dict) else {}
+        new_tx = tx_link.get("nextToken")
+        new_token = token_link.get("nextToken")
+        if new_tx is not None and (not isinstance(new_tx, str) or not new_tx or len(new_tx) > 512):
+            raise HTTPException(502, "Provider returned an invalid transaction cursor.")
+        if new_token is not None and (not isinstance(new_token, str) or not new_token or len(new_token) > 512):
+            raise HTTPException(502, "Provider returned an invalid token-transfer cursor.")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Indexed history request timed out.")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Indexed history provider is temporarily unavailable.")
+
+    now = int(time.time())
+    inserted = 0
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        for item in normalized["items"]:
+            result = c.execute(
+                """INSERT OR IGNORE INTO chain_events
+                (user_id,chain_id,address,event_id,tx_hash,block_number,event_timestamp,direction,kind,token,token_address,value_raw,value_display,status,event_json,first_seen_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (u["id"], body.chainId, address, item["eventId"], item["hash"],
+                 item.get("blockNumber"), item.get("timestamp"), item.get("direction", "other"),
+                 item.get("kind", "transaction"), item.get("token", "Unknown"),
+                 item.get("tokenAddress"), item.get("valueRaw"), item.get("value"),
+                 "indexed_unverified", json.dumps(item, separators=(",", ":")), now),
+            )
+            inserted += max(result.rowcount, 0)
+        c.execute(
+            """INSERT INTO chain_wallet_sync
+            (user_id,chain_id,address,tx_next,token_next,tx_exhausted,token_exhausted,updated_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(user_id,chain_id,address) DO UPDATE SET
+            tx_next=excluded.tx_next,token_next=excluded.token_next,
+            tx_exhausted=excluded.tx_exhausted,token_exhausted=excluded.token_exhausted,
+            updated_at=excluded.updated_at""",
+            (u["id"], body.chainId, address, new_tx, new_token,
+             0 if new_tx else 1, 0 if new_token else 1, now),
+        )
+        c.execute("COMMIT")
+        totals = c.execute(
+            "SELECT COUNT(*) AS n FROM chain_events WHERE user_id=? AND chain_id=? AND address=?",
+            (u["id"], body.chainId, address),
+        ).fetchone()["n"]
+    return {
+        "chainId": body.chainId, "address": address, "inserted": inserted, "storedEvents": totals,
+        "pagination": {"hasMoreTransactions": bool(new_tx), "hasMoreTokenTransfers": bool(new_token),
+                       "transactionsNext": new_tx, "tokenTransfersNext": new_token},
+        "coverage": {"providerPagesExhausted": not bool(new_tx or new_token), "complete": False,
+                     "notice": "Events are persisted and deduplicated, but indexed provider data is not proof of wallet ownership, on-chain finality, or complete account history."},
+    }
+
+
+@app.get("/chain/ledger")
+def read_chain_ledger(chainId: int, address: str, limit: int = 100, offset: int = 0, u=Depends(require_user)):
+    if chainId not in (1, 8453):
+        raise HTTPException(422, "Unsupported chain.")
+    if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
+        raise HTTPException(422, "Invalid wallet address.")
+    if isinstance(limit, bool) or not 1 <= limit <= 100 or isinstance(offset, bool) or not 0 <= offset <= 100000:
+        raise HTTPException(422, "Invalid ledger pagination.")
+    wallet = address.lower()
+    with db() as c:
+        rows = c.execute(
+            """SELECT event_json FROM chain_events WHERE user_id=? AND chain_id=? AND address=?
+            ORDER BY COALESCE(event_timestamp,0) DESC,id DESC LIMIT ? OFFSET ?""",
+            (u["id"], chainId, wallet, limit, offset),
+        ).fetchall()
+        state = c.execute(
+            "SELECT * FROM chain_wallet_sync WHERE user_id=? AND chain_id=? AND address=?",
+            (u["id"], chainId, wallet),
+        ).fetchone()
+        total = c.execute(
+            "SELECT COUNT(*) AS n FROM chain_events WHERE user_id=? AND chain_id=? AND address=?",
+            (u["id"], chainId, wallet),
+        ).fetchone()["n"]
+    return {
+        "chainId": chainId, "address": wallet, "items": [json.loads(row["event_json"]) for row in rows],
+        "total": total,
+        "sync": {"started": bool(state), "hasMoreTransactions": bool(state and not state["tx_exhausted"]),
+                 "hasMoreTokenTransfers": bool(state and not state["token_exhausted"]),
+                 "updatedAt": state["updated_at"] if state else None,
+                 "providerPagesExhausted": bool(state and state["tx_exhausted"] and state["token_exhausted"])},
+        "notice": "Stored indexed events are unverified provider data, not finalized receipts or proof of wallet ownership.",
+    }
+
+
 @app.get("/health")
 def health():
     # Liveness only: this endpoint does not claim trading or production readiness.
