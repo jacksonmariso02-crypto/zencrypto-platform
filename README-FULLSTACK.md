@@ -1,49 +1,52 @@
-# ZenCrypto — frontend + sandbox backend
+# ZenCrypto — frontend + paper-trading backend
 
-**NOT production ready. Does not execute real trades, custody funds, send withdrawals, perform actual KYC/AML or accept deposits.** This is a runnable integration foundation. The included frontend remains an independent prototype; it is **not yet wired** to the backend API. Backend docs are available at `/docs`.
+**Not production ready.** ZenCrypto is a paper-trading integration foundation. It does not custody real funds, accept deposits, execute live exchange orders, or process withdrawals. Market data is read from Binance public endpoints; submitted orders are simulated by the ZenCrypto backend at the reference price and are not sent to Binance.
 
-## Run
+## Current frontend/backend integration
 
-Frontend: from project root `npm install && npm run dev` (Node.js 20.19+ or 22.12+).
+The React frontend is connected to the backend through `VITE_API_BASE_URL` (default: `https://zencrypto-api.onrender.com`). The current UI calls:
 
-Backend: `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && export APP_SECRET="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" && uvicorn main:app --reload --host 127.0.0.1 --port 8000`. On Windows use `.venv\\Scripts\\activate` and set APP_SECRET through PowerShell environment variables. API: http://127.0.0.1:8000/docs .
+- POST `/auth/register`, `/auth/login`, `/auth/logout` — account registration, login and session revocation.
+- GET `/account/me`, `/account/balances` — account identity and paper balances.
+- POST `/sandbox/faucet` — issues capped virtual USD for testing; it is not a deposit.
+- POST `/trade/orders` — immediate paper fill at the supplied reference price, with fee calculation, idempotency protection and journal postings. This is **not** a limit order book or live execution.
+- GET `/trade/orders`, `/trade/summary`, `/account/ledger` — personal paper-order history, summary and ledger.
 
-## Implemented backend routes
+Other backend routes include KYC declaration submission (not identity verification), deposit requests (no address or credit), blocked withdrawal requests, compliance status/cases and role-protected admin endpoints. The frontend currently does not provide a production KYC flow, real deposits/withdrawals, custody, or a live matching engine.
 
-- POST `/auth/register`, `/auth/login`, `/auth/logout` (password PBKDF2 and expiring revocable sessions; **no MFA or brute-force controls yet**)
-- GET `/account/me`, `/account/balances`, `/account/requests`
-- POST `/kyc/submit` (collects only a declaration; **does not verify identity**)
-- POST `/deposits/request` (request only; no deposit address or balance credit)
-- POST `/withdrawals/request` (always blocked, no transfers)
-- POST `/trade/orders` (always blocked, no live execution)
-- GET `/admin/audit` (server-side admin role check; no admin bootstrap)
-- Database schema includes double-entry journal/postings tables but **no settlement posting engine**; audit is mutable SQLite, not tamper-evident.
+## Run locally
 
-## Critical launch requirements
+Frontend: from project root run `npm install && npm run dev` (Node.js 20.19+ or 22.12+). Set `VITE_API_BASE_URL` to the backend origin when testing a local backend.
 
-1. Engage jurisdiction-specific legal counsel to confirm licensing/registration, KYC, AML, sanctions, travel-rule, consumer protection, data privacy, and transaction monitoring requirements.
-2. Replace SQLite with transactional PostgreSQL, implement balanced immutable journal entries, reserved funds, idempotent settlement, reconciliations and controlled migrations.
-3. Use a certified KYC/KYB provider, sanctions/PEP screening, risk scoring, ongoing transaction monitoring, suspicious-activity case management and legally required reporting.
-4. Integrate licensed exchange execution and qualified custodial wallet/fiat payment providers using signed verified webhooks, idempotency keys, limits and dual authorization for withdrawals.
-5. Implement MFA/passkeys, email verification, login throttling, anti-bot, secure cookies/CSRF strategy, admin separation, encryption, secrets vault, SIEM, backups and penetration tests.
-6. Independently audit the code and infrastructure and complete provider and regulatory approvals **before enabling real funds**.
+Backend: `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && export APP_SECRET="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" && uvicorn main:app --reload --host 127.0.0.1 --port 8000`. On Windows use `.venv\\Scripts\\activate` and set `APP_SECRET` through PowerShell. API docs: `http://127.0.0.1:8000/docs`.
 
-## Public deployment
+## Implemented paper-trading behavior
 
-Frontend: Vercel or Netlify; connect a domain you own. Backend: deploy separately to a supported Python hosting platform with HTTPS and a production database **only after security hardening**. Configure frontend `VITE_API_BASE_URL` when wiring it to the backend. No domain is provisioned by this package.
+- Passwords are hashed with PBKDF2; bearer sessions expire and can be revoked. MFA, passkeys, email verification and robust brute-force protection are not implemented.
+- Paper orders are immediately filled against the submitted reference price. Fees are calculated, balances are checked, idempotency keys prevent duplicate submissions, and balanced journal postings are written in a SQLite transaction.
+- The current system does **not** implement limit orders, an order book, price/time-priority matching, partial fills, reserved balances for open orders, or exchange execution.
+- The sandbox faucet issues virtual USD only and has a cumulative cap. It does not represent a real reserve or customer deposit.
+- KYC submission records a declaration only; it does not verify identity. Deposit requests do not create deposit addresses or credit balances. Withdrawals are blocked.
+- Audit records and the SQLite ledger are not independently tamper-evident and are not suitable for production financial operations.
 
-## November 2026 global-compliance extension
+## Deployment
 
-Additional endpoints: `GET /compliance/jurisdictions/{ISO2}`, `GET /compliance/status`, `POST /compliance/cases`, `GET /admin/compliance/cases`, `POST /sandbox/faucet` (requires `Idempotency-Key` header, maximum cumulative $1,000 virtual USD), `GET /account/ledger`, `GET /admin/ledger/integrity`.
+- Frontend: GitHub Pages at `https://jacksonmariso02-crypto.github.io/zencrypto-platform/`.
+- Backend: Render at `https://zencrypto-api.onrender.com`.
+- The deployment workflow builds the frontend, verifies that the built assets contain the configured API origin, publishes GitHub Pages, then smoke-tests the frontend, backend health/safety flags and browser CORS preflight.
+- CI runs the frontend build and backend test suites. A successful Pages deployment and health check do not mean the platform is approved for real-money use.
 
-**Default deny:** No jurisdiction enables live trading. KYC submission is not verification. The faucet only issues paper-money balances and its internal house balance is not a real reserve. No blockchain wallet, fiat payment, matching engine, withdrawal execution, Travel Rule transfer, or KYC vendor is connected. SQLite, bearer tokens and this demo journal are **not** suitable for production financial operations. A real production ledger requires PostgreSQL, stronger append-only controls, serializable transactions, reserved funds, independent reconciliation and externally verifiable audit records. Never deploy these APIs as a public money service.
+## Production launch gates
 
-### Global market go-live gates
+1. Obtain jurisdiction-specific legal advice and required authorizations before offering any regulated service.
+2. Replace SQLite with transactional PostgreSQL and implement reviewed migrations, immutable/append-only journal controls, reserved funds, idempotent settlement, reconciliation and externally verifiable audit records.
+3. Integrate qualified KYC/KYB, sanctions/PEP screening, ongoing transaction monitoring, case management and legally required reporting.
+4. Contract authorized custody, banking, liquidity and execution providers; verify signed webhooks, apply withdrawal limits and dual authorization.
+5. Implement MFA/passkeys, email verification, login throttling, secure session/cookie and CSRF strategy, admin separation, encryption, secrets management, SIEM, backups, incident response and penetration testing.
+6. Independently audit code, infrastructure and financial controls. Keep real deposits, withdrawals and live trading disabled until all legal, provider and security approvals are complete.
 
-1. Obtain counsel's written jurisdiction-by-jurisdiction legal opinions and required authorizations; maintain an allowlist of permitted legal entities, countries, assets, customer types and features.
-2. Implement licensed KYC/AML and sanctions providers, ongoing screening, monitoring, Travel Rule, case management, and reporting procedures; avoid storing raw identity documents in the app.
-3. Contract authorized custody, banking and liquidity providers, validate signed webhooks and idempotent settlement, implement double authorization and withdrawal limits.
-4. Independently audit infrastructure, smart-contract/wallet integrations, security and financial ledger; run penetration tests, incident response exercises and disaster recovery tests.
-5. Only then build an independently reviewed production deployment with real-funds feature gates and country-specific launch approvals.
+## Regulatory references
 
-Regulatory reading: https://www.esma.europa.eu/esmas-activities/digital-finance-and-innovation/markets-crypto-assets-regulation-mica ; https://www.fatf-gafi.org/en/topics/virtual-assets.html ; https://www.fincen.gov/resources/statutes-regulations/guidance/application-fincens-regulations-persons-administering
+- https://www.esma.europa.eu/esmas-activities/digital-finance-and-innovation/markets-crypto-assets-regulation-mica
+- https://www.fatf-gafi.org/en/topics/virtual-assets.html
+- https://www.fincen.gov/resources/statutes-regulations/guidance/application-fincens-regulations-persons-administering
