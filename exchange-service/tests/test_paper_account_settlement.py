@@ -132,3 +132,53 @@ def test_sell_taker_settles_at_resting_buy_maker_price(tmp_path):
     assert ledger.get_balances("taker_seller") == [
         {"asset": "USDT", "available": "110", "locked": "0"},
     ]
+
+
+def test_same_account_crossing_orders_never_self_trade(tmp_path):
+    engine, ledger = setup(tmp_path)
+    ledger.create_account("self_001")
+    ledger.credit_paper_funds("self_001", "BTC", "2", "self-btc-credit-01")
+    ledger.credit_paper_funds("self_001", "USDT", "500", "self-usdt-credit-01")
+
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "self-ask-00001", "self_001"
+    )
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "110", "self-bid-00001", "self_001"
+    )
+    assert ask["status"] == "open"
+    assert bid["status"] == "open"
+    assert engine.list_trades("BTC/USDT") == []
+    assert ledger.get_balances("self_001") == [
+        {"asset": "BTC", "available": "1", "locked": "1"},
+        {"asset": "USDT", "available": "390", "locked": "110"},
+    ]
+
+
+def test_self_orders_are_skipped_but_external_liquidity_can_fill(tmp_path):
+    engine, ledger = setup(tmp_path)
+    for account in ("self_002", "external_002"):
+        ledger.create_account(account)
+    ledger.credit_paper_funds("self_002", "BTC", "2", "self-btc-credit-02")
+    ledger.credit_paper_funds("self_002", "USDT", "500", "self-usdt-credit-02")
+    ledger.credit_paper_funds("external_002", "BTC", "1", "external-btc-fund")
+
+    own_ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "90", "self-ask-00002", "self_002"
+    )
+    other_ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "external-ask-02", "external_002"
+    )
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "110", "self-bid-00002", "self_002"
+    )
+    assert bid["status"] == "filled"
+    assert engine.get_order(own_ask["id"])["status"] == "open"
+    assert engine.get_order(other_ask["id"])["status"] == "filled"
+    trades = engine.list_trades("BTC/USDT")
+    assert len(trades) == 1
+    assert trades[0]["maker_order_id"] == other_ask["id"]
+    assert ledger.get_balances("self_002") == [
+        {"asset": "BTC", "available": "2", "locked": "1"},
+        {"asset": "USDT", "available": "400", "locked": "0"},
+    ]

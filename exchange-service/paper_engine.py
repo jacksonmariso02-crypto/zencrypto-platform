@@ -184,6 +184,11 @@ class PaperMatchingEngine:
                 for maker in candidates:
                     if taker_remaining <= 0:
                         break
+                    # Never allow two orders belonging to the same paper account
+                    # to trade against each other. Keep the resting order intact;
+                    # the incoming order may match other eligible counterparties.
+                    if account_id is not None and maker["account_id"] == account_id:
+                        continue
                     maker_remaining = Decimal(maker["remaining"])
                     fill_qty = min(taker_remaining, maker_remaining)
                     if fill_qty <= 0:
