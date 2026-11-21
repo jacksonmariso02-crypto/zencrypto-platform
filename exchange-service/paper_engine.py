@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import re
 
+from paper_ledger import InsufficientPaperFunds, PaperLedger
+
 
 class IdempotencyConflict(ValueError):
     pass
@@ -58,6 +60,13 @@ class PaperMatchingEngine:
                 CREATE INDEX IF NOT EXISTS idx_paper_trades_symbol
                     ON paper_trades(symbol, id DESC);
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(paper_orders)")}
+            if "account_id" not in columns:
+                db.execute("ALTER TABLE paper_orders ADD COLUMN account_id TEXT")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_paper_orders_account_book "
+                "ON paper_orders(symbol, account_id, side, status, created_at)"
+            )
 
     @staticmethod
     def _decimal(value, field):
@@ -79,7 +88,7 @@ class PaperMatchingEngine:
                 result[key] = str(result[key])
         return result
 
-    def place_limit_order(self, symbol, side, quantity, price, client_order_id):
+    def place_limit_order(self, symbol, side, quantity, price, client_order_id, account_id=None):
         symbol = str(symbol).strip().upper()
         if not re.fullmatch(r"[A-Z0-9]{2,15}/[A-Z0-9]{2,15}", symbol):
             raise ValueError("Use a symbol such as BTC/USDT.")
@@ -90,6 +99,9 @@ class PaperMatchingEngine:
             raise ValueError("client_order_id must be 8-64 safe characters.")
         qty = self._decimal(quantity, "quantity")
         limit_price = self._decimal(price, "price")
+        if account_id is not None:
+            account_id = PaperLedger._account_id(account_id)
+        base_asset, quote_asset = symbol.split("/", 1)
         now = time.time_ns()
         order_id = str(uuid.uuid4())
         opposite_side = "sell" if side == "buy" else "buy"
@@ -107,25 +119,56 @@ class PaperMatchingEngine:
                         and prior["side"] == side
                         and Decimal(prior["quantity"]) == qty
                         and Decimal(prior["price"]) == limit_price
+                        and prior["account_id"] == account_id
                     )
                     if not same_request:
                         raise IdempotencyConflict("client_order_id was already used for a different order.")
                     db.commit()
                     return self._serialize(prior)
 
+                if account_id is not None:
+                    if not db.execute(
+                        "SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)
+                    ).fetchone():
+                        raise KeyError("Paper account not found.")
+                    reserve_asset = quote_asset if side == "buy" else base_asset
+                    reserve_amount = qty * limit_price if side == "buy" else qty
+                    available_code = f"user:{account_id}:available"
+                    locked_code = f"user:{account_id}:locked"
+                    if PaperLedger._balance(db, available_code, reserve_asset) < reserve_amount:
+                        raise InsufficientPaperFunds(
+                            f"Insufficient {reserve_asset} available balance for this order."
+                        )
+                    PaperLedger._post(
+                        db, f"paper-order-reserve:{order_id}", "order_reserve",
+                        f"Reserve funds for paper order {order_id}",
+                        [
+                            (available_code, reserve_asset, "debit", reserve_amount),
+                            (locked_code, reserve_asset, "credit", reserve_amount),
+                        ],
+                    )
+
                 db.execute(
                     """INSERT INTO paper_orders
-                    (id, client_order_id, symbol, side, price, quantity, remaining, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
-                    (order_id, client_order_id, symbol, side, str(limit_price), str(qty), str(qty), now, now),
+                    (id, client_order_id, symbol, side, price, quantity, remaining, status, created_at, updated_at, account_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)""",
+                    (order_id, client_order_id, symbol, side, str(limit_price), str(qty), str(qty), now, now, account_id),
                 )
 
-                candidates = db.execute(
-                    """SELECT * FROM paper_orders
-                    WHERE symbol = ? AND side = ? AND status IN ('open','partially_filled')
-                    """,
-                    (symbol, opposite_side),
-                ).fetchall()
+                if account_id is None:
+                    candidates = db.execute(
+                        """SELECT * FROM paper_orders
+                        WHERE symbol = ? AND side = ? AND account_id IS NULL
+                          AND status IN ('open','partially_filled')""",
+                        (symbol, opposite_side),
+                    ).fetchall()
+                else:
+                    candidates = db.execute(
+                        """SELECT * FROM paper_orders
+                        WHERE symbol = ? AND side = ? AND account_id IS NOT NULL
+                          AND status IN ('open','partially_filled')""",
+                        (symbol, opposite_side),
+                    ).fetchall()
                 if side == "buy":
                     candidates = sorted(
                         (r for r in candidates if Decimal(r["price"]) <= limit_price),
@@ -154,12 +197,20 @@ class PaperMatchingEngine:
                         "UPDATE paper_orders SET remaining=?, status=?, updated_at=? WHERE id=?",
                         (str(maker_left), maker_status, now, maker["id"]),
                     )
-                    db.execute(
+                    trade_cursor = db.execute(
                         """INSERT INTO paper_trades
                         (symbol, maker_order_id, taker_order_id, price, quantity, created_at)
                         VALUES (?, ?, ?, ?, ?, ?)""",
                         (symbol, maker["id"], order_id, str(trade_price), str(fill_qty), now),
                     )
+                    if account_id is not None:
+                        taker_order = {
+                            "id": order_id, "side": side, "price": str(limit_price),
+                            "account_id": account_id,
+                        }
+                        self._settle_account_trade(
+                            db, maker, taker_order, trade_price, fill_qty, trade_cursor.lastrowid
+                        )
 
                 taker_status = "filled" if taker_remaining == 0 else (
                     "partially_filled" if taker_remaining < qty else "open"
@@ -174,6 +225,44 @@ class PaperMatchingEngine:
             except Exception:
                 db.rollback()
                 raise
+
+    @staticmethod
+    def _settle_account_trade(db, maker, taker, trade_price, quantity, trade_id):
+        """Settle both sides in the same SQLite transaction as the match."""
+        buy_order = taker if taker["side"] == "buy" else maker
+        sell_order = maker if taker["side"] == "buy" else taker
+        buyer_id = buy_order["account_id"]
+        seller_id = sell_order["account_id"]
+        if not buyer_id or not seller_id:
+            raise ValueError("Account-backed orders can only match other account-backed orders.")
+
+        base_asset, quote_asset = maker["symbol"].split("/", 1)
+        buyer_limit = Decimal(buy_order["price"])
+        execution_value = trade_price * quantity
+        buyer_reserved = buyer_limit * quantity
+        refund = buyer_reserved - execution_value
+        if refund < 0:
+            raise ValueError("Execution price exceeds the buyer's reserved limit price.")
+
+        postings = [
+            (f"user:{buyer_id}:locked", quote_asset, "debit", buyer_reserved),
+            (f"user:{seller_id}:available", quote_asset, "credit", execution_value),
+            (f"user:seller-clearing:{seller_id}", base_asset, "debit", quantity),
+            (f"user:buyer-clearing:{buyer_id}", base_asset, "credit", quantity),
+            (f"user:seller-clearing:{seller_id}", quote_asset, "debit", execution_value),
+        ]
+        # The base asset moves from the seller's locked bucket to the buyer's
+        # available bucket; quote proceeds move from buyer reserve to seller.
+        postings[2] = (f"user:{seller_id}:locked", base_asset, "debit", quantity)
+        postings[3] = (f"user:{buyer_id}:available", base_asset, "credit", quantity)
+        if refund > 0:
+            postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
+        # Quote postings balance at the buyer's reserved limit; base postings
+        # balance between seller locked and buyer available.
+        PaperLedger._post(
+            db, f"paper-trade-settlement:{trade_id}", "trade_settlement",
+            f"Settle paper trade {trade_id}", postings,
+        )
 
     def get_order(self, order_id):
         with closing(self._connect()) as db:
@@ -204,6 +293,20 @@ class PaperMatchingEngine:
                     raise KeyError("Paper order not found.")
                 if row["status"] not in ("open", "partially_filled"):
                     raise ValueError("Only open or partially filled orders can be cancelled.")
+                if row["account_id"] is not None:
+                    base_asset, quote_asset = row["symbol"].split("/", 1)
+                    remaining = Decimal(row["remaining"])
+                    reserve_asset = quote_asset if row["side"] == "buy" else base_asset
+                    reserve_amount = remaining * Decimal(row["price"]) if row["side"] == "buy" else remaining
+                    if reserve_amount > 0:
+                        PaperLedger._post(
+                            db, f"paper-order-cancel:{order_id}", "order_release",
+                            f"Release remaining reserve for paper order {order_id}",
+                            [
+                                (f"user:{row['account_id']}:locked", reserve_asset, "debit", reserve_amount),
+                                (f"user:{row['account_id']}:available", reserve_asset, "credit", reserve_amount),
+                            ],
+                        )
                 db.execute(
                     "UPDATE paper_orders SET status='cancelled', updated_at=? WHERE id=?",
                     (now, order_id),
