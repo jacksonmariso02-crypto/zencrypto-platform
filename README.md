@@ -9,6 +9,9 @@ ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository 
 - `POST /trade/limit-orders` — creates a resting paper limit order and reserves simulated quote funds for buys or base assets for sells; requires `Idempotency-Key`. Orders remain open and are not matched yet.
 - `GET /trade/limit-orders` — lists the authenticated user's resting paper limit orders.
 - `GET /trade/limit-order-book/{symbol}` — returns aggregated ZenCrypto user paper limit bids/asks by price level, without exposing user identities or order IDs. This is separate from external Binance market depth and does not match orders.
+- `GET /trade/limit-trades` — returns the authenticated user's paper limit-order fills, including side, quantity, execution price, quote amount and fee.
+
+Limit orders use server-side price-time priority matching between different paper users. Crossing orders execute at the resting maker order's limit price. Partial fills are supported; buyer USD and seller base-asset escrow are settled through balanced immutable ledger journals. Remaining reserves are recalculated and excess reserves released. This paper matching engine is separate from Binance external market depth and does not route real orders.
 - `POST /trade/limit-orders/{order_id}/cancel` — cancels an open paper limit order and releases its reserved simulated balance through a balanced ledger journal.
 - `GET /account/ledger/verify` — authenticated, read-only per-user double-entry integrity check for paper ledger journals.
 - `GET /trade/orders` — authenticated, filtered and paginated paper order history; currently only `filled` status is supported because orders execute immediately.
