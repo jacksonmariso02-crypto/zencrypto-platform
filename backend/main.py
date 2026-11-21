@@ -116,6 +116,8 @@ def init():
         CREATE TABLE IF NOT EXISTS journal(id TEXT PRIMARY KEY,kind TEXT NOT NULL,reference TEXT UNIQUE NOT NULL,created_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS postings(id INTEGER PRIMARY KEY,journal_id TEXT NOT NULL,account_id INTEGER NOT NULL,amount_minor INTEGER NOT NULL,FOREIGN KEY(journal_id) REFERENCES journal(id),FOREIGN KEY(account_id) REFERENCES accounts(id));
         CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,quantity TEXT NOT NULL,price TEXT NOT NULL,notional_minor INTEGER NOT NULL,fee_minor INTEGER NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS limit_orders(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,quantity TEXT NOT NULL,limit_price TEXT NOT NULL,reserve_currency TEXT NOT NULL,reserve_minor INTEGER NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE INDEX IF NOT EXISTS limit_orders_user_status_idx ON limit_orders(user_id,status,created_at DESC);
         CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,currency TEXT NOT NULL,amount_minor INTEGER NOT NULL,destination TEXT,status TEXT NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor_id INTEGER,event TEXT NOT NULL,detail TEXT NOT NULL,created_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS sandbox_operations(idempotency_key TEXT PRIMARY KEY,user_id INTEGER NOT NULL,operation TEXT NOT NULL,response TEXT NOT NULL,created_at INTEGER NOT NULL);
@@ -160,6 +162,11 @@ class PaperOrder(BaseModel):
     side: Literal["buy", "sell"]
     quote_amount: str = Field(min_length=1, max_length=32)
     reference_price: str = Field(min_length=1, max_length=32)
+class LimitOrder(BaseModel):
+    symbol: str = Field(pattern=r"^[A-Za-z0-9]{2,12}$")
+    side: Literal["buy", "sell"]
+    quantity: str = Field(min_length=1, max_length=32)
+    limit_price: str = Field(min_length=1, max_length=32)
 class PaperTransfer(BaseModel):
     amount: str
     currency: Literal["USD"] = "USD"
@@ -314,6 +321,91 @@ def trade_summary(u=Depends(require_user)):
         },
         "notice": "Aggregates include recorded paper orders only; they are not live exchange volume or profit figures.",
     }
+
+@app.post("/trade/limit-orders", status_code=201)
+def create_limit_order(body: LimitOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
+    symbol = body.symbol.upper()
+    if symbol not in SUPPORTED_PAPER_ASSETS:
+        raise HTTPException(422, "Unsupported paper asset.")
+    try:
+        qty = Decimal(body.quantity)
+        price = Decimal(body.limit_price)
+        qty_units = qty * Decimal(100000000)
+        if not qty.is_finite() or not price.is_finite() or qty <= 0 or price <= 0 or qty_units != qty_units.to_integral_value() or qty > Decimal("1000000") or price > Decimal("1000000000") or price != price.quantize(Decimal("0.000000000001")):
+            raise ValueError()
+    except (InvalidOperation, ValueError):
+        raise HTTPException(422, "Quantity must be positive with at most 8 decimals; limit price must be positive with at most 12 decimals.")
+    asset_units = int(qty_units)
+    notional_cents = int((qty * price * 100).to_integral_value(rounding="ROUND_CEILING"))
+    fee_cents = max(1, int((Decimal(notional_cents) * Decimal("0.001")).to_integral_value(rounding="ROUND_CEILING")))
+    if notional_cents <= 0 or notional_cents > 100000000:
+        raise HTTPException(422, "Limit order notional must be between $0.01 and $1,000,000.")
+    reserve_currency = "USD" if body.side == "buy" else symbol
+    reserve_minor = notional_cents + fee_cents if body.side == "buy" else asset_units
+    now = int(time.time())
+    order_id = secrets.token_urlsafe(18)
+    operation = f"limit:{u['id']}:{symbol}:{body.side}:{qty}:{price}"
+    with db() as c:
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            prior = c.execute("SELECT user_id,operation,response FROM sandbox_operations WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if prior:
+                if prior["user_id"] != u["id"] or prior["operation"] != operation:
+                    raise HTTPException(409, "Idempotency key reused for a different limit order.")
+                c.execute("COMMIT")
+                return json.loads(prior["response"])
+            user_account = ensure_account(c, u["id"], reserve_currency)
+            escrow = system_account(c, reserve_currency, "paper-limit-reserve")
+            if balance_minor(c, user_account) < reserve_minor:
+                raise HTTPException(400, f"Insufficient available {reserve_currency} paper balance.")
+            journal_id = post_journal(c, "paper_limit_reserve", order_id, [(user_account, reserve_currency, -reserve_minor), (escrow, reserve_currency, reserve_minor)])
+            c.execute("INSERT INTO limit_orders(id,user_id,symbol,side,quantity,limit_price,reserve_currency,reserve_minor,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (order_id,u["id"],symbol,body.side,format(qty,"f"),format(price,"f"),reserve_currency,reserve_minor,"open",now,now))
+            result = {"id":order_id,"symbol":symbol,"side":body.side,"quantity":format(qty,"f"),"limit_price":format(price,"f"),"reserve_currency":reserve_currency,"reserved_amount":format(Decimal(reserve_minor)/(100 if reserve_currency=="USD" else 100000000), ".2f" if reserve_currency=="USD" else ".8f"),"status":"open","journal_id":journal_id,"mode":"PAPER_ONLY","execution_model":"RESTING_LIMIT_ORDER_NO_MATCHING"}
+            c.execute("INSERT INTO sandbox_operations VALUES(?,?,?,?,?)",(idempotency_key,u["id"],operation,json.dumps(result),now))
+            audit(c,u["id"],"paper_limit_order_opened",{"order_id":order_id,"symbol":symbol,"side":body.side,"reserve_currency":reserve_currency,"reserve_minor":reserve_minor})
+            c.execute("COMMIT")
+            return result
+        except Exception:
+            if c.in_transaction: c.execute("ROLLBACK")
+            raise
+
+@app.get("/trade/limit-orders")
+def list_limit_orders(status: str | None = None, u=Depends(require_user)):
+    if status is not None and status not in {"open","cancelled"}:
+        raise HTTPException(422, "status must be open or cancelled.")
+    with db() as c:
+        if status:
+            rows = c.execute("SELECT * FROM limit_orders WHERE user_id=? AND status=? ORDER BY created_at DESC",(u["id"],status)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM limit_orders WHERE user_id=? ORDER BY created_at DESC",(u["id"],)).fetchall()
+    return {"orders":[{"id":r["id"],"symbol":r["symbol"],"side":r["side"],"quantity":r["quantity"],"limit_price":r["limit_price"],"reserve_currency":r["reserve_currency"],"reserved_amount":format(Decimal(r["reserve_minor"])/(100 if r["reserve_currency"]=="USD" else 100000000),".2f" if r["reserve_currency"]=="USD" else ".8f"),"status":r["status"],"created_at":r["created_at"],"updated_at":r["updated_at"]} for r in rows],"mode":"PAPER_ONLY","execution_model":"RESTING_LIMIT_ORDER_NO_MATCHING"}
+
+@app.post("/trade/limit-orders/{order_id}/cancel")
+def cancel_limit_order(order_id: str, u=Depends(require_user)):
+    now = int(time.time())
+    with db() as c:
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute("SELECT * FROM limit_orders WHERE id=? AND user_id=?",(order_id,u["id"])).fetchone()
+            if not row:
+                raise HTTPException(404,"Limit order not found.")
+            if row["status"] == "cancelled":
+                c.execute("COMMIT")
+                return {"id":order_id,"status":"cancelled","already_cancelled":True,"mode":"PAPER_ONLY"}
+            if row["status"] != "open":
+                raise HTTPException(409,"Only open limit orders can be cancelled.")
+            user_account = ensure_account(c,u["id"],row["reserve_currency"])
+            escrow = system_account(c,row["reserve_currency"],"paper-limit-reserve")
+            if balance_minor(c,escrow) < row["reserve_minor"]:
+                raise HTTPException(500,"Reserved paper balance integrity check failed.")
+            journal_id = post_journal(c,"paper_limit_release",order_id+":cancel",[(escrow,row["reserve_currency"],-row["reserve_minor"]),(user_account,row["reserve_currency"],row["reserve_minor"])])
+            c.execute("UPDATE limit_orders SET status='cancelled',updated_at=? WHERE id=? AND status='open'",(now,order_id))
+            audit(c,u["id"],"paper_limit_order_cancelled",{"order_id":order_id,"released_currency":row["reserve_currency"],"released_minor":row["reserve_minor"]})
+            c.execute("COMMIT")
+            return {"id":order_id,"status":"cancelled","released_currency":row["reserve_currency"],"released_amount":format(Decimal(row["reserve_minor"])/(100 if row["reserve_currency"]=="USD" else 100000000),".2f" if row["reserve_currency"]=="USD" else ".8f"),"journal_id":journal_id,"mode":"PAPER_ONLY"}
+        except Exception:
+            if c.in_transaction: c.execute("ROLLBACK")
+            raise
 
 @app.post("/trade/preview")
 def preview_order(body: PaperOrder, u=Depends(require_user)):
