@@ -251,6 +251,23 @@ class PaperLedger:
                 if values["available"] or values["locked"]
             ]
 
+    def get_fee_balances(self):
+        """Return simulated platform fee revenue by asset; never includes user funds."""
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                """SELECT asset, debit, credit FROM ledger_entries
+                   WHERE account_code='platform:fees' ORDER BY id"""
+            ).fetchall()
+            totals = {}
+            for row in rows:
+                totals[row["asset"]] = totals.get(row["asset"], Decimal("0")) + (
+                    Decimal(row["credit"]) - Decimal(row["debit"])
+                )
+            return [
+                {"asset": asset, "amount": str(amount)}
+                for asset, amount in sorted(totals.items()) if amount
+            ]
+
     def list_entries(self, account_id, limit=100):
         account_id = self._account_id(account_id)
         if not 1 <= limit <= 500:
