@@ -5,6 +5,7 @@ from starlette.websockets import WebSocketDisconnect
 import main
 from paper_engine import PaperMatchingEngine
 from market_stream import MarketStreamHub
+from orderbook_depth import build_depth
 
 
 @pytest.fixture
@@ -264,6 +265,9 @@ def test_external_market_websocket_streams_shared_public_snapshot(api, monkeypat
             "symbol": symbol,
             "ticker": {"last": 65000},
             "orderbook": {"bids": [[64999, 1]], "asks": [[65001, 1]]},
+            "depth": build_depth(
+                symbol, [[64999, 1]], [[65001, 1]], source="external_exchange"
+            ),
         }
 
     monkeypatch.setattr(
