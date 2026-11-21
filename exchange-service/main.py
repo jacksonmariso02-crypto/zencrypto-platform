@@ -189,6 +189,14 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
                 if price_max is not None and precise_price > Decimal(str(price_max)):
                     raise HTTPException(422, "Limit price exceeds the market maximum.")
                 price = float(precise_price)
+                cost_limits = market.get("limits", {}).get("cost", {})
+                notional = amount_decimal * precise_price
+                cost_min = cost_limits.get("min")
+                cost_max = cost_limits.get("max")
+                if cost_min is not None and notional < Decimal(str(cost_min)):
+                    raise HTTPException(422, "Limit order notional is below the market minimum.")
+                if cost_max is not None and notional > Decimal(str(cost_max)):
+                    raise HTTPException(422, "Limit order notional exceeds the market maximum.")
         except HTTPException:
             raise
         except (ccxt.BaseError, ArithmeticError, ValueError) as exc:
