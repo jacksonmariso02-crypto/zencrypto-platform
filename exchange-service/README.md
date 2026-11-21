@@ -152,3 +152,10 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - One shared poller per symbol reads the durable paper matching-engine database. Unchanged snapshots are suppressed; bounded subscriber queues discard stale snapshots for slow clients so the next delivered event represents the latest book state.
 - Polling defaults to 500ms and is clamped to a minimum of 250ms by `PAPER_BOOK_STREAM_INTERVAL_SECONDS`. This is shared database polling, not event-driven matching-engine publication; it is an intermediate implementation for development and moderate traffic. Production should publish order mutations from the matching engine through a durable broker/outbox and use explicit snapshot sequence/version recovery.
 - The stream contains ZenCrypto paper orders only. It never combines external venue depth or exposes account IDs and balances.
+
+
+## Deployment readiness probe
+- Render should use `/ready` as the exchange service health-check path; `/health` remains a lightweight liveness response.
+- `/ready` verifies the mounted SQLite database with `PRAGMA quick_check`, confirms a non-placeholder user-token signing secret is configured, and confirms the administrator token exists.
+- The response reports boolean checks only and never returns secret values or the database path. It returns HTTP 503 until all required checks pass.
+- The Render Blueprint must declare `AUTH_TOKEN_SECRET` exactly once with `generateValue: true`; keep this generated value stable across deploys so existing signed user tokens remain verifiable.
