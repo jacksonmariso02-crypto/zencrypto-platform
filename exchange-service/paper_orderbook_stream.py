@@ -78,3 +78,27 @@ class PaperOrderBookHub:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def build_depth_delta(previous, current):
+    """Return changed [price, quantity] levels; quantity zero means delete the level."""
+    def level_map(snapshot, side):
+        return {str(level["price"]): str(level["quantity"]) for level in snapshot.get(side, [])}
+
+    changes = {}
+    for side in ("bids", "asks"):
+        old = level_map(previous, side)
+        new = level_map(current, side)
+        changes[side] = [
+            [price, new.get(price, "0")]
+            for price in sorted(set(old) | set(new), key=lambda value: __import__("decimal").Decimal(value), reverse=(side == "bids"))
+            if old.get(price) != new.get(price)
+        ]
+    return {
+        "type": "depth_delta",
+        "source": "zencrypto_paper",
+        "symbol": current["symbol"],
+        "bids": changes["bids"],
+        "asks": changes["asks"],
+        "metrics": current.get("metrics", {}),
+    }
