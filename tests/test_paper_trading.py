@@ -413,3 +413,36 @@ def test_paper_order_response_discloses_client_reference_price(tmp_path, monkeyp
         assert order.status_code == 201, order.text
         assert order.json()["execution_model"] == "IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE"
         assert order.json()["price_source"] == "CLIENT_SUPPLIED_REFERENCE"
+
+
+def test_server_order_preview_matches_fill_math_without_writing_ledger(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "order-preview.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        assert client.post("/trade/preview", json={}).status_code == 401
+        client.post("/auth/register", json={"email":"preview@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"preview@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"preview-faucet-01"}, json={"amount":"100"})
+        with main.db() as connection:
+            before = connection.execute("SELECT COUNT(*) FROM journal").fetchone()[0]
+        preview = client.post("/trade/preview", headers=headers, json={"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"})
+        assert preview.status_code == 200, preview.text
+        data = preview.json()
+        assert data["quantity"] == "0.00050000"
+        assert data["fee"] == "0.02"
+        assert data["estimated_usd_debit"] == "25.02"
+        assert data["sufficient_balance"] is True
+        assert data["execution_model"] == "PREVIEW_ONLY_NO_EXECUTION"
+        assert data["price_source"] == "CLIENT_SUPPLIED_REFERENCE"
+        with main.db() as connection:
+            after = connection.execute("SELECT COUNT(*) FROM journal").fetchone()[0]
+        assert after == before
+        order = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"preview-order-01"}, json={"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"})
+        assert order.status_code == 201, order.text
+        assert order.json()["quantity"] == data["quantity"]
+        assert order.json()["fee"] == data["fee"]
+        insufficient = client.post("/trade/preview", headers=headers, json={"symbol":"ETH","side":"buy","quote_amount":"1000.00","reference_price":"3000"})
+        assert insufficient.status_code == 200
+        assert insufficient.json()["sufficient_balance"] is False
