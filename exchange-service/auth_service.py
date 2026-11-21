@@ -108,8 +108,9 @@ class AuthService:
             return False
 
     def _sign(self, payload):
-        if len(self.token_secret.encode("utf-8")) < 32:
-            raise RuntimeError("AUTH_TOKEN_SECRET must contain at least 32 characters.")
+        if (len(self.token_secret.encode("utf-8")) < 32
+                or self.token_secret.startswith(("REPLACE_", "CHANGE_ME", "YOUR_"))):
+            raise RuntimeError("Set AUTH_TOKEN_SECRET to a unique random secret of at least 32 characters.")
         header = _b64encode(json.dumps(
             {"alg": "HS256", "typ": "JWT"}, separators=(",", ":")
         ).encode())
