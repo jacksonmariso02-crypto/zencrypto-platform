@@ -70,6 +70,31 @@ async def health():
         "credentials_configured": bool(API_KEY and API_SECRET),
     }
 
+@app.get("/api/v1/markets/{symbol}/info")
+async def market_info(symbol: str):
+    client = exchange_client()
+    try:
+        markets = await run_in_threadpool(client.load_markets)
+        normalized = normalize_symbol(symbol)
+        market = markets.get(normalized)
+        if not market or not market.get("spot"):
+            raise HTTPException(404, "Spot market was not found.")
+        return {
+            "symbol": normalized,
+            "base": market.get("base"),
+            "quote": market.get("quote"),
+            "active": market.get("active"),
+            "spot": bool(market.get("spot")),
+            "precision": market.get("precision", {}),
+            "limits": market.get("limits", {}),
+        }
+    except HTTPException:
+        raise
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange market metadata error: {exc}") from exc
+    finally:
+        client.close()
+
 @app.get("/api/v1/markets/{symbol}/ticker")
 async def ticker(symbol: str):
     client = exchange_client()
