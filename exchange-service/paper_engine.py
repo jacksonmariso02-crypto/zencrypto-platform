@@ -81,6 +81,10 @@ class PaperMatchingEngine:
                 "CREATE INDEX IF NOT EXISTS idx_paper_orders_account_book "
                 "ON paper_orders(symbol, account_id, side, status, created_at)"
             )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_paper_trades_symbol_time "
+                "ON paper_trades(symbol, created_at, id)"
+            )
             trade_columns = {row["name"] for row in db.execute("PRAGMA table_info(paper_trades)")}
             for column, definition in (
                 ("maker_fee_amount", "TEXT NOT NULL DEFAULT '0'"),
@@ -402,6 +406,68 @@ class PaperMatchingEngine:
                 grouped[p] = grouped.get(p, Decimal("0")) + Decimal(order["remaining"])
             return [{"price": price, "quantity": str(qty)} for price, qty in grouped.items()]
         return {"symbol": symbol, "bids": levels(bids), "asks": levels(asks)}
+
+    def list_candles(self, symbol, timeframe="1h", limit=100, since=None):
+        """Aggregate durable paper fills into OHLCV candles; timestamps are UTC milliseconds."""
+        intervals = {
+            "1m": 60_000, "5m": 300_000, "15m": 900_000,
+            "30m": 1_800_000, "1h": 3_600_000,
+            "4h": 14_400_000, "1d": 86_400_000,
+        }
+        if timeframe not in intervals:
+            raise ValueError("Unsupported timeframe. Use 1m, 5m, 15m, 30m, 1h, 4h or 1d.")
+        if not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000.")
+        normalized = str(symbol).strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,15}/[A-Z0-9]{2,15}", normalized):
+            raise ValueError("Use a symbol such as BTC/USDT.")
+        interval_ms = intervals[timeframe]
+        interval_ns = interval_ms * 1_000_000
+        params = [interval_ns, interval_ns, normalized]
+        since_clause = ""
+        if since is not None:
+            try:
+                since_ms = int(since)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("since must be a UTC Unix timestamp in milliseconds.") from exc
+            if since_ms < 0:
+                raise ValueError("since must be a non-negative UTC Unix timestamp in milliseconds.")
+            since_clause = " AND created_at >= ?"
+            params.append(since_ms * 1_000_000)
+        params.append(limit)
+        query = f"""
+            WITH bucketed AS (
+                SELECT id, price, quantity, (created_at / ?) * ? AS bucket
+                FROM paper_trades
+                WHERE symbol = ?{since_clause}
+            ),
+            grouped AS (
+                SELECT bucket, SUM(CAST(quantity AS NUMERIC)) AS volume,
+                       MAX(CAST(price AS NUMERIC)) AS high,
+                       MIN(CAST(price AS NUMERIC)) AS low,
+                       MIN(id) AS first_id, MAX(id) AS last_id
+                FROM bucketed GROUP BY bucket
+            )
+            SELECT g.bucket, first_trade.price AS open, g.high, g.low,
+                   last_trade.price AS close, g.volume
+            FROM grouped g
+            JOIN paper_trades first_trade ON first_trade.id = g.first_id
+            JOIN paper_trades last_trade ON last_trade.id = g.last_id
+            ORDER BY g.bucket DESC LIMIT ?
+        """
+        with closing(self._connect()) as db:
+            rows = db.execute(query, params).fetchall()
+        return [
+            {
+                "timestamp": int(row["bucket"]) // 1_000_000,
+                "open": str(Decimal(str(row["open"]))),
+                "high": str(Decimal(str(row["high"]))),
+                "low": str(Decimal(str(row["low"]))),
+                "close": str(Decimal(str(row["close"]))),
+                "volume": str(Decimal(str(row["volume"]))),
+            }
+            for row in reversed(rows)
+        ]
 
     def list_trades(self, symbol=None, limit=100):
         with closing(self._connect()) as db:
