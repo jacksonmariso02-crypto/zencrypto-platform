@@ -34,7 +34,7 @@ This is a separate server-side service. GitHub Pages is static hosting and canno
 - `GET /api/v1/paper/trades`
 - `DELETE /api/v1/paper/orders/{order_id}`
 
-The SQLite-backed simulation supports price-time priority, partial fills, resting maker-price execution, cancellation, order-book snapshots, trade history, and idempotent client order IDs. These routes do not call CCXT, reserve real balances, or move real assets. The prototype uses one shared protected paper book; it is not a public multi-user exchange.
+The SQLite-backed simulation supports price-time priority, partial fills, resting maker-price execution, cancellation, order-book snapshots, trade history, and idempotent client order IDs. The paper ledger adds isolated simulated accounts, balanced double-entry journal entries, exact Decimal balance calculations, available/locked buckets, idempotent simulated credits, and account-scoped ledger history. Paper credits are administrator-issued test funds only. These components do not call CCXT, process real deposits, or move real assets. Important: the ledger is not yet wired into order reservation and trade settlement, so balances do not yet constrain matching orders. The prototype is not a public multi-user exchange.
 
 ## Authenticated external exchange API
 - `GET /api/v1/account/balance`
