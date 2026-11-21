@@ -73,7 +73,7 @@ def test_maker_buyer_and_taker_seller_fees_post_in_correct_assets(tmp_path):
         {"asset": "USDT", "available": "390", "locked": "0"},
     ]
     assert ledger.get_balances("fee_taker_seller") == [
-        {"asset": "USDT", "available": "109.780", "locked": "0"}
+        {"asset": "USDT", "available": "109.78", "locked": "0"}
     ]
     assert ledger.get_fee_balances() == [
         {"asset": "BTC", "amount": "0.001"},
