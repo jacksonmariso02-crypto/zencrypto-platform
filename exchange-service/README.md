@@ -113,3 +113,12 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - The endpoint returns only buckets with at least one paper fill. It does not fabricate empty candles or seed history. Markets without paper fills return an empty array.
 - A SQLite index on `(symbol, created_at, id)` supports time-bucket selection. Candle values are aggregated in Python Decimal arithmetic to avoid binary floating-point volume errors.
 - Existing `/api/v1/markets/{symbol}/candles` remains the external CCXT venue's OHLCV endpoint. Use that for reference-market candles and the new `/api/v1/paper/markets/...` endpoint for ZenCrypto's own simulated market history.
+
+
+## Realtime paper-market trade stream
+- WebSocket: `/ws/v1/paper/trades?symbol=BTC-USDT`. Omit `symbol` to subscribe to all public paper-market fills.
+- The first frame is a `ready` event containing the normalized symbol and current cursor. Subsequent frames use `type: trade` and contain one persisted paper fill.
+- Reconnect with `since_id=<last received trade id>` to replay fills created after the last successfully processed event. Trade IDs are monotonically increasing database IDs; clients should persist the last processed ID to avoid gaps after reconnects.
+- When `since_id` is omitted, the stream starts at the latest trade ID for that symbol, so it delivers new fills rather than replaying all historical data. Use the REST trade-history endpoint for backfill.
+- The stream polls the durable SQLite trade table every 500ms and returns batches of at most 500 events. This makes reconnect/resume work across service processes sharing the same database, unlike an in-memory-only broadcast manager.
+- Public stream payloads expose trade price, quantity, timestamp and opaque order IDs only; account IDs and balances are never included. This is a paper-trading feed, not a live exchange feed.

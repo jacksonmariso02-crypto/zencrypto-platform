@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import main
 from paper_engine import PaperMatchingEngine
@@ -203,3 +204,51 @@ def test_paper_candle_api_rejects_invalid_query(api):
         "/api/v1/paper/markets/BTC-USDT/candles?limit=1001"
     )
     assert bad_limit.status_code == 400
+
+
+def test_paper_trade_websocket_streams_new_fills_and_resumes(api):
+    with api.websocket_connect("/ws/v1/paper/trades?symbol=BTC-USDT") as websocket:
+        ready = websocket.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["channel"] == "paper.trades"
+        assert ready["symbol"] == "BTC/USDT"
+
+        ask = api.post(
+            "/api/v1/paper/orders",
+            headers=auth(),
+            json={
+                "symbol": "BTC/USDT", "side": "sell", "quantity": "0.1",
+                "price": "50000", "client_order_id": "ws-paper-ask-01",
+            },
+        )
+        bid = api.post(
+            "/api/v1/paper/orders",
+            headers=auth(),
+            json={
+                "symbol": "BTC/USDT", "side": "buy", "quantity": "0.1",
+                "price": "50001", "client_order_id": "ws-paper-bid-01",
+            },
+        )
+        assert ask.status_code == 200
+        assert bid.status_code == 200
+
+        event = websocket.receive_json()
+        assert event["type"] == "trade"
+        assert event["data"]["symbol"] == "BTC/USDT"
+        assert event["data"]["price"] == "50000"
+        assert event["data"]["quantity"] == "0.1"
+        trade_id = event["data"]["id"]
+
+    with api.websocket_connect(
+        f"/ws/v1/paper/trades?symbol=BTC-USDT&since_id={trade_id}"
+    ) as websocket:
+        resumed = websocket.receive_json()
+        assert resumed["type"] == "ready"
+        assert resumed["cursor"] == trade_id
+
+
+def test_paper_trade_websocket_rejects_invalid_query(api):
+    with pytest.raises(WebSocketDisconnect) as disconnected:
+        with api.websocket_connect("/ws/v1/paper/trades?symbol=NOT%20VALID"):
+            pass
+    assert disconnected.value.code == 1008
