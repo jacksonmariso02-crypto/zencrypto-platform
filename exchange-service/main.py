@@ -418,6 +418,67 @@ async def credit_paper_account(
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.post("/api/v1/paper/accounts/{account_id}/orders")
+async def create_account_paper_order(
+    account_id: str,
+    body: PaperLimitOrderRequest,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_ENGINE.place_limit_order,
+            normalize_symbol(body.symbol),
+            body.side,
+            body.quantity,
+            body.price,
+            body.client_order_id,
+            account_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except InsufficientPaperFunds as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except IdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/v1/paper/accounts/{account_id}/orders")
+async def list_account_paper_orders(
+    account_id: str,
+    symbol: str | None = None,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    try:
+        normalized = normalize_symbol(symbol) if symbol else None
+        return await run_in_threadpool(
+            PAPER_ENGINE.list_orders, normalized, limit, account_id
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.delete("/api/v1/paper/accounts/{account_id}/orders/{order_id}")
+async def cancel_account_paper_order(
+    account_id: str,
+    order_id: str,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(PAPER_ENGINE.cancel_order, order_id, account_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @app.get("/api/v1/paper/accounts/{account_id}/balances")
 async def paper_account_balances(
     account_id: str,

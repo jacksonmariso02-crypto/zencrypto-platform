@@ -44,3 +44,16 @@ The SQLite-backed simulation supports price-time priority, partial fills, restin
 
 ## Before real-money trading
 This starter is not a production exchange or custody system. The paper matching engine persists simulated orders and trades in SQLite, but there is not yet a per-user double-entry asset ledger, user authorization, rate limiting, production-grade audit pipeline, withdrawal controls, reconciliation, or operational monitoring. Do not enable live trading until those controls, legal/compliance review, and end-to-end testnet validation are complete. A single shared server API key/token is suitable only for a controlled private prototype, not a public multi-user exchange.
+
+
+## Account-backed paper order settlement
+
+The account-backed paper routes connect the paper matching engine to the double-entry ledger using the same SQLite database transaction. Use these routes for balance-enforced simulations:
+
+- `POST /api/v1/paper/accounts/{account_id}/orders` — reserve quote currency for buys or base currency for sells before matching.
+- `GET /api/v1/paper/accounts/{account_id}/orders` — list orders for that paper account.
+- `DELETE /api/v1/paper/accounts/{account_id}/orders/{order_id}` — cancel only an order belonging to that account and release its unfilled reserve.
+
+On each fill, the buyer's reserved quote amount is debited, any limit-price difference is returned to available funds, the seller receives quote proceeds, the seller's locked base asset is debited, and the buyer receives base asset. The order update, trade record, and ledger postings commit or roll back together. Account-backed orders match only other account-backed orders; legacy shared paper orders are kept in a separate matching pool.
+
+These endpoints still use the prototype's single administrator Bearer token. They are not end-user authentication, not production custody, and not connected to real deposits, withdrawals, or live exchange execution. The system remains paper-only.
