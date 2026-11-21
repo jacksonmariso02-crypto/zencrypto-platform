@@ -99,3 +99,26 @@ def test_accounts_are_isolated_and_invalid_inputs_rejected(ledger):
         ledger.transfer(
             "dave_004", "USDT", "1", "available", "available", "bad-transfer-001"
         )
+
+
+def test_tiny_decimal_balance_is_checked_without_float_rounding(ledger):
+    ledger.create_account("tiny_006")
+    ledger.credit_paper_funds(
+        "tiny_006", "BTC", "0.00000000000000000003", "tiny-credit-0001"
+    )
+    ledger.transfer(
+        "tiny_006", "BTC", "0.00000000000000000002",
+        "available", "locked", "tiny-lock-000001",
+    )
+    assert ledger.get_balances("tiny_006") == [
+        {
+            "asset": "BTC",
+            "available": "1E-20",
+            "locked": "2E-20",
+        }
+    ]
+    with pytest.raises(InsufficientPaperFunds):
+        ledger.transfer(
+            "tiny_006", "BTC", "0.0000000000000000000100000000001",
+            "available", "locked", "tiny-lock-fail-01",
+        )
