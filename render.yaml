@@ -29,7 +29,7 @@ services:
     rootDir: exchange-service
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /ready
     autoDeploy: true
     disk:
       name: zencrypto-exchange-data
@@ -56,8 +56,6 @@ services:
         value: "30"
       - key: PAPER_ORDER_RATE_WINDOW_SECONDS
         value: "60"
-      - key: AUTH_TOKEN_SECRET
-        generateValue: true
       - key: AUTH_TOKEN_TTL_SECONDS
         value: "900"
       - key: AUTH_ATTEMPT_RATE_LIMIT
