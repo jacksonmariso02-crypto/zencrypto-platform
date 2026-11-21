@@ -414,6 +414,8 @@ def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkey
         "database": True,
         "user_auth_secret": True,
         "admin_token": True,
+        "sandbox_mode": True,
+        "live_trading_disabled": True,
     }
     assert payload["sandbox"] is True
     assert payload["live_trading_enabled"] is False
@@ -427,3 +429,33 @@ def test_exchange_readiness_fails_closed_when_auth_secret_missing(api, monkeypat
     assert response.json()["detail"]["status"] == "not_ready"
     assert response.json()["detail"]["checks"]["database"] is True
     assert response.json()["detail"]["checks"]["user_auth_secret"] is False
+
+
+@pytest.mark.parametrize(
+    "sandbox,live_enabled,failed_check",
+    [
+        (False, False, "sandbox_mode"),
+        (True, True, "live_trading_disabled"),
+    ],
+)
+def test_exchange_readiness_fails_closed_outside_sandbox(
+    api, monkeypatch, sandbox, live_enabled, failed_check
+):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
+    monkeypatch.setattr(main, "SANDBOX", sandbox)
+    monkeypatch.setattr(main, "LIVE_TRADING_ENABLED", live_enabled)
+    response = api.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"][failed_check] is False
+
+
+def test_exchange_readiness_checks_required_paper_schema(api, monkeypatch):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
+    monkeypatch.setattr(main, "PAPER_ENGINE", type("BrokenEngine", (), {
+        "db_path": "/nonexistent/invalid/location/zencrypto.sqlite3"
+    })())
+    response = api.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"]["database"] is False
