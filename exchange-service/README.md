@@ -132,3 +132,13 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - Polling defaults to 2 seconds and is clamped to a minimum of 2 seconds through `MARKET_STREAM_INTERVAL_SECONDS`. This is a REST-polling WebSocket fan-out, not a native Binance WebSocket feed. It is suitable for development and moderate test traffic, not high-frequency or production-scale market data.
 - Each poll fetches a ticker and top-20 order book from the configured external venue. External reference prices and depth are informational and are never used as paper fills, user balances, or P&L.
 - For production scale, replace the polling worker with a venue-native streaming adapter, central message broker, connection quotas, provider sequence/gap recovery, and monitored backpressure.
+
+
+## Order-book depth and market metrics
+- `GET /api/v1/markets/{symbol}/depth?limit=20` returns normalized depth from the external Binance Spot order book. Allowed limits: 5, 10, 20, 50, 100.
+- `GET /api/v1/paper/orderbook/{symbol}/depth?limit=50` returns ZenCrypto paper resting orders and requires the administrator Bearer token. Allowed limits: 1-100.
+- Both endpoints return aggregated price levels with per-level quantity, cumulative base quantity, quote notional, and cumulative quote notional. Metrics include best bid/ask, spread, mid-price, spread in basis points, bid/ask depth quantity and notional, and normalized bid/ask imbalance.
+- Paper depth is derived only from open and partially filled paper orders with positive remaining quantity. Multiple orders at the same price are aggregated before applying the requested level limit.
+- External depth is sourced only from the configured external spot venue. The external market WebSocket now includes the normalized `depth` object alongside the raw top-20 book snapshot.
+- Imbalance is `(bid depth quantity - ask depth quantity) / total depth quantity` over the returned levels. It is a descriptive book metric, not a predictive signal or execution guarantee. Depth snapshots are not an atomic cross-venue view and can change immediately after retrieval.
+- The existing paper order-book endpoint remains backward compatible. The new `/depth` endpoints provide the enriched schema.
