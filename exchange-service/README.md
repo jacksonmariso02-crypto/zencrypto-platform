@@ -20,6 +20,7 @@ This is a separate server-side connector. GitHub Pages is static hosting and can
 
 ## API
 - `GET /health`
+- `GET /api/v1/markets/BTC-USDT/info` (public Spot market precision and trading limits)
 - `GET /api/v1/markets/BTC-USDT/ticker`
 - `GET /api/v1/markets/BTC-USDT/orderbook?limit=20`
 - `GET /api/v1/markets/BTC-USDT/trades?limit=50`
