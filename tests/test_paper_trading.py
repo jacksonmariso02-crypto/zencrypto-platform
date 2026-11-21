@@ -106,3 +106,31 @@ def test_order_history_filters_pagination_and_validation(tmp_path, monkeypatch):
         assert client.get("/trade/orders?status=unknown", headers=headers).status_code == 422
         assert client.get("/trade/orders?side=short", headers=headers).status_code == 422
         assert client.get("/trade/orders?limit=201", headers=headers).status_code == 422
+
+
+def test_trade_summary_reports_only_users_paper_orders(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "trade-summary.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        headers_list = []
+        for email in ("summary-one@example.test", "summary-two@example.test"):
+            client.post("/auth/register", json={"email":email,"password":"CorrectHorseBattery12"})
+            login = client.post("/auth/login", json={"email":email,"password":"CorrectHorseBattery12"})
+            headers_list.append({"Authorization":"Bearer " + login.json()["access_token"]})
+        h1, h2 = headers_list
+        client.post("/sandbox/faucet", headers={**h1,"Idempotency-Key":"summary-faucet-01"}, json={"amount":"200"})
+        order = client.post("/trade/orders", headers={**h1,"Idempotency-Key":"summary-buy-0001"},
+                            json={"symbol":"BTC","side":"buy","quote_amount":"50","reference_price":"50000"})
+        assert order.status_code == 201
+        summary = client.get("/trade/summary", headers=h1)
+        assert summary.status_code == 200
+        data = summary.json()["summary"]
+        assert data["order_count"] == 1
+        assert data["filled_count"] == 1
+        assert data["buy_count"] == 1
+        assert data["sell_count"] == 0
+        assert data["filled_notional"] == "50.00"
+        assert data["fees"] == "0.05"
+        other = client.get("/trade/summary", headers=h2).json()["summary"]
+        assert other["order_count"] == 0
