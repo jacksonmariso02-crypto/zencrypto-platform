@@ -43,7 +43,7 @@ The SQLite-backed simulation supports price-time priority, partial fills, restin
 - `DELETE /api/v1/orders/{order_id}?symbol=BTC-USDT`
 
 ## Before real-money trading
-This starter is not a production exchange or custody system. The paper matching engine persists simulated orders and trades in SQLite, but there is not yet end-user authentication/authorization, a distributed rate limiter, production-grade audit pipeline, withdrawal controls, reconciliation, or operational monitoring. Do not enable live trading until those controls, legal/compliance review, and end-to-end testnet validation are complete. A single shared server API key/token is suitable only for a controlled private prototype, not a public multi-user exchange.
+This starter is not a production exchange or custody system. The paper matching engine persists simulated orders and trades in SQLite, but the new user-authentication layer is still an early prototype: it does not yet provide email verification, password reset, MFA, refresh-token rotation/revocation, distributed rate limiting, production-grade audit pipeline, withdrawal controls, reconciliation, or operational monitoring. Do not enable live trading until those controls, legal/compliance review, and end-to-end testnet validation are complete. A single shared server API key/token is suitable only for a controlled private prototype, not a public multi-user exchange.
 
 
 ## Account-backed paper order settlement
@@ -56,7 +56,7 @@ The account-backed paper routes connect the paper matching engine to the double-
 
 On each fill, the buyer's reserved quote amount is debited, any limit-price difference is returned to available funds, the seller receives quote proceeds, the seller's locked base asset is debited, and the buyer receives base asset. The order update, trade record, and ledger postings commit or roll back together. Account-backed orders match only other account-backed orders; legacy shared paper orders are kept in a separate matching pool.
 
-These endpoints still use the prototype's single administrator Bearer token. They are not end-user authentication, not production custody, and not connected to real deposits, withdrawals, or live exchange execution. The system remains paper-only.
+The account-scoped administrative routes above still require the administrator Bearer token. The new `/api/v1/me/*` routes use the authenticated user's account identity from the signed token and do not accept a caller-supplied account ID. All balances remain simulated; this is not production custody and is not connected to real deposits, withdrawals, or live exchange execution.
 
 
 ## Paper self-trade prevention
@@ -70,3 +70,18 @@ For balance-backed paper orders, the matcher skips resting orders owned by the s
 - Oversized paper orders return HTTP 422. Requests over the rate limit return HTTP 429 with a `Retry-After` header.
 
 The current limiter is process-local and uses the direct ASGI client address. It is suitable only as a basic prototype safeguard: it is not shared across multiple workers/instances and must not trust arbitrary forwarded-IP headers. Before public deployment, use a shared Redis/API-gateway limiter behind a correctly configured trusted proxy, and add per-user quotas after real user authentication exists.
+
+
+## End-user paper authentication (prototype)
+- `POST /api/v1/auth/register` — create a username and paper account; returns a short-lived bearer access token.
+- `POST /api/v1/auth/login` — authenticate and receive a new access token.
+- `GET /api/v1/me` — current authenticated user.
+- `GET /api/v1/me/balances` — only the caller's paper balances.
+- `GET /api/v1/me/ledger?limit=100` — only the caller's paper ledger entries.
+- `GET /api/v1/me/orders?symbol=BTC-USDT` — only the caller's paper orders.
+- `POST /api/v1/me/orders` — place a balance-backed order in the caller's account.
+- `DELETE /api/v1/me/orders/{order_id}` — cancel only an order owned by the caller.
+
+Set `AUTH_TOKEN_SECRET` to a cryptographically random secret of at least 32 characters. Access tokens are HS256-signed and expire after `AUTH_TOKEN_TTL_SECONDS` (default 900 seconds). Passwords are stored as salted scrypt hashes. User registration and paper-account creation share one SQLite transaction. Administrator-only credit endpoints remain separate and are intended only to seed test funds.
+
+This is not yet public-ready authentication: there is no email verification, MFA, password reset, token revocation/refresh, account recovery, or distributed authentication throttling. Keep registration behind a controlled test environment until those features and a security review are complete. Never reuse the admin token as the JWT signing secret.
