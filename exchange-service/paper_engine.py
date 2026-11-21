@@ -437,36 +437,49 @@ class PaperMatchingEngine:
         params.append(limit)
         query = f"""
             WITH bucketed AS (
-                SELECT id, price, quantity, (created_at / ?) * ? AS bucket
+                SELECT id, symbol, price, quantity, created_at,
+                       (created_at / ?) * ? AS bucket
                 FROM paper_trades
                 WHERE symbol = ?{since_clause}
             ),
-            grouped AS (
-                SELECT bucket, SUM(CAST(quantity AS NUMERIC)) AS volume,
-                       MAX(CAST(price AS NUMERIC)) AS high,
-                       MIN(CAST(price AS NUMERIC)) AS low,
-                       MIN(id) AS first_id, MAX(id) AS last_id
-                FROM bucketed GROUP BY bucket
+            recent AS (
+                SELECT DISTINCT bucket FROM bucketed
+                ORDER BY bucket DESC LIMIT ?
             )
-            SELECT g.bucket, first_trade.price AS open, g.high, g.low,
-                   last_trade.price AS close, g.volume
-            FROM grouped g
-            JOIN paper_trades first_trade ON first_trade.id = g.first_id
-            JOIN paper_trades last_trade ON last_trade.id = g.last_id
-            ORDER BY g.bucket DESC LIMIT ?
+            SELECT b.bucket, b.price, b.quantity, b.created_at, b.id
+            FROM bucketed b JOIN recent r ON r.bucket = b.bucket
+            ORDER BY b.bucket ASC, b.created_at ASC, b.id ASC
         """
         with closing(self._connect()) as db:
             rows = db.execute(query, params).fetchall()
+
+        candles = []
+        current_bucket = None
+        current = None
+        for row in rows:
+            bucket = int(row["bucket"])
+            price = Decimal(row["price"])
+            quantity = Decimal(row["quantity"])
+            if bucket != current_bucket:
+                if current is not None:
+                    candles.append(current)
+                current_bucket = bucket
+                current = {
+                    "timestamp": bucket // 1_000_000,
+                    "open": price, "high": price, "low": price,
+                    "close": price, "volume": quantity,
+                }
+            else:
+                current["high"] = max(current["high"], price)
+                current["low"] = min(current["low"], price)
+                current["close"] = price
+                current["volume"] += quantity
+        if current is not None:
+            candles.append(current)
         return [
-            {
-                "timestamp": int(row["bucket"]) // 1_000_000,
-                "open": str(Decimal(str(row["open"]))),
-                "high": str(Decimal(str(row["high"]))),
-                "low": str(Decimal(str(row["low"]))),
-                "close": str(Decimal(str(row["close"]))),
-                "volume": str(Decimal(str(row["volume"]))),
-            }
-            for row in reversed(rows)
+            {key: (value if key == "timestamp" else str(value))
+             for key, value in candle.items()}
+            for candle in candles
         ]
 
     def list_trades(self, symbol=None, limit=100):
