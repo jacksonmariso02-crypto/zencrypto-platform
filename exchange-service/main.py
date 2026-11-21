@@ -2,6 +2,7 @@ import asyncio
 import os
 import hmac
 import re
+import sqlite3
 import time
 from decimal import Decimal
 from typing import Literal
@@ -228,6 +229,43 @@ async def health():
         "live_trading_enabled": LIVE_TRADING_ENABLED,
         "credentials_configured": bool(API_KEY and API_SECRET),
     }
+
+def _readiness_checks():
+    database_ok = False
+    try:
+        with sqlite3.connect(PAPER_ENGINE.db_path, timeout=2) as db:
+            result = db.execute("PRAGMA quick_check").fetchone()
+            database_ok = bool(result and result[0] == "ok")
+    except sqlite3.Error:
+        database_ok = False
+
+    auth_secret_ok = (
+        len(AUTH_TOKEN_SECRET) >= 32
+        and not AUTH_TOKEN_SECRET.startswith("REPLACE_WITH_")
+    )
+    admin_token_ok = bool(ADMIN_TOKEN)
+    return {
+        "database": database_ok,
+        "user_auth_secret": auth_secret_ok,
+        "admin_token": admin_token_ok,
+    }
+
+
+@app.get("/ready")
+async def readiness():
+    checks = await run_in_threadpool(_readiness_checks)
+    ready = all(checks.values())
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "service": APP_NAME,
+        "checks": checks,
+        "sandbox": SANDBOX,
+        "live_trading_enabled": LIVE_TRADING_ENABLED,
+    }
+    if not ready:
+        raise HTTPException(503, detail=payload)
+    return payload
+
 
 @app.get("/api/v1/markets/{symbol}/info")
 async def market_info(symbol: str):
