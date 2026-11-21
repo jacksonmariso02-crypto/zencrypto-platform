@@ -334,6 +334,26 @@ class PaperLimitOrderRequest(BaseModel):
     client_order_id: str = Field(min_length=8, max_length=64)
 
 
+@app.get("/api/v1/markets")
+async def list_enabled_markets():
+    """Public market metadata used by clients to format and validate order entry."""
+    return await run_in_threadpool(PAPER_ENGINE.market_rules.list_markets)
+
+
+@app.get("/api/v1/markets/{symbol:path}")
+async def get_enabled_market(symbol: str):
+    normalized = normalize_symbol(symbol)
+    try:
+        return await run_in_threadpool(
+            lambda: next(
+                market for market in PAPER_ENGINE.market_rules.list_markets()
+                if market["symbol"] == normalized
+            )
+        )
+    except StopIteration as exc:
+        raise HTTPException(404, "Market not found or trading is disabled.") from exc
+
+
 @app.post("/api/v1/paper/orders")
 async def create_paper_order(
     body: PaperLimitOrderRequest,
