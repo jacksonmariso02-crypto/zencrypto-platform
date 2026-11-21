@@ -121,6 +121,13 @@ async def fetch_external_market_snapshot(symbol: str):
                 "bids": book_data.get("bids", [])[:20],
                 "asks": book_data.get("asks", [])[:20],
             },
+            "depth": build_depth(
+                symbol,
+                book_data.get("bids", []),
+                book_data.get("asks", []),
+                limit=20,
+                source="external_exchange",
+            ),
         }
     finally:
         await run_in_threadpool(client.close)
