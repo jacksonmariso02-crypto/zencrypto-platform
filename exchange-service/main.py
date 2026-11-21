@@ -29,7 +29,13 @@ ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
 
 app = FastAPI(title=APP_NAME, version="0.1.0", docs_url="/docs")
 PAPER_ENGINE_DB_PATH = os.getenv("PAPER_ENGINE_DB_PATH", "/tmp/zencrypto-paper-engine.sqlite3")
-PAPER_ENGINE = PaperMatchingEngine(PAPER_ENGINE_DB_PATH)
+PAPER_MAKER_FEE_BPS = os.getenv("PAPER_MAKER_FEE_BPS", "10")
+PAPER_TAKER_FEE_BPS = os.getenv("PAPER_TAKER_FEE_BPS", "20")
+PAPER_ENGINE = PaperMatchingEngine(
+    PAPER_ENGINE_DB_PATH,
+    maker_fee_bps=PAPER_MAKER_FEE_BPS,
+    taker_fee_bps=PAPER_TAKER_FEE_BPS,
+)
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
 PAPER_ORDER_GUARD = PaperOrderGuard(
     max_notional=os.getenv("PAPER_MAX_ORDER_NOTIONAL", "100000"),
@@ -385,6 +391,14 @@ async def paper_orderbook(
         raise HTTPException(400, "limit must be between 1 and 100.")
     return await run_in_threadpool(PAPER_ENGINE.orderbook, normalize_symbol(symbol), limit)
 
+
+
+@app.get("/api/v1/paper/fees")
+async def paper_platform_fee_balances(
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    return await run_in_threadpool(PAPER_LEDGER.get_fee_balances)
 
 @app.get("/api/v1/paper/trades")
 async def list_paper_trades(
