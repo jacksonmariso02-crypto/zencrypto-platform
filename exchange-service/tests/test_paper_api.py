@@ -281,6 +281,8 @@ def test_external_market_websocket_streams_shared_public_snapshot(api, monkeypat
         assert event["data"]["source"] == "external_exchange"
         assert event["data"]["ticker"]["last"] == 65000
         assert event["data"]["orderbook"]["asks"][0][0] == 65001
+        assert event["data"]["depth"]["source"] == "external_exchange"
+        assert event["data"]["depth"]["metrics"]["best_ask"] == "65001"
 
 
 def test_external_market_websocket_rejects_invalid_symbol(api):
