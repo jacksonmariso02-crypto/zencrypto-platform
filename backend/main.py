@@ -374,6 +374,8 @@ def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, m
                       "notional": format(Decimal(notional_minor)/100, ".2f"),
                       "fee": format(Decimal(fee_minor)/100, ".2f"),
                       "status": "filled", "created_at": now, "journal_id": journal_id,
+                      "execution_model": "IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE",
+                      "price_source": "CLIENT_SUPPLIED_REFERENCE",
                       "mode": "PAPER_ONLY"}
             c.execute("""INSERT INTO orders(id,user_id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at)
                          VALUES(?,?,?,?,?,?,?,?,?,?)""",
