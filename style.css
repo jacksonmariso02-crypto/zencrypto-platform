@@ -349,3 +349,14 @@ header { background: #0b1220 !important; backdrop-filter: none; }
 .pair-chip.active { border-color:#27d6a2; background:#102a2a; box-shadow:inset 0 0 0 1px #27d6a2; }
 .pair-chip:hover { border-color:#5b718e; }
 @media(max-width:750px) { .pair-strip { margin-right:-8px; } .pair-chip { padding:8px 9px; } }
+
+
+.ledger-panel { margin-top:14px; }
+.ledger-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+.ledger-heading h3 { margin:0 0 4px; }
+.ledger-heading small { color:#8190a8; font-size:10px; }
+.ledger-heading select { background:#101a29; color:#dbe5f2; border:1px solid #29384b; border-radius:7px; padding:8px 10px; min-width:110px; }
+.ledger-pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:12px; color:#91a0b5; font-size:11px; }
+.ledger-pagination>div { display:flex; gap:7px; }
+.ledger-pagination .tablebtn:disabled { opacity:.4; cursor:not-allowed; }
+@media(max-width:620px) { .ledger-heading { align-items:flex-start; flex-direction:column; } .ledger-panel table { min-width:640px; } }
