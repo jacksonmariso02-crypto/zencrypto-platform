@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from paper_engine import IdempotencyConflict, PaperMatchingEngine
+from paper_ledger import (InsufficientPaperFunds, LedgerIdempotencyConflict, PaperLedger)
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -27,6 +28,7 @@ ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
 app = FastAPI(title=APP_NAME, version="0.1.0", docs_url="/docs")
 PAPER_ENGINE_DB_PATH = os.getenv("PAPER_ENGINE_DB_PATH", "/tmp/zencrypto-paper-engine.sqlite3")
 PAPER_ENGINE = PaperMatchingEngine(PAPER_ENGINE_DB_PATH)
+PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -362,3 +364,107 @@ async def cancel_paper_order(order_id: str, authorization: str | None = Header(d
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+# Double-entry paper ledger. These endpoints only create simulated balances.
+class PaperAccountRequest(BaseModel):
+    account_id: str = Field(min_length=3, max_length=40)
+
+
+class PaperCreditRequest(BaseModel):
+    asset: str = Field(min_length=2, max_length=12)
+    amount: Decimal = Field(gt=0)
+    idempotency_key: str = Field(min_length=8, max_length=80)
+
+
+class PaperBucketTransferRequest(BaseModel):
+    asset: str = Field(min_length=2, max_length=12)
+    amount: Decimal = Field(gt=0)
+    from_bucket: Literal["available", "locked"]
+    to_bucket: Literal["available", "locked"]
+    idempotency_key: str = Field(min_length=8, max_length=80)
+    memo: str = Field(default="", max_length=200)
+
+
+@app.post("/api/v1/paper/accounts")
+async def create_paper_account(
+    body: PaperAccountRequest,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(PAPER_LEDGER.create_account, body.account_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/v1/paper/accounts/{account_id}/credit")
+async def credit_paper_account(
+    account_id: str,
+    body: PaperCreditRequest,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_LEDGER.credit_paper_funds,
+            account_id, body.asset, body.amount, body.idempotency_key,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except LedgerIdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/v1/paper/accounts/{account_id}/balances")
+async def paper_account_balances(
+    account_id: str,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(PAPER_LEDGER.get_balances, account_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/v1/paper/accounts/{account_id}/ledger")
+async def paper_account_ledger(
+    account_id: str,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(PAPER_LEDGER.list_entries, account_id, limit)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/v1/paper/accounts/{account_id}/bucket-transfer")
+async def transfer_paper_bucket(
+    account_id: str,
+    body: PaperBucketTransferRequest,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_LEDGER.transfer,
+            account_id, body.asset, body.amount, body.from_bucket, body.to_bucket,
+            body.idempotency_key, body.memo,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except InsufficientPaperFunds as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except LedgerIdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
