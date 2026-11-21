@@ -509,7 +509,15 @@ def list_limit_orders(status: str | None = None, u=Depends(require_user)):
             rows = c.execute("SELECT * FROM limit_orders WHERE user_id=? AND status=? ORDER BY created_at DESC",(u["id"],status)).fetchall()
         else:
             rows = c.execute("SELECT * FROM limit_orders WHERE user_id=? ORDER BY created_at DESC",(u["id"],)).fetchall()
-    return {"orders":[{"id":r["id"],"symbol":r["symbol"],"side":r["side"],"quantity":r["quantity"],"limit_price":r["limit_price"],"reserve_currency":r["reserve_currency"],"reserved_amount":format(Decimal(r["reserve_minor"])/(100 if r["reserve_currency"]=="USD" else 100000000),".2f" if r["reserve_currency"]=="USD" else ".8f"),"status":r["status"],"created_at":r["created_at"],"updated_at":r["updated_at"]} for r in rows],"mode":"PAPER_ONLY","execution_model":"RESTING_LIMIT_ORDER_NO_MATCHING"}
+    return {"orders":[{"id":r["id"],"symbol":r["symbol"],"side":r["side"],"quantity":r["quantity"],"filled_quantity":r["filled_quantity"],"remaining_quantity":r["remaining_quantity"],"limit_price":r["limit_price"],"reserve_currency":r["reserve_currency"],"reserved_amount":format(Decimal(r["reserve_minor"])/(100 if r["reserve_currency"]=="USD" else 100000000),".2f" if r["reserve_currency"]=="USD" else ".8f"),"status":r["status"],"created_at":r["created_at"],"updated_at":r["updated_at"]} for r in rows],"mode":"PAPER_ONLY","execution_model":"PAPER_PRICE_TIME_PRIORITY_MATCHING"}
+
+@app.get("/trade/limit-trades")
+def list_limit_trades(limit: int = 50, u=Depends(require_user)):
+    if limit < 1 or limit > 200:
+        raise HTTPException(422, "limit must be between 1 and 200.")
+    with db() as c:
+        rows = c.execute("SELECT * FROM limit_trades WHERE buyer_user_id=? OR seller_user_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?", (u["id"],u["id"],limit)).fetchall()
+    return {"trades":[{"id":r["id"],"symbol":r["symbol"],"side":"buy" if r["buyer_user_id"]==u["id"] else "sell","quantity":r["quantity"],"price":r["price"],"quote_amount":format(Decimal(r["quote_minor"])/100,".2f"),"fee":format(Decimal(r["buyer_fee_minor"] if r["buyer_user_id"]==u["id"] else r["seller_fee_minor"])/100,".2f"),"created_at":r["created_at"]} for r in rows],"mode":"PAPER_ONLY"}
 
 @app.post("/trade/limit-orders/{order_id}/cancel")
 def cancel_limit_order(order_id: str, u=Depends(require_user)):
