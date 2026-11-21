@@ -369,6 +369,28 @@ def create_limit_order(body: LimitOrder, idempotency_key: str = Header(min_lengt
             if c.in_transaction: c.execute("ROLLBACK")
             raise
 
+@app.get("/trade/limit-order-book/{symbol}")
+def limit_order_book(symbol: str, u=Depends(require_user)):
+    symbol = symbol.upper()
+    if symbol not in SUPPORTED_PAPER_ASSETS:
+        raise HTTPException(422, "Unsupported paper asset.")
+    with db() as c:
+        rows = c.execute("SELECT side,limit_price,quantity FROM limit_orders WHERE symbol=? AND status='open' ORDER BY created_at ASC", (symbol,)).fetchall()
+    levels = {"buy": {}, "sell": {}}
+    for row in rows:
+        price = Decimal(row["limit_price"])
+        quantity = Decimal(row["quantity"])
+        key = format(price, "f")
+        if key not in levels[row["side"]]:
+            levels[row["side"]][key] = {"price": price, "quantity": Decimal("0"), "order_count": 0}
+        levels[row["side"]][key]["quantity"] += quantity
+        levels[row["side"]][key]["order_count"] += 1
+    bids = sorted(levels["buy"].values(), key=lambda x: x["price"], reverse=True)[:20]
+    asks = sorted(levels["sell"].values(), key=lambda x: x["price"])[:20]
+    def serialize(items):
+        return [{"price": format(x["price"], "f"), "quantity": format(x["quantity"], "f"), "order_count": x["order_count"]} for x in items]
+    return {"symbol": symbol, "bids": serialize(bids), "asks": serialize(asks), "mode": "PAPER_ONLY", "book_type": "ZENCRYPTO_USER_LIMIT_ORDERS", "execution_model": "AGGREGATED_RESTING_ORDERS_NO_MATCHING", "notice": "This is the ZenCrypto simulated user order book, not Binance market depth. User identities and order IDs are not exposed."}
+
 @app.get("/trade/limit-orders")
 def list_limit_orders(status: str | None = None, u=Depends(require_user)):
     if status is not None and status not in {"open","cancelled"}:
