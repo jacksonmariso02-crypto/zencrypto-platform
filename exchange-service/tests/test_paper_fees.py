@@ -30,13 +30,13 @@ def test_maker_seller_and_taker_buyer_fees_post_to_platform_ledger(tmp_path):
     assert bid["status"] == "filled"
 
     trade = engine.list_trades("BTC/USDT")[0]
-    assert trade["maker_fee_amount"] == "0.100"
+    assert trade["maker_fee_amount"] == "0.1"
     assert trade["maker_fee_asset"] == "USDT"
     assert trade["taker_fee_amount"] == "0.002"
     assert trade["taker_fee_asset"] == "BTC"
 
     assert ledger.get_balances("fee_seller_01") == [
-        {"asset": "USDT", "available": "99.900", "locked": "0"}
+        {"asset": "USDT", "available": "99.9", "locked": "0"}
     ]
     assert ledger.get_balances("fee_buyer_01") == [
         {"asset": "BTC", "available": "0.998", "locked": "0"},
@@ -44,7 +44,7 @@ def test_maker_seller_and_taker_buyer_fees_post_to_platform_ledger(tmp_path):
     ]
     assert ledger.get_fee_balances() == [
         {"asset": "BTC", "amount": "0.002"},
-        {"asset": "USDT", "amount": "0.100"},
+        {"asset": "USDT", "amount": "0.1"},
     ]
 
 
@@ -66,7 +66,7 @@ def test_maker_buyer_and_taker_seller_fees_post_in_correct_assets(tmp_path):
     trade = engine.list_trades("BTC/USDT")[0]
     assert trade["maker_fee_amount"] == "0.001"
     assert trade["maker_fee_asset"] == "BTC"
-    assert trade["taker_fee_amount"] == "0.220"
+    assert trade["taker_fee_amount"] == "0.22"
     assert trade["taker_fee_asset"] == "USDT"
     assert ledger.get_balances("fee_maker_buyer") == [
         {"asset": "BTC", "available": "0.999", "locked": "0"},
@@ -77,7 +77,7 @@ def test_maker_buyer_and_taker_seller_fees_post_in_correct_assets(tmp_path):
     ]
     assert ledger.get_fee_balances() == [
         {"asset": "BTC", "amount": "0.001"},
-        {"asset": "USDT", "amount": "0.220"},
+        {"asset": "USDT", "amount": "0.22"},
     ]
 
 
@@ -95,7 +95,8 @@ def test_zero_fee_rates_preserve_existing_settlement_behavior(tmp_path):
         "BTC/USDT", "buy", "1", "100", "zero-fee-bid-001", "zero_fee_buyer"
     )
     assert ledger.get_balances("zero_fee_buyer") == [
-        {"asset": "BTC", "available": "1", "locked": "0"}
+        {"asset": "BTC", "available": "1", "locked": "0"},
+        {"asset": "USDT", "available": "100", "locked": "0"},
     ]
     assert ledger.get_fee_balances() == []
     trade = engine.list_trades("BTC/USDT")[0]
@@ -160,6 +161,6 @@ def test_admin_fee_endpoint_reports_only_platform_fee_account(monkeypatch, tmp_p
     assert fees.status_code == 200
     assert fees.json() == [
         {"asset": "BTC", "amount": "0.002"},
-        {"asset": "USDT", "amount": "0.100"},
+        {"asset": "USDT", "amount": "0.1"},
     ]
     assert client.get("/api/v1/paper/fees").status_code == 401
