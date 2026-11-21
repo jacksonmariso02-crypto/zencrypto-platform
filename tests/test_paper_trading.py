@@ -489,3 +489,28 @@ def test_limit_order_rejects_insufficient_reserve_without_creating_order(tmp_pat
         order=client.post("/trade/limit-orders",headers={**headers,"Idempotency-Key":"limit-low-0001"},json={"symbol":"BTC","side":"buy","quantity":"0.10000000","limit_price":"50000"})
         assert order.status_code == 400
         assert client.get("/trade/limit-orders",headers=headers).json()["orders"] == []
+
+
+def test_limit_sell_reserves_and_cancel_releases_asset_and_is_user_scoped(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "limit-sell.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register",json={"email":"limit-sell@example.test","password":"CorrectHorseBattery12"})
+        login=client.post("/auth/login",json={"email":"limit-sell@example.test","password":"CorrectHorseBattery12"})
+        headers={"Authorization":"Bearer "+login.json()["access_token"]}
+        client.post("/sandbox/faucet",headers={**headers,"Idempotency-Key":"sell-faucet-0001"},json={"amount":"1000"})
+        buy=client.post("/trade/orders",headers={**headers,"Idempotency-Key":"sell-seed-buy-001"},json={"symbol":"BTC","side":"buy","quote_amount":"100","reference_price":"10000"})
+        assert buy.status_code==201,buy.text
+        before={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
+        payload={"symbol":"BTC","side":"sell","quantity":"0.00500000","limit_price":"25000"}
+        order=client.post("/trade/limit-orders",headers={**headers,"Idempotency-Key":"sell-limit-0001"},json=payload)
+        assert order.status_code==201,order.text
+        assert order.json()["reserve_currency"]=="BTC"
+        assert order.json()["reserved_amount"]=="0.00500000"
+        outsider=client.post("/trade/limit-orders/"+order.json()["id"]+"/cancel",headers={"Authorization":"Bearer invalid"})
+        assert outsider.status_code==401
+        cancelled=client.post("/trade/limit-orders/"+order.json()["id"]+"/cancel",headers=headers)
+        assert cancelled.status_code==200,cancelled.text
+        after={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
+        assert after["BTC"]==before["BTC"]
