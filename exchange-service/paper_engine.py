@@ -482,6 +482,43 @@ class PaperMatchingEngine:
             for candle in candles
         ]
 
+    def latest_trade_id(self, symbol=None):
+        with closing(self._connect()) as db:
+            if symbol:
+                row = db.execute(
+                    "SELECT COALESCE(MAX(id), 0) AS latest_id FROM paper_trades WHERE symbol=?",
+                    (symbol.upper(),),
+                ).fetchone()
+            else:
+                row = db.execute(
+                    "SELECT COALESCE(MAX(id), 0) AS latest_id FROM paper_trades"
+                ).fetchone()
+            return int(row["latest_id"])
+
+    def list_trades_after(self, after_id=0, symbol=None, limit=500):
+        if not isinstance(after_id, int) or after_id < 0:
+            raise ValueError("after_id must be a non-negative integer.")
+        if not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500.")
+        with closing(self._connect()) as db:
+            if symbol:
+                rows = db.execute(
+                    """SELECT id, symbol, maker_order_id, taker_order_id,
+                              price, quantity, created_at
+                       FROM paper_trades WHERE symbol=? AND id>?
+                       ORDER BY id ASC LIMIT ?""",
+                    (symbol.upper(), after_id, limit),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT id, symbol, maker_order_id, taker_order_id,
+                              price, quantity, created_at
+                       FROM paper_trades WHERE id>?
+                       ORDER BY id ASC LIMIT ?""",
+                    (after_id, limit),
+                ).fetchall()
+            return [dict(row) for row in rows]
+
     def list_trades(self, symbol=None, limit=100):
         with closing(self._connect()) as db:
             if symbol:
