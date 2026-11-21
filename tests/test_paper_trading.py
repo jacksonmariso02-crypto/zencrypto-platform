@@ -270,3 +270,26 @@ def test_order_idempotency_key_cannot_be_reused_for_different_order(tmp_path, mo
         assert first.status_code == 201, first.text
         assert conflict.status_code == 409
         assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 1
+
+
+def test_sell_fee_is_deducted_from_proceeds_not_asset_quantity(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "sell-fee.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"sell-fee@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"sell-fee@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"sell-fee-faucet"}, json={"amount":"1000"})
+        assert funded.status_code == 201
+        bought = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"sell-fee-buy-001"}, json={"symbol":"BTC","side":"buy","quote_amount":"100.00","reference_price":"10000"})
+        assert bought.status_code == 201, bought.text
+        assert bought.json()["quantity"] == "0.01000000"
+        sold = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"sell-fee-sell-01"}, json={"symbol":"BTC","side":"sell","quote_amount":"50.00","reference_price":"10000"})
+        assert sold.status_code == 201, sold.text
+        assert sold.json()["quantity"] == "0.00500000"
+        assert sold.json()["notional"] == "50.00"
+        assert sold.json()["fee"] == "0.05"
+        balances = {x["currency"]: x["amount"] for x in client.get("/account/balances", headers=headers).json()["balances"]}
+        assert balances["USD"] == "949.85"
+        assert balances["BTC"] == "0.005"
