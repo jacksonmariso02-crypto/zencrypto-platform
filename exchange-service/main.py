@@ -1,11 +1,11 @@
-import os
+import asyncio\nimport os
 import hmac
 import re
 from decimal import Decimal
 from typing import Literal
 
 import ccxt
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -446,6 +446,48 @@ async def list_paper_trades(
         raise HTTPException(400, "limit must be between 1 and 500.")
     normalized = normalize_symbol(symbol) if symbol else None
     return await run_in_threadpool(PAPER_ENGINE.list_trades, normalized, limit)
+
+
+@app.websocket("/ws/v1/paper/trades")
+async def stream_paper_trades(websocket: WebSocket):
+    """Stream public paper fills with resumable, monotonically increasing trade IDs."""
+    raw_symbol = websocket.query_params.get("symbol")
+    try:
+        symbol = normalize_symbol(raw_symbol) if raw_symbol else None
+        raw_cursor = websocket.query_params.get("since_id")
+        if raw_cursor is not None:
+            cursor = int(raw_cursor)
+            if cursor < 0:
+                raise ValueError("since_id must be a non-negative integer.")
+        else:
+            cursor = await run_in_threadpool(PAPER_ENGINE.latest_trade_id, symbol)
+    except (HTTPException, ValueError):
+        await websocket.close(code=1008, reason="Invalid symbol or since_id.")
+        return
+
+    await websocket.accept()
+    await websocket.send_json({
+        "type": "ready",
+        "channel": "paper.trades",
+        "symbol": symbol,
+        "cursor": cursor,
+        "timestamp_unit": "unix_nanoseconds",
+    })
+    try:
+        while True:
+            batch = await run_in_threadpool(
+                PAPER_ENGINE.list_trades_after, cursor, symbol, 500
+            )
+            for trade in batch:
+                await websocket.send_json({
+                    "type": "trade",
+                    "data": trade,
+                })
+                cursor = int(trade["id"])
+            if not batch:
+                await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        return
 
 
 @app.delete("/api/v1/paper/orders/{order_id}")
