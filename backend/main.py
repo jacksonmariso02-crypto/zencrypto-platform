@@ -315,6 +315,48 @@ def trade_summary(u=Depends(require_user)):
         "notice": "Aggregates include recorded paper orders only; they are not live exchange volume or profit figures.",
     }
 
+@app.post("/trade/preview")
+def preview_order(body: PaperOrder, u=Depends(require_user)):
+    symbol = body.symbol.upper()
+    if symbol not in SUPPORTED_PAPER_ASSETS:
+        raise HTTPException(422, "Unsupported paper asset. Supported assets: BTC, ETH, SOL, BNB, XRP.")
+    try:
+        price = Decimal(body.reference_price)
+        quote = Decimal(body.quote_amount)
+        if not price.is_finite() or not quote.is_finite() or price <= 0 or quote <= 0 or quote > Decimal("1000000") or price > Decimal("1000000000") or quote != quote.quantize(Decimal("0.01")) or price != price.quantize(Decimal("0.000000000001")):
+            raise ValueError()
+    except (InvalidOperation, ValueError):
+        raise HTTPException(422, "Price must have at most 12 decimal places and USD order amount at most 2; both must be positive and within limits.")
+    notional_minor = int((quote * 100).quantize(Decimal("1"), rounding=ROUND_DOWN))
+    fee_minor = max(1, int((Decimal(notional_minor) * Decimal("0.001")).quantize(Decimal("1"), rounding=ROUND_DOWN)))
+    qty = (Decimal(notional_minor) / 100 / price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    asset_units = int(qty * Decimal(100000000))
+    if notional_minor <= 0 or asset_units <= 0:
+        raise HTTPException(422, "Order amount is too small at this price.")
+    with db() as c:
+        usd_row = c.execute("SELECT id FROM accounts WHERE user_id=? AND currency=?", (u["id"], "USD")).fetchone()
+        asset_row = c.execute("SELECT id FROM accounts WHERE user_id=? AND currency=?", (u["id"], symbol)).fetchone()
+        usd_available = balance_minor(c, usd_row["id"]) if usd_row else 0
+        asset_available = balance_minor(c, asset_row["id"]) if asset_row else 0
+    usd_required = notional_minor + fee_minor if body.side == "buy" else 0
+    sufficient = usd_available >= usd_required if body.side == "buy" else asset_available >= asset_units
+    return {
+        "mode": "PAPER_ONLY",
+        "symbol": symbol, "side": body.side,
+        "quantity": format(qty, "f"),
+        "reference_price": format(price, "f"),
+        "notional": format(Decimal(notional_minor) / 100, ".2f"),
+        "fee": format(Decimal(fee_minor) / 100, ".2f"),
+        "estimated_usd_debit": format(Decimal(usd_required) / 100, ".2f") if body.side == "buy" else None,
+        "estimated_usd_proceeds": format(Decimal(notional_minor - fee_minor) / 100, ".2f") if body.side == "sell" else None,
+        "available_usd": format(Decimal(usd_available) / 100, ".2f"),
+        "available_asset": format(Decimal(asset_available) / Decimal(100000000), ".8f"),
+        "sufficient_balance": sufficient,
+        "execution_model": "PREVIEW_ONLY_NO_EXECUTION",
+        "price_source": "CLIENT_SUPPLIED_REFERENCE",
+        "notice": "Read-only estimate. The supplied reference price is not an exchange quote; balances can change before order submission."
+    }
+
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
     symbol = body.symbol.upper()
