@@ -79,3 +79,30 @@ def test_ledger_pagination_currency_filter_and_validation(tmp_path, monkeypatch)
         assert client.get("/account/ledger?limit=201", headers=headers).status_code == 422
         assert client.get("/account/ledger?offset=-1", headers=headers).status_code == 422
         assert client.get("/account/ledger?currency=USD%3BSELECT", headers=headers).status_code == 422
+
+
+def test_order_history_filters_pagination_and_validation(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "orders-page.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"orders-page@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"orders-page@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"orders-faucet-001"}, json={"amount":"500"})
+        for key, side, symbol in [("orders-buy-0001","buy","BTC"),("orders-buy-0002","buy","ETH"),("orders-sell-001","sell","BTC")]:
+            response = client.post("/trade/orders", headers={**headers,"Idempotency-Key":key},
+                                   json={"symbol":symbol,"side":side,"quote_amount":"20","reference_price":"100"})
+            assert response.status_code == 201, response.text
+        page = client.get("/trade/orders?limit=2&offset=0", headers=headers)
+        assert page.status_code == 200
+        assert len(page.json()["orders"]) == 2
+        assert page.json()["pagination"]["total"] == 3
+        assert page.json()["pagination"]["has_more"] is True
+        btc_buys = client.get("/trade/orders?symbol=btc&side=BUY", headers=headers).json()
+        assert len(btc_buys["orders"]) == 1
+        assert btc_buys["orders"][0]["symbol"] == "BTC"
+        assert btc_buys["orders"][0]["side"] == "buy"
+        assert client.get("/trade/orders?status=unknown", headers=headers).status_code == 422
+        assert client.get("/trade/orders?side=short", headers=headers).status_code == 422
+        assert client.get("/trade/orders?limit=201", headers=headers).status_code == 422
