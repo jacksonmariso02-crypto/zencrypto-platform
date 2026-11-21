@@ -10,7 +10,7 @@ from orderbook_depth import build_depth
 
 @pytest.fixture
 def api(monkeypatch, tmp_path):
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
     monkeypatch.setattr(
         main,
         "PAPER_ENGINE",
@@ -405,7 +405,7 @@ def test_paper_orderbook_websocket_rejects_invalid_symbol(api):
 
 def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkeypatch):
     monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
     response = api.get("/ready")
     assert response.status_code == 200
     payload = response.json()
@@ -423,7 +423,7 @@ def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkey
 
 def test_exchange_readiness_fails_closed_when_auth_secret_missing(api, monkeypatch):
     monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "")
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
     response = api.get("/ready")
     assert response.status_code == 503
     assert response.json()["detail"]["status"] == "not_ready"
