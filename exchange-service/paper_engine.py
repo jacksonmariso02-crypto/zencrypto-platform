@@ -265,26 +265,31 @@ class PaperMatchingEngine:
                 "SELECT * FROM paper_orders WHERE id=?", (order_id,)
             ).fetchone())
 
-    def list_orders(self, symbol=None, limit=100):
+    def list_orders(self, symbol=None, limit=100, account_id=None):
         with closing(self._connect()) as db:
+            clauses = []
+            params = []
             if symbol:
-                rows = db.execute(
-                    "SELECT * FROM paper_orders WHERE symbol=? ORDER BY created_at DESC LIMIT ?",
-                    (symbol.upper(), limit),
-                ).fetchall()
-            else:
-                rows = db.execute(
-                    "SELECT * FROM paper_orders ORDER BY created_at DESC LIMIT ?", (limit,)
-                ).fetchall()
+                clauses.append("symbol=?")
+                params.append(symbol.upper())
+            if account_id is not None:
+                clauses.append("account_id=?")
+                params.append(PaperLedger._account_id(account_id))
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            params.append(limit)
+            rows = db.execute(
+                f"SELECT * FROM paper_orders{where} ORDER BY created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
             return [self._serialize(row) for row in rows]
 
-    def cancel_order(self, order_id):
+    def cancel_order(self, order_id, account_id=None):
         now = time.time_ns()
         with closing(self._connect()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute("SELECT * FROM paper_orders WHERE id=?", (order_id,)).fetchone()
-                if row is None:
+                if row is None or (account_id is not None and row["account_id"] != PaperLedger._account_id(account_id)):
                     raise KeyError("Paper order not found.")
                 if row["status"] not in ("open", "partially_filled"):
                     raise ValueError("Only open or partially filled orders can be cancelled.")
