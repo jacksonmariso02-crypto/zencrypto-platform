@@ -384,3 +384,5 @@ header { background: #0b1220 !important; backdrop-filter: none; }
 .order-history-actions { display:flex; align-items:center; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
 .order-history-actions>.tablebtn { white-space:nowrap; }
 @media(max-width:620px) { .order-history-actions { width:100%; justify-content:stretch; } .order-history-actions>.tablebtn { width:100%; } }
+
+.market-rules-inline{display:flex;flex-direction:column;gap:5px;margin:10px 0 14px;padding:10px 12px;border:1px solid var(--border,#263244);border-radius:10px;background:rgba(120,140,170,.06);font-size:12px;color:var(--muted,#94a3b8)}.market-rules-inline strong{font-size:12px;color:var(--text,#e5e7eb);font-weight:600}.market-rules-inline span{line-height:1.5;overflow-wrap:anywhere}
