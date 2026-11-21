@@ -96,6 +96,9 @@ class FakeOrderClient:
     def price_to_precision(self, symbol, price):
         return format(float(price), ".2f")
 
+    def fetch_ticker(self, symbol):
+        return {"ask": 50000.0, "bid": 49999.0, "last": 50000.0}
+
     def create_order(self, symbol, order_type, side, amount, price):
         order = {"symbol": symbol, "type": order_type, "side": side, "amount": amount, "price": price}
         self.created.append(order)
@@ -221,3 +224,53 @@ def test_public_market_info_rejects_unknown_market(monkeypatch):
     monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
     response = client.get("/api/v1/markets/ETH-USDT/info")
     assert response.status_code == 404
+
+
+
+def test_market_order_rejects_estimated_notional_below_exchange_minimum(monkeypatch):
+    fake = FakeOrderClient()
+    old_token = main.ADMIN_TOKEN
+    old_sandbox = main.SANDBOX
+    old_live = main.LIVE_TRADING_ENABLED
+    try:
+        main.ADMIN_TOKEN = "test-token"
+        main.SANDBOX = True
+        main.LIVE_TRADING_ENABLED = False
+        monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
+        response = client.post(
+            "/api/v1/orders",
+            headers={"Authorization": "Bearer test-token"},
+            json={"symbol": "BTC/USDT", "side": "buy", "type": "market", "amount": "0.0001"},
+        )
+        assert response.status_code == 422
+        assert "notional" in response.json()["detail"].lower()
+        assert fake.created == []
+    finally:
+        main.ADMIN_TOKEN = old_token
+        main.SANDBOX = old_sandbox
+        main.LIVE_TRADING_ENABLED = old_live
+
+
+def test_market_order_uses_ask_for_buy_notional_estimate(monkeypatch):
+    fake = FakeOrderClient()
+    old_token = main.ADMIN_TOKEN
+    old_sandbox = main.SANDBOX
+    old_live = main.LIVE_TRADING_ENABLED
+    try:
+        main.ADMIN_TOKEN = "test-token"
+        main.SANDBOX = True
+        main.LIVE_TRADING_ENABLED = False
+        monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
+        response = client.post(
+            "/api/v1/orders",
+            headers={"Authorization": "Bearer test-token"},
+            json={"symbol": "BTC/USDT", "side": "buy", "type": "market", "amount": "0.0012"},
+        )
+        assert response.status_code == 200, response.text
+        assert len(fake.created) == 1
+        assert fake.created[0]["type"] == "market"
+        assert fake.created[0]["price"] is None
+    finally:
+        main.ADMIN_TOKEN = old_token
+        main.SANDBOX = old_sandbox
+        main.LIVE_TRADING_ENABLED = old_live
