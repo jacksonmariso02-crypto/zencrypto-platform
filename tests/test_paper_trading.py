@@ -293,3 +293,17 @@ def test_sell_fee_is_deducted_from_proceeds_not_asset_quantity(tmp_path, monkeyp
         balances = {x["currency"]: x["amount"] for x in client.get("/account/balances", headers=headers).json()["balances"]}
         assert balances["USD"] == "949.85"
         assert balances["BTC"] == "0.005"
+
+
+def test_order_rejects_assets_not_supported_by_product(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "unsupported-asset.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"unsupported@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"unsupported@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"], "Idempotency-Key":"unsupported-asset-01"}
+        response = client.post("/trade/orders", headers=headers, json={"symbol":"DOGE","side":"buy","quote_amount":"10.00","reference_price":"0.15"})
+        assert response.status_code == 422
+        assert "unsupported paper asset" in response.json()["detail"].lower()
+        assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 0
