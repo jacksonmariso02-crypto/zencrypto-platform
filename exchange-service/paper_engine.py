@@ -18,11 +18,23 @@ class IdempotencyConflict(ValueError):
 
 
 class PaperMatchingEngine:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, maker_fee_bps=0, taker_fee_bps=0):
         self.db_path = str(db_path)
+        self.maker_fee_bps = self._fee_bps(maker_fee_bps, "maker_fee_bps")
+        self.taker_fee_bps = self._fee_bps(taker_fee_bps, "taker_fee_bps")
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+
+    @staticmethod
+    def _fee_bps(value, field):
+        try:
+            rate = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} must be an integer number of basis points.") from exc
+        if rate < 0 or rate > 1000:
+            raise ValueError(f"{field} must be between 0 and 1000 basis points.")
+        return rate
 
     def _connect(self):
         connection = sqlite3.connect(self.db_path, timeout=15, isolation_level=None)
@@ -67,6 +79,15 @@ class PaperMatchingEngine:
                 "CREATE INDEX IF NOT EXISTS idx_paper_orders_account_book "
                 "ON paper_orders(symbol, account_id, side, status, created_at)"
             )
+            trade_columns = {row["name"] for row in db.execute("PRAGMA table_info(paper_trades)")}
+            for column, definition in (
+                ("maker_fee_amount", "TEXT NOT NULL DEFAULT '0'"),
+                ("maker_fee_asset", "TEXT"),
+                ("taker_fee_amount", "TEXT NOT NULL DEFAULT '0'"),
+                ("taker_fee_asset", "TEXT"),
+            ):
+                if column not in trade_columns:
+                    db.execute(f"ALTER TABLE paper_trades ADD COLUMN {column} {definition}")
 
     @staticmethod
     def _decimal(value, field):
@@ -213,8 +234,17 @@ class PaperMatchingEngine:
                             "id": order_id, "side": side, "price": str(limit_price),
                             "account_id": account_id,
                         }
-                        self._settle_account_trade(
+                        fees = self._settle_account_trade(
                             db, maker, taker_order, trade_price, fill_qty, trade_cursor.lastrowid
+                        )
+                        db.execute(
+                            """UPDATE paper_trades SET maker_fee_amount=?, maker_fee_asset=?,
+                               taker_fee_amount=?, taker_fee_asset=? WHERE id=?""",
+                            (
+                                fees["maker_fee_amount"], fees["maker_fee_asset"],
+                                fees["taker_fee_amount"], fees["taker_fee_asset"],
+                                trade_cursor.lastrowid,
+                            ),
                         )
 
                 taker_status = "filled" if taker_remaining == 0 else (
@@ -231,9 +261,8 @@ class PaperMatchingEngine:
                 db.rollback()
                 raise
 
-    @staticmethod
-    def _settle_account_trade(db, maker, taker, trade_price, quantity, trade_id):
-        """Settle both sides in the same SQLite transaction as the match."""
+    def _settle_account_trade(self, db, maker, taker, trade_price, quantity, trade_id):
+        """Settle both sides and maker/taker fees in the trade's SQLite transaction."""
         buy_order = taker if taker["side"] == "buy" else maker
         sell_order = maker if taker["side"] == "buy" else taker
         buyer_id = buy_order["account_id"]
@@ -249,20 +278,44 @@ class PaperMatchingEngine:
         if refund < 0:
             raise ValueError("Execution price exceeds the buyer's reserved limit price.")
 
+        buyer_is_maker = buy_order["id"] == maker["id"]
+        seller_is_maker = sell_order["id"] == maker["id"]
+        buyer_rate = self.maker_fee_bps if buyer_is_maker else self.taker_fee_bps
+        seller_rate = self.maker_fee_bps if seller_is_maker else self.taker_fee_bps
+        buyer_fee = quantity * Decimal(buyer_rate) / Decimal("10000")
+        seller_fee = execution_value * Decimal(seller_rate) / Decimal("10000")
+        buyer_received = quantity - buyer_fee
+        seller_received = execution_value - seller_fee
+        if buyer_received < 0 or seller_received < 0:
+            raise ValueError("Configured paper trading fee exceeds trade proceeds.")
+
         postings = [
             (f"user:{buyer_id}:locked", quote_asset, "debit", buyer_reserved),
-            (f"user:{seller_id}:available", quote_asset, "credit", execution_value),
+            (f"user:{seller_id}:available", quote_asset, "credit", seller_received),
             (f"user:{seller_id}:locked", base_asset, "debit", quantity),
-            (f"user:{buyer_id}:available", base_asset, "credit", quantity),
+            (f"user:{buyer_id}:available", base_asset, "credit", buyer_received),
         ]
+        if seller_fee > 0:
+            postings.append(("platform:fees", quote_asset, "credit", seller_fee))
+        if buyer_fee > 0:
+            postings.append(("platform:fees", base_asset, "credit", buyer_fee))
         if refund > 0:
             postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
-        # For each asset, buyer reserve equals seller proceeds plus buyer refund;
-        # seller's locked base equals the buyer's received base.
+
         PaperLedger._post(
             db, f"paper-trade-settlement:{trade_id}", "trade_settlement",
-            f"Settle paper trade {trade_id}", postings,
+            f"Settle paper trade {trade_id} including maker/taker fees", postings,
         )
+        maker_fee = buyer_fee if buyer_is_maker else seller_fee
+        maker_asset = base_asset if buyer_is_maker else quote_asset
+        taker_fee = buyer_fee if not buyer_is_maker else seller_fee
+        taker_asset = base_asset if not buyer_is_maker else quote_asset
+        return {
+            "maker_fee_amount": str(maker_fee),
+            "maker_fee_asset": maker_asset if maker_fee > 0 else None,
+            "taker_fee_amount": str(taker_fee),
+            "taker_fee_asset": taker_asset if taker_fee > 0 else None,
+        }
 
     def get_order(self, order_id):
         with closing(self._connect()) as db:
