@@ -94,7 +94,7 @@ class PaperMatchingEngine:
         order_id = str(uuid.uuid4())
         opposite_side = "sell" if side == "buy" else "buy"
 
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 prior = db.execute(
@@ -176,13 +176,13 @@ class PaperMatchingEngine:
                 raise
 
     def get_order(self, order_id):
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             return self._serialize(db.execute(
                 "SELECT * FROM paper_orders WHERE id=?", (order_id,)
             ).fetchone())
 
     def list_orders(self, symbol=None, limit=100):
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             if symbol:
                 rows = db.execute(
                     "SELECT * FROM paper_orders WHERE symbol=? ORDER BY created_at DESC LIMIT ?",
@@ -196,7 +196,7 @@ class PaperMatchingEngine:
 
     def cancel_order(self, order_id):
         now = time.time_ns()
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute("SELECT * FROM paper_orders WHERE id=?", (order_id,)).fetchone()
@@ -217,7 +217,7 @@ class PaperMatchingEngine:
 
     def orderbook(self, symbol, limit=50):
         symbol = symbol.strip().upper()
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             rows = db.execute(
                 """SELECT * FROM paper_orders
                 WHERE symbol=? AND status IN ('open','partially_filled')""",
@@ -240,7 +240,7 @@ class PaperMatchingEngine:
         return {"symbol": symbol, "bids": levels(bids), "asks": levels(asks)}
 
     def list_trades(self, symbol=None, limit=100):
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             if symbol:
                 rows = db.execute(
                     "SELECT * FROM paper_trades WHERE symbol=? ORDER BY id DESC LIMIT ?",
