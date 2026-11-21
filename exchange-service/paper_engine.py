@@ -3,6 +3,7 @@
 This module never connects to an external exchange and never moves real assets.
 """
 import sqlite3
+from contextlib import closing
 import time
 import uuid
 from decimal import Decimal, InvalidOperation
@@ -28,7 +29,7 @@ class PaperMatchingEngine:
         return connection
 
     def _initialize(self):
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS paper_orders (
@@ -122,7 +123,7 @@ class PaperMatchingEngine:
                 candidates = db.execute(
                     """SELECT * FROM paper_orders
                     WHERE symbol = ? AND side = ? AND status IN ('open','partially_filled')
-                    AND CAST(remaining AS REAL) > 0""",
+                    """,
                     (symbol, opposite_side),
                 ).fetchall()
                 if side == "buy":
