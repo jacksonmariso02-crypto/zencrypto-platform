@@ -53,6 +53,12 @@ class AuthService:
         with closing(self._connect()) as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.execute("""
+                CREATE TABLE IF NOT EXISTS paper_accounts (
+                    account_id TEXT PRIMARY KEY,
+                    created_at INTEGER NOT NULL
+                )
+            """)
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS paper_users (
                     user_id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
