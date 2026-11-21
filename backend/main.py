@@ -216,6 +216,15 @@ def me(u=Depends(require_user)):
     return {"id": u["id"], "email": u["email"], "kyc_status": u["kyc_status"],
             "role": u["role"], "mode": "PAPER_ONLY"}
 
+@app.get("/trade/assets")
+def trade_assets(u=Depends(require_user)):
+    names = {"BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana", "BNB": "BNB", "XRP": "XRP"}
+    return {
+        "assets": [{"symbol": symbol, "name": names[symbol], "quote": "USD", "mode": "PAPER_ONLY"}
+                   for symbol in sorted(SUPPORTED_PAPER_ASSETS)],
+        "mode": "PAPER_ONLY",
+    }
+
 @app.get("/account/balances")
 def balances(u=Depends(require_user)):
     with db() as c:
