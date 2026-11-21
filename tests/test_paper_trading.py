@@ -446,3 +446,46 @@ def test_server_order_preview_matches_fill_math_without_writing_ledger(tmp_path,
         insufficient = client.post("/trade/preview", headers=headers, json={"symbol":"ETH","side":"buy","quote_amount":"1000.00","reference_price":"3000"})
         assert insufficient.status_code == 200
         assert insufficient.json()["sufficient_balance"] is False
+
+
+def test_limit_order_reserves_and_cancel_releases_paper_usd_atomically(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "limit-reserve.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"limit@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"limit@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"limit-faucet-01"}, json={"amount":"1000"})
+        assert funded.status_code == 201, funded.text
+        before = {x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
+        payload = {"symbol":"BTC","side":"buy","quantity":"0.01000000","limit_price":"50000"}
+        order = client.post("/trade/limit-orders",headers={**headers,"Idempotency-Key":"limit-buy-0001"},json=payload)
+        assert order.status_code == 201, order.text
+        assert order.json()["status"] == "open"
+        assert order.json()["reserved_amount"] == "500.50"
+        after_reserve = {x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
+        assert float(after_reserve["USD"]) == float(before["USD"]) - 500.50
+        listed = client.get("/trade/limit-orders?status=open",headers=headers)
+        assert listed.status_code == 200 and len(listed.json()["orders"]) == 1
+        cancelled = client.post("/trade/limit-orders/"+order.json()["id"]+"/cancel",headers=headers)
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["status"] == "cancelled"
+        after_cancel = {x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
+        assert after_cancel["USD"] == before["USD"]
+        repeated = client.post("/trade/limit-orders/"+order.json()["id"]+"/cancel",headers=headers)
+        assert repeated.status_code == 200 and repeated.json()["already_cancelled"] is True
+        assert client.get("/trade/limit-orders?status=open",headers=headers).json()["orders"] == []
+
+
+def test_limit_order_rejects_insufficient_reserve_without_creating_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "limit-insufficient.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register",json={"email":"limit-low@example.test","password":"CorrectHorseBattery12"})
+        login=client.post("/auth/login",json={"email":"limit-low@example.test","password":"CorrectHorseBattery12"})
+        headers={"Authorization":"Bearer "+login.json()["access_token"]}
+        order=client.post("/trade/limit-orders",headers={**headers,"Idempotency-Key":"limit-low-0001"},json={"symbol":"BTC","side":"buy","quantity":"0.10000000","limit_price":"50000"})
+        assert order.status_code == 400
+        assert client.get("/trade/limit-orders",headers=headers).json()["orders"] == []
