@@ -43,6 +43,9 @@ jobs:
           VITE_API_BASE_URL: https://zencrypto-api.onrender.com
         run: npm run build
 
+      - name: Verify production API URL in built assets
+        run: grep -R -q 'https://zencrypto-api.onrender.com' dist/assets
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
