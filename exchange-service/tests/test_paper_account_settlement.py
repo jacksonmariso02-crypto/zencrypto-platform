@@ -67,7 +67,7 @@ def test_partial_fill_keeps_remainder_reserved_and_cancel_releases_it(tmp_path):
     cancelled = engine.cancel_order(ask["id"], "seller_002")
     assert cancelled["status"] == "cancelled"
     assert ledger.get_balances("seller_002") == [
-        {"asset": "BTC", "available": "2.0", "locked": "0.0"},
+        {"asset": "BTC", "available": "1.5", "locked": "0.0"},
         {"asset": "USDT", "available": "50.0", "locked": "0"},
     ]
 
