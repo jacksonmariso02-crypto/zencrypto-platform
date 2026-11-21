@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 DB = os.getenv("DATABASE_PATH", "zencrypto.db")
+SUPPORTED_PAPER_ASSETS = frozenset({"BTC", "ETH", "SOL", "BNB", "XRP"})
 SECRET = os.getenv("APP_SECRET")
 if not SECRET:
     SECRET = secrets.token_urlsafe(48)
@@ -308,8 +309,8 @@ def trade_summary(u=Depends(require_user)):
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
     symbol = body.symbol.upper()
-    if symbol in {"USD", "USDT", "USDC"}:
-        raise HTTPException(422, "Select a crypto asset symbol.")
+    if symbol not in SUPPORTED_PAPER_ASSETS:
+        raise HTTPException(422, "Unsupported paper asset. Supported assets: BTC, ETH, SOL, BNB, XRP.")
     try:
         price = Decimal(body.reference_price)
         quote = Decimal(body.quote_amount)
