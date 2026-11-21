@@ -220,31 +220,29 @@ class PaperLedger:
 
     def get_balances(self, account_id):
         account_id = self._account_id(account_id)
+        available_code = f"user:{account_id}:available"
+        locked_code = f"user:{account_id}:locked"
         with closing(self._connect()) as db:
             if not db.execute("SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)).fetchone():
                 raise KeyError("Paper account not found.")
             rows = db.execute(
-                """SELECT asset,
-                   SUM(CAST(available_credit AS NUMERIC) - CAST(available_debit AS NUMERIC)) AS available,
-                   SUM(CAST(locked_credit AS NUMERIC) - CAST(locked_debit AS NUMERIC)) AS locked
-                   FROM (
-                     SELECT asset,
-                       SUM(CASE WHEN account_code=? THEN CAST(credit AS NUMERIC) ELSE 0 END) AS available_credit,
-                       SUM(CASE WHEN account_code=? THEN CAST(debit AS NUMERIC) ELSE 0 END) AS available_debit,
-                       SUM(CASE WHEN account_code=? THEN CAST(credit AS NUMERIC) ELSE 0 END) AS locked_credit,
-                       SUM(CASE WHEN account_code=? THEN CAST(debit AS NUMERIC) ELSE 0 END) AS locked_debit
-                     FROM ledger_entries GROUP BY asset
-                   ) GROUP BY asset""",
-                (f"user:{account_id}:available", f"user:{account_id}:available",
-                 f"user:{account_id}:locked", f"user:{account_id}:locked"),
+                """SELECT asset, account_code, debit, credit FROM ledger_entries
+                   WHERE account_code IN (?, ?) ORDER BY id""",
+                (available_code, locked_code),
             ).fetchall()
-            result = []
+            totals = {}
             for row in rows:
-                available = Decimal(str(row["available"] or 0))
-                locked = Decimal(str(row["locked"] or 0))
-                if available or locked:
-                    result.append({"asset": row["asset"], "available": str(available), "locked": str(locked)})
-            return result
+                item = totals.setdefault(row["asset"], {
+                    "available": Decimal("0"), "locked": Decimal("0")
+                })
+                bucket = "available" if row["account_code"] == available_code else "locked"
+                item[bucket] += Decimal(row["credit"]) - Decimal(row["debit"])
+            return [
+                {"asset": asset, "available": str(values["available"]),
+                 "locked": str(values["locked"])}
+                for asset, values in sorted(totals.items())
+                if values["available"] or values["locked"]
+            ]
 
     def list_entries(self, account_id, limit=100):
         account_id = self._account_id(account_id)
@@ -257,8 +255,7 @@ class PaperLedger:
                 """SELECT t.id AS transaction_id,t.kind,t.memo,t.created_at,
                           e.account_code,e.asset,e.debit,e.credit
                    FROM ledger_transactions t JOIN ledger_entries e ON e.transaction_id=t.id
-                   WHERE e.account_code LIKE ? OR e.account_code='system:paper_funding'
-                   ORDER BY e.id DESC LIMIT ?""",
-                (f"user:{account_id}:%", limit * 4),
+                   WHERE e.account_code IN (?, ?) ORDER BY e.id DESC LIMIT ?""",
+                (f"user:{account_id}:available", f"user:{account_id}:locked", limit * 2),
             ).fetchall()
             return [dict(row) for row in rows]
