@@ -51,3 +51,31 @@ def test_idempotency_and_user_isolation(tmp_path, monkeypatch):
         assert first.status_code==201 and repeat.json()==first.json()
         other=client.get("/account/balances",headers=h2).json()["balances"]
         assert all(float(x["amount"])==0 for x in other)
+
+
+
+def test_ledger_pagination_currency_filter_and_validation(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "ledger.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"ledger-user@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"ledger-user@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"ledger-faucet-001"}, json={"amount":"100"})
+        assert funded.status_code == 201
+        bought = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"ledger-buy-00001"},
+                             json={"symbol":"BTC","side":"buy","quote_amount":"25","reference_price":"50000"})
+        assert bought.status_code == 201
+        page = client.get("/account/ledger?limit=2&offset=0", headers=headers)
+        assert page.status_code == 200
+        data = page.json()
+        assert len(data["entries"]) == 2
+        assert data["pagination"]["total"] > 2
+        assert data["pagination"]["has_more"] is True
+        usd = client.get("/account/ledger?currency=usd&limit=20", headers=headers).json()
+        assert usd["filters"]["currency"] == "USD"
+        assert all(row["currency"] == "USD" for row in usd["entries"])
+        assert client.get("/account/ledger?limit=201", headers=headers).status_code == 422
+        assert client.get("/account/ledger?offset=-1", headers=headers).status_code == 422
+        assert client.get("/account/ledger?currency=USD%3BSELECT", headers=headers).status_code == 422
