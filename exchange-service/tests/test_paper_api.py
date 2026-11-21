@@ -160,3 +160,46 @@ def test_paper_order_api_rejects_below_minimum_notional(api):
     )
     assert response.status_code == 422
     assert "notional" in response.json()["detail"].lower()
+
+
+def test_paper_candle_api_uses_only_local_paper_fills(api):
+    ask = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "sell", "quantity": "0.1",
+            "price": "50000", "client_order_id": "paper-candle-ask-01",
+        },
+    )
+    bid = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "0.1",
+            "price": "50001", "client_order_id": "paper-candle-bid-01",
+        },
+    )
+    assert ask.status_code == 200
+    assert bid.status_code == 200
+
+    response = api.get("/api/v1/paper/markets/BTC-USDT/candles?timeframe=1m")
+    assert response.status_code == 200
+    candles = response.json()
+    assert len(candles) == 1
+    assert candles[0]["open"] == "50000"
+    assert candles[0]["high"] == "50000"
+    assert candles[0]["low"] == "50000"
+    assert candles[0]["close"] == "50000"
+    assert candles[0]["volume"] == "0.1"
+    assert isinstance(candles[0]["timestamp"], int)
+
+
+def test_paper_candle_api_rejects_invalid_query(api):
+    bad_timeframe = api.get(
+        "/api/v1/paper/markets/BTC-USDT/candles?timeframe=2m"
+    )
+    assert bad_timeframe.status_code == 400
+    bad_limit = api.get(
+        "/api/v1/paper/markets/BTC-USDT/candles?limit=1001"
+    )
+    assert bad_limit.status_code == 400
