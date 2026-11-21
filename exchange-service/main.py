@@ -151,6 +151,8 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
         raise HTTPException(400, "A limit order requires a price.")
     if body.type == "market" and body.price is not None:
         raise HTTPException(400, "Do not send a price with a market order.")
+    if not body.amount.is_finite() or (body.price is not None and not body.price.is_finite()):
+        raise HTTPException(422, "Order amount and price must be finite decimal values.")
     if not SANDBOX and not LIVE_TRADING_ENABLED:
         raise HTTPException(403, "Live trading is disabled by server configuration.")
     client = exchange_client(private=True)
@@ -159,8 +161,37 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
         symbol = normalize_symbol(body.symbol)
         if symbol not in markets or not markets[symbol].get("spot"):
             raise HTTPException(400, "This symbol is not an available spot market.")
-        amount = float(body.amount)
-        price = float(body.price) if body.price is not None else None
+        market = markets[symbol]
+        try:
+            amount_text = client.amount_to_precision(symbol, str(body.amount))
+            amount = Decimal(amount_text)
+            if amount != body.amount:
+                raise HTTPException(422, "Order amount exceeds the precision supported by this market.")
+            amount_limits = market.get("limits", {}).get("amount", {})
+            minimum = amount_limits.get("min")
+            maximum = amount_limits.get("max")
+            if minimum is not None and amount < Decimal(str(minimum)):
+                raise HTTPException(422, "Order amount is below the market minimum.")
+            if maximum is not None and amount > Decimal(str(maximum)):
+                raise HTTPException(422, "Order amount exceeds the market maximum.")
+            price = None
+            if body.price is not None:
+                price_text = client.price_to_precision(symbol, str(body.price))
+                precise_price = Decimal(price_text)
+                if precise_price != body.price:
+                    raise HTTPException(422, "Limit price exceeds the precision supported by this market.")
+                price_limits = market.get("limits", {}).get("price", {})
+                price_min = price_limits.get("min")
+                price_max = price_limits.get("max")
+                if price_min is not None and precise_price < Decimal(str(price_min)):
+                    raise HTTPException(422, "Limit price is below the market minimum.")
+                if price_max is not None and precise_price > Decimal(str(price_max)):
+                    raise HTTPException(422, "Limit price exceeds the market maximum.")
+                price = float(precise_price)
+        except HTTPException:
+            raise
+        except (ccxt.BaseError, ArithmeticError, ValueError) as exc:
+            raise HTTPException(422, f"Order precision validation failed: {exc}") from exc
         order = await run_in_threadpool(
             client.create_order, symbol, body.type, body.side, amount, price
         )
