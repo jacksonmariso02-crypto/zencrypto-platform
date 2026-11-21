@@ -1,5 +1,5 @@
 """ZenCrypto API. Simulated paper trading only; never transfers real assets."""
-import os, sqlite3, secrets, hashlib, hmac, time, json
+import os, sqlite3, secrets, hashlib, hmac, time, json, re
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
 from typing import Literal
