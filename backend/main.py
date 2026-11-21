@@ -466,6 +466,40 @@ def account_ledger(
         "filters": {"currency": currency},
     }
 
+@app.get("/account/ledger/verify")
+def verify_account_ledger(u=Depends(require_user)):
+    with db() as c:
+        checked = c.execute("""
+            SELECT COUNT(DISTINCT j.id) n
+            FROM journal j
+            WHERE EXISTS (
+                SELECT 1 FROM postings p JOIN accounts a ON a.id=p.account_id
+                WHERE p.journal_id=j.id AND a.user_id=?
+            )
+        """, (u["id"],)).fetchone()["n"]
+        issues = c.execute("""
+            SELECT j.id AS journal_id, j.kind, a.currency, SUM(p.amount_minor) AS imbalance_minor
+            FROM journal j
+            JOIN postings p ON p.journal_id=j.id
+            JOIN accounts a ON a.id=p.account_id
+            WHERE j.id IN (
+                SELECT DISTINCT p2.journal_id
+                FROM postings p2 JOIN accounts a2 ON a2.id=p2.account_id
+                WHERE a2.user_id=?
+            )
+            GROUP BY j.id, j.kind, a.currency
+            HAVING SUM(p.amount_minor) != 0
+            ORDER BY j.created_at DESC LIMIT 50
+        """, (u["id"],)).fetchall()
+    return {
+        "mode": "PAPER_ONLY",
+        "status": "balanced" if not issues else "integrity_issue",
+        "checked_journals": checked,
+        "issue_count": len(issues),
+        "issues": [dict(row) for row in issues],
+        "notice": "Read-only integrity check of paper ledger postings; not an audit of real funds."
+    }
+
 # All real-money endpoints are hard-disabled. These routes never accept or move funds.
 @app.post("/deposits/request", status_code=403)
 def real_deposit_disabled():
