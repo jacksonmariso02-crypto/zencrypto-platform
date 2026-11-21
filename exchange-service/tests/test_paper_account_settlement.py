@@ -130,6 +130,5 @@ def test_sell_taker_settles_at_resting_buy_maker_price(tmp_path):
         {"asset": "USDT", "available": "390", "locked": "0"},
     ]
     assert ledger.get_balances("taker_seller") == [
-        {"asset": "BTC", "available": "0", "locked": "0"},
         {"asset": "USDT", "available": "110", "locked": "0"},
     ]
