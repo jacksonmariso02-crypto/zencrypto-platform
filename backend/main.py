@@ -421,8 +421,11 @@ def _match_limit_order(c, incoming_order_id, now):
             new_filled = Decimal(current["filled_quantity"] or "0") + quantity
             new_remaining = Decimal(new_units) / Decimal(100000000)
             new_status = "filled" if new_units == 0 else "partially_filled"
-            c.execute("UPDATE limit_orders SET remaining_quantity=?,filled_quantity=?,status=?,updated_at=? WHERE id=?",
-                      (format(new_remaining,"f"), format(new_filled,"f"), new_status, now, current["id"]))
+            reserve_consumed = buyer_debit if current["id"] == buyer_order["id"] else fill_units
+            if int(current["reserve_minor"]) < reserve_consumed:
+                raise HTTPException(500, "Order reserve underflow during fill settlement.")
+            c.execute("UPDATE limit_orders SET remaining_quantity=?,filled_quantity=?,reserve_minor=reserve_minor-?,status=?,updated_at=? WHERE id=?",
+                      (format(new_remaining,"f"), format(new_filled,"f"), reserve_consumed, new_status, now, current["id"]))
             refreshed = c.execute("SELECT * FROM limit_orders WHERE id=?", (current["id"],)).fetchone()
             desired = _limit_order_required_reserve(refreshed, new_units)
             _release_limit_reserve(c, refreshed, desired, now)
