@@ -106,3 +106,30 @@ def test_account_orders_do_not_match_legacy_shared_orders(tmp_path):
     assert legacy_ask["status"] == "open"
     assert account_bid["status"] == "open"
     assert engine.list_trades("BTC/USDT") == []
+
+
+def test_sell_taker_settles_at_resting_buy_maker_price(tmp_path):
+    engine, ledger = setup(tmp_path)
+    ledger.create_account("maker_buyer")
+    ledger.create_account("taker_seller")
+    ledger.credit_paper_funds("maker_buyer", "USDT", "500", "maker-buyer-fund")
+    ledger.credit_paper_funds("taker_seller", "BTC", "1", "taker-seller-fund")
+
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "110", "maker-bid-00001", "maker_buyer"
+    )
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "taker-ask-0001", "taker_seller"
+    )
+    assert ask["status"] == "filled"
+    trade = engine.list_trades("BTC/USDT")[0]
+    assert trade["price"] == "110"
+
+    assert ledger.get_balances("maker_buyer") == [
+        {"asset": "BTC", "available": "1", "locked": "0"},
+        {"asset": "USDT", "available": "390", "locked": "0"},
+    ]
+    assert ledger.get_balances("taker_seller") == [
+        {"asset": "BTC", "available": "0", "locked": "0"},
+        {"asset": "USDT", "available": "110", "locked": "0"},
+    ]
