@@ -122,3 +122,13 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - When `since_id` is omitted, the stream starts at the latest trade ID for that symbol, so it delivers new fills rather than replaying all historical data. Use the REST trade-history endpoint for backfill.
 - The stream polls the durable SQLite trade table every 500ms and returns batches of at most 500 events. This makes reconnect/resume work across service processes sharing the same database, unlike an in-memory-only broadcast manager.
 - Public stream payloads expose trade price, quantity, timestamp and opaque order IDs only; account IDs and balances are never included. This is a paper-trading feed, not a live exchange feed.
+
+
+## Shared external market-data WebSocket
+- Connect to `/ws/v1/markets/BTC-USDT` for external Binance Spot reference ticker and top-20 order-book snapshots.
+- The first message is a `ready` event identifying the external source, venue, normalized symbol, sandbox flag, and polling interval. Subsequent `market_snapshot` messages contain a sanitized ticker and order book. Temporary provider failures emit a generic `market_error` message without credentials or internal exception details.
+- `GET /api/v1/market-data/status` reports the configured provider, market type, transport, polling interval and sandbox setting.
+- The service shares one polling task per symbol across connected clients, rather than issuing a separate exchange request for each WebSocket subscriber. Slow clients have bounded queues; stale snapshots are dropped in favor of the newest market state.
+- Polling defaults to 2 seconds and is clamped to a minimum of 2 seconds through `MARKET_STREAM_INTERVAL_SECONDS`. This is a REST-polling WebSocket fan-out, not a native Binance WebSocket feed. It is suitable for development and moderate test traffic, not high-frequency or production-scale market data.
+- Each poll fetches a ticker and top-20 order book from the configured external venue. External reference prices and depth are informational and are never used as paper fills, user balances, or P&L.
+- For production scale, replace the polling worker with a venue-native streaming adapter, central message broker, connection quotas, provider sequence/gap recovery, and monitored backpressure.
