@@ -5,13 +5,14 @@ from decimal import Decimal
 from typing import Literal
 
 import ccxt
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from paper_engine import IdempotencyConflict, PaperMatchingEngine
 from paper_ledger import (InsufficientPaperFunds, LedgerIdempotencyConflict, PaperLedger)
+from paper_risk import PaperOrderGuard, PaperOrderLimitExceeded
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -29,6 +30,11 @@ app = FastAPI(title=APP_NAME, version="0.1.0", docs_url="/docs")
 PAPER_ENGINE_DB_PATH = os.getenv("PAPER_ENGINE_DB_PATH", "/tmp/zencrypto-paper-engine.sqlite3")
 PAPER_ENGINE = PaperMatchingEngine(PAPER_ENGINE_DB_PATH)
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
+PAPER_ORDER_GUARD = PaperOrderGuard(
+    max_notional=os.getenv("PAPER_MAX_ORDER_NOTIONAL", "100000"),
+    max_requests=int(os.getenv("PAPER_ORDER_RATE_LIMIT", "30")),
+    window_seconds=int(os.getenv("PAPER_ORDER_RATE_WINDOW_SECONDS", "60")),
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -300,8 +306,23 @@ class PaperLimitOrderRequest(BaseModel):
 
 
 @app.post("/api/v1/paper/orders")
-async def create_paper_order(body: PaperLimitOrderRequest, authorization: str | None = Header(default=None)):
+async def create_paper_order(
+    body: PaperLimitOrderRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
     require_admin(authorization)
+    try:
+        PAPER_ORDER_GUARD.check(
+            request.client.host if request.client else "unknown",
+            body.quantity, body.price,
+        )
+    except PaperOrderLimitExceeded as exc:
+        raise HTTPException(
+            429 if "rate limit" in str(exc).lower() else 422,
+            str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     try:
         return await run_in_threadpool(
             PAPER_ENGINE.place_limit_order,
@@ -422,9 +443,21 @@ async def credit_paper_account(
 async def create_account_paper_order(
     account_id: str,
     body: PaperLimitOrderRequest,
+    request: Request,
     authorization: str | None = Header(default=None),
 ):
     require_admin(authorization)
+    try:
+        PAPER_ORDER_GUARD.check(
+            request.client.host if request.client else "unknown",
+            body.quantity, body.price,
+        )
+    except PaperOrderLimitExceeded as exc:
+        raise HTTPException(
+            429 if "rate limit" in str(exc).lower() else 422,
+            str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     try:
         return await run_in_threadpool(
             PAPER_ENGINE.place_limit_order,
