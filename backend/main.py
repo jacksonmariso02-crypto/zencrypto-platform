@@ -477,6 +477,21 @@ def verify_account_ledger(u=Depends(require_user)):
                 WHERE p.journal_id=j.id AND a.user_id=?
             )
         """, (u["id"],)).fetchone()["n"]
+        issue_count = c.execute("""
+            SELECT COUNT(*) n FROM (
+                SELECT j.id, a.currency
+                FROM journal j
+                JOIN postings p ON p.journal_id=j.id
+                JOIN accounts a ON a.id=p.account_id
+                WHERE j.id IN (
+                    SELECT DISTINCT p2.journal_id
+                    FROM postings p2 JOIN accounts a2 ON a2.id=p2.account_id
+                    WHERE a2.user_id=?
+                )
+                GROUP BY j.id, a.currency
+                HAVING SUM(p.amount_minor) != 0
+            )
+        """, (u["id"],)).fetchone()["n"]
         issues = c.execute("""
             SELECT j.id AS journal_id, j.kind, a.currency, SUM(p.amount_minor) AS imbalance_minor
             FROM journal j
@@ -493,9 +508,9 @@ def verify_account_ledger(u=Depends(require_user)):
         """, (u["id"],)).fetchall()
     return {
         "mode": "PAPER_ONLY",
-        "status": "balanced" if not issues else "integrity_issue",
+        "status": "balanced" if issue_count == 0 else "integrity_issue",
         "checked_journals": checked,
-        "issue_count": len(issues),
+        "issue_count": issue_count,
         "issues": [dict(row) for row in issues],
         "notice": "Read-only integrity check of paper ledger postings; not an audit of real funds."
     }
