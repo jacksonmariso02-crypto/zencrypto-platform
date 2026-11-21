@@ -1,0 +1,110 @@
+from decimal import Decimal
+
+import pytest
+
+from paper_engine import PaperMatchingEngine
+from paper_ledger import PaperLedger
+
+
+def setup_fee_engine(tmp_path, maker_bps=10, taker_bps=20):
+    path = str(tmp_path / "fee-paper.sqlite3")
+    return (
+        PaperMatchingEngine(path, maker_fee_bps=maker_bps, taker_fee_bps=taker_bps),
+        PaperLedger(path),
+    )
+
+
+def test_maker_seller_and_taker_buyer_fees_post_to_platform_ledger(tmp_path):
+    engine, ledger = setup_fee_engine(tmp_path)
+    ledger.create_account("fee_seller_01")
+    ledger.create_account("fee_buyer_01")
+    ledger.credit_paper_funds("fee_seller_01", "BTC", "1", "fee-seller-btc-01")
+    ledger.credit_paper_funds("fee_buyer_01", "USDT", "500", "fee-buyer-usdt-01")
+
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "fee-maker-ask-01", "fee_seller_01"
+    )
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "110", "fee-taker-bid-01", "fee_buyer_01"
+    )
+    assert bid["status"] == "filled"
+
+    trade = engine.list_trades("BTC/USDT")[0]
+    assert trade["maker_fee_amount"] == "0.100"
+    assert trade["maker_fee_asset"] == "USDT"
+    assert trade["taker_fee_amount"] == "0.002"
+    assert trade["taker_fee_asset"] == "BTC"
+
+    assert ledger.get_balances("fee_seller_01") == [
+        {"asset": "USDT", "available": "99.900", "locked": "0"}
+    ]
+    assert ledger.get_balances("fee_buyer_01") == [
+        {"asset": "BTC", "available": "0.998", "locked": "0"},
+        {"asset": "USDT", "available": "400", "locked": "0"},
+    ]
+    assert ledger.get_fee_balances() == [
+        {"asset": "BTC", "amount": "0.002"},
+        {"asset": "USDT", "amount": "0.100"},
+    ]
+
+
+def test_maker_buyer_and_taker_seller_fees_post_in_correct_assets(tmp_path):
+    engine, ledger = setup_fee_engine(tmp_path)
+    ledger.create_account("fee_maker_buyer")
+    ledger.create_account("fee_taker_seller")
+    ledger.credit_paper_funds("fee_maker_buyer", "USDT", "500", "maker-buyer-usdt")
+    ledger.credit_paper_funds("fee_taker_seller", "BTC", "1", "taker-seller-btc")
+
+    engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "110", "fee-maker-bid-01", "fee_maker_buyer"
+    )
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "fee-taker-ask-01", "fee_taker_seller"
+    )
+    assert ask["status"] == "filled"
+
+    trade = engine.list_trades("BTC/USDT")[0]
+    assert trade["maker_fee_amount"] == "0.001"
+    assert trade["maker_fee_asset"] == "BTC"
+    assert trade["taker_fee_amount"] == "0.220"
+    assert trade["taker_fee_asset"] == "USDT"
+    assert ledger.get_balances("fee_maker_buyer") == [
+        {"asset": "BTC", "available": "0.999", "locked": "0"},
+        {"asset": "USDT", "available": "390", "locked": "0"},
+    ]
+    assert ledger.get_balances("fee_taker_seller") == [
+        {"asset": "USDT", "available": "109.780", "locked": "0"}
+    ]
+    assert ledger.get_fee_balances() == [
+        {"asset": "BTC", "amount": "0.001"},
+        {"asset": "USDT", "amount": "0.220"},
+    ]
+
+
+def test_zero_fee_rates_preserve_existing_settlement_behavior(tmp_path):
+    engine, ledger = setup_fee_engine(tmp_path, maker_bps=0, taker_bps=0)
+    ledger.create_account("zero_fee_buyer")
+    ledger.create_account("zero_fee_seller")
+    ledger.credit_paper_funds("zero_fee_buyer", "USDT", "200", "zero-buyer-fund")
+    ledger.credit_paper_funds("zero_fee_seller", "BTC", "1", "zero-seller-fund")
+
+    engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "zero-fee-ask-001", "zero_fee_seller"
+    )
+    engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "100", "zero-fee-bid-001", "zero_fee_buyer"
+    )
+    assert ledger.get_balances("zero_fee_buyer") == [
+        {"asset": "BTC", "available": "1", "locked": "0"}
+    ]
+    assert ledger.get_fee_balances() == []
+    trade = engine.list_trades("BTC/USDT")[0]
+    assert trade["maker_fee_amount"] == "0"
+    assert trade["taker_fee_amount"] == "0"
+
+
+def test_fee_rates_are_bounded_to_ten_percent(tmp_path):
+    with pytest.raises(ValueError, match="between 0 and 1000"):
+        PaperMatchingEngine(str(tmp_path / "invalid-fee.sqlite3"), maker_fee_bps=1001)
+    with pytest.raises(ValueError, match="between 0 and 1000"):
+        PaperMatchingEngine(str(tmp_path / "invalid-fee2.sqlite3"), taker_fee_bps=-1)
