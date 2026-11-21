@@ -77,3 +77,8 @@ jobs:
         run: |
           curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://zencrypto-api.onrender.com/health -o /tmp/zencrypto-health.json
           python -c "import json; d=json.load(open('/tmp/zencrypto-health.json')); assert d.get('status') == 'ok'; assert d.get('mode') == 'PAPER_ONLY'; assert d.get('live_funds_enabled') is False; assert d.get('real_deposits_enabled') is False; assert d.get('real_withdrawals_enabled') is False"
+      - name: Verify browser CORS preflight from production frontend
+        run: |
+          status=$(curl --silent --show-error --output /tmp/zencrypto-preflight.txt --write-out '%{http_code}' --request OPTIONS https://zencrypto-api.onrender.com/auth/login --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
+          test "$status" = "200"
+          grep -qi 'access-control-allow-origin: https://jacksonmariso02-crypto.github.io' <(curl --silent --show-error --dump-header - --output /dev/null --request OPTIONS https://zencrypto-api.onrender.com/auth/login --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
