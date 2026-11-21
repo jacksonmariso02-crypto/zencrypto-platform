@@ -206,10 +206,16 @@ class PaperLedger:
             try:
                 if not db.execute("SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)).fetchone():
                     raise KeyError("Paper account not found.")
-                if self._balance(db, source, asset) < amount:
-                    raise InsufficientPaperFunds(f"Insufficient {asset} {from_bucket} balance.")
-                txid = self._post(db, key, "bucket_transfer", memo,
-                    [(source, asset, "debit", amount), (destination, asset, "credit", amount)])
+                postings = [(source, asset, "debit", amount), (destination, asset, "credit", amount)]
+                prior = db.execute(
+                    "SELECT 1 FROM ledger_transactions WHERE idempotency_key=?", (key,)
+                ).fetchone()
+                if prior:
+                    txid = self._post(db, key, "bucket_transfer", memo, postings)
+                else:
+                    if self._balance(db, source, asset) < amount:
+                        raise InsufficientPaperFunds(f"Insufficient {asset} {from_bucket} balance.")
+                    txid = self._post(db, key, "bucket_transfer", memo, postings)
                 db.commit()
                 return {"transaction_id": txid, "account_id": account_id,
                         "asset": asset, "amount": str(amount),
