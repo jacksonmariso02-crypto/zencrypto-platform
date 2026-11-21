@@ -85,3 +85,13 @@ The current limiter is process-local and uses the direct ASGI client address. It
 Set `AUTH_TOKEN_SECRET` to a cryptographically random secret of at least 32 characters. Access tokens are HS256-signed and expire after `AUTH_TOKEN_TTL_SECONDS` (default 900 seconds). Passwords are stored as salted scrypt hashes. User registration and paper-account creation share one SQLite transaction. Administrator-only credit endpoints remain separate and are intended only to seed test funds.
 
 This is not yet public-ready authentication: there is no email verification, MFA, password reset, token revocation/refresh, account recovery, or distributed authentication throttling. Keep registration behind a controlled test environment until those features and a security review are complete. Never reuse the admin token as the JWT signing secret.
+
+
+## Paper maker/taker fees
+- Configure `PAPER_MAKER_FEE_BPS` and `PAPER_TAKER_FEE_BPS` (basis points; 100 bps = 1%). Defaults are 10 bps (0.10%) maker and 20 bps (0.20%) taker. Set either to 0 to disable that rate. The prototype bounds each rate to 0-1000 bps.
+- Fees are charged only on account-backed paper trades. Legacy shared paper orders do not create account ledger fees.
+- The buyer fee is deducted from the base asset received; the seller fee is deducted from quote proceeds. Both are credited to the simulated `platform:fees` ledger account in the same database transaction as the fill.
+- Each paper trade records maker/taker fee amounts and fee assets. `GET /api/v1/paper/fees` returns aggregate simulated fee balances and requires the administrator token.
+- Fee postings roll back with the trade if any part of settlement fails. No real exchange fees or actual revenue are generated.
+
+Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts, tax/accounting treatment, and a production finance reconciliation workflow are not implemented. These are paper simulation defaults, not a published customer fee schedule.
