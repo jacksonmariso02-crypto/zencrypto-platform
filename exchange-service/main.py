@@ -2,6 +2,7 @@ import asyncio
 import os
 import hmac
 import re
+import time
 from decimal import Decimal
 from typing import Literal
 
@@ -15,6 +16,7 @@ from paper_engine import IdempotencyConflict, PaperMatchingEngine
 from paper_ledger import (InsufficientPaperFunds, LedgerIdempotencyConflict, PaperLedger)
 from paper_risk import PaperOrderGuard, PaperOrderLimitExceeded
 from auth_service import AuthService, AuthenticationError, UsernameTaken
+from market_stream import MarketStreamHub
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -85,6 +87,97 @@ def exchange_client(private: bool = False):
     if SANDBOX:
         client.set_sandbox_mode(True)
     return client
+
+MARKET_STREAM_INTERVAL_SECONDS = max(
+    2.0, float(os.getenv("MARKET_STREAM_INTERVAL_SECONDS", "2"))
+)
+
+
+async def fetch_external_market_snapshot(symbol: str):
+    """Fetch one sanitized public snapshot from the configured external spot venue."""
+    client = exchange_client()
+    try:
+        markets = await run_in_threadpool(client.load_markets)
+        market = markets.get(symbol)
+        if not market or not market.get("spot"):
+            raise ValueError("External spot market is not available.")
+        ticker_data = await run_in_threadpool(client.fetch_ticker, symbol)
+        book_data = await run_in_threadpool(client.fetch_order_book, symbol, 20)
+        ticker_fields = (
+            "timestamp", "datetime", "last", "bid", "ask", "high", "low",
+            "baseVolume", "quoteVolume", "change", "percentage",
+        )
+        return {
+            "source": "external_exchange",
+            "exchange": EXCHANGE_ID,
+            "market_type": "spot",
+            "symbol": symbol,
+            "observed_at": time.time_ns() // 1_000_000,
+            "ticker": {key: ticker_data.get(key) for key in ticker_fields},
+            "orderbook": {
+                "timestamp": book_data.get("timestamp"),
+                "nonce": book_data.get("nonce"),
+                "bids": book_data.get("bids", [])[:20],
+                "asks": book_data.get("asks", [])[:20],
+            },
+        }
+    finally:
+        await run_in_threadpool(client.close)
+
+
+MARKET_STREAM_HUB = MarketStreamHub(
+    fetch_external_market_snapshot,
+    interval_seconds=MARKET_STREAM_INTERVAL_SECONDS,
+)
+
+
+@app.on_event("shutdown")
+async def close_market_streams():
+    await MARKET_STREAM_HUB.close()
+
+
+@app.websocket("/ws/v1/markets/{symbol}")
+async def stream_external_market(websocket: WebSocket, symbol: str):
+    """Fan out a shared, rate-limited external ticker and order-book snapshot."""
+    try:
+        normalized = normalize_symbol(symbol)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Invalid market symbol.")
+        return
+
+    await websocket.accept()
+    queue = await MARKET_STREAM_HUB.subscribe(normalized)
+    await websocket.send_json({
+        "type": "ready",
+        "channel": "external.market",
+        "source": "external_exchange",
+        "exchange": EXCHANGE_ID,
+        "symbol": normalized,
+        "poll_interval_seconds": MARKET_STREAM_INTERVAL_SECONDS,
+        "sandbox": SANDBOX,
+    })
+    try:
+        while True:
+            event = await queue.get()
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await MARKET_STREAM_HUB.unsubscribe(normalized, queue)
+
+
+@app.get("/api/v1/market-data/status")
+async def market_data_status():
+    return {
+        "source": "external_exchange",
+        "exchange": EXCHANGE_ID,
+        "market_type": "spot",
+        "transport": "websocket",
+        "polling_interval_seconds": MARKET_STREAM_INTERVAL_SECONDS,
+        "sandbox": SANDBOX,
+        "live_order_placement_enabled": LIVE_TRADING_ENABLED,
+    }
+
 
 def require_admin(authorization: str | None):
     if not ADMIN_TOKEN:
