@@ -17,6 +17,7 @@ from paper_ledger import (InsufficientPaperFunds, LedgerIdempotencyConflict, Pap
 from paper_risk import PaperOrderGuard, PaperOrderLimitExceeded
 from auth_service import AuthService, AuthenticationError, UsernameTaken
 from market_stream import MarketStreamHub
+from orderbook_depth import build_depth
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -251,6 +252,29 @@ async def orderbook(symbol: str, limit: int = 20):
         raise HTTPException(502, f"Exchange order-book error: {exc}") from exc
     finally:
         client.close()
+
+@app.get("/api/v1/markets/{symbol}/depth")
+async def external_market_depth(symbol: str, limit: int = 20):
+    if limit not in (5, 10, 20, 50, 100):
+        raise HTTPException(400, "limit must be 5, 10, 20, 50 or 100.")
+    normalized = normalize_symbol(symbol)
+    client = exchange_client()
+    try:
+        book = await run_in_threadpool(client.fetch_order_book, normalized, limit)
+        return build_depth(
+            normalized,
+            book.get("bids", []),
+            book.get("asks", []),
+            limit=limit,
+            source="external_exchange",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ccxt.BaseError as exc:
+        raise HTTPException(502, f"Exchange depth error: {exc}") from exc
+    finally:
+        await run_in_threadpool(client.close)
+
 
 @app.get("/api/v1/markets/{symbol}/trades")
 async def trades(symbol: str, limit: int = 50):
@@ -520,6 +544,23 @@ async def paper_orderbook(
         raise HTTPException(400, "limit must be between 1 and 100.")
     return await run_in_threadpool(PAPER_ENGINE.orderbook, normalize_symbol(symbol), limit)
 
+
+
+@app.get("/api/v1/paper/orderbook/{symbol}/depth")
+async def paper_orderbook_depth(
+    symbol: str,
+    limit: int = 50,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 1 and 100.")
+    try:
+        return await run_in_threadpool(
+            PAPER_ENGINE.orderbook_depth, normalize_symbol(symbol), limit
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/v1/paper/fees")
