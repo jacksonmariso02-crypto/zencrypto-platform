@@ -61,3 +61,16 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Verify published frontend
+        run: |
+          curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://jacksonmariso02-crypto.github.io/zencrypto-platform/ -o /tmp/zencrypto-index.html
+          grep -q 'ZenCrypto' /tmp/zencrypto-index.html
+      - name: Verify Render API health and paper-only safety flags
+        run: |
+          curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://zencrypto-api.onrender.com/health -o /tmp/zencrypto-health.json
+          python -c "import json; d=json.load(open('/tmp/zencrypto-health.json')); assert d.get('status') == 'ok'; assert d.get('mode') == 'PAPER_ONLY'; assert d.get('live_funds_enabled') is False; assert d.get('real_deposits_enabled') is False; assert d.get('real_withdrawals_enabled') is False"
