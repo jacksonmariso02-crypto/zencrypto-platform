@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from paper_engine import IdempotencyConflict, PaperMatchingEngine
 from paper_ledger import (InsufficientPaperFunds, LedgerIdempotencyConflict, PaperLedger)
 from paper_risk import PaperOrderGuard, PaperOrderLimitExceeded
+from auth_service import AuthService, AuthenticationError, UsernameTaken
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -35,6 +36,28 @@ PAPER_ORDER_GUARD = PaperOrderGuard(
     max_requests=int(os.getenv("PAPER_ORDER_RATE_LIMIT", "30")),
     window_seconds=int(os.getenv("PAPER_ORDER_RATE_WINDOW_SECONDS", "60")),
 )
+AUTH_TOKEN_SECRET = os.getenv("AUTH_TOKEN_SECRET", "")
+AUTH_TOKEN_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "900"))
+AUTH_SERVICE = AuthService(PAPER_ENGINE_DB_PATH, AUTH_TOKEN_SECRET, AUTH_TOKEN_TTL_SECONDS)
+AUTH_ATTEMPT_GUARD = PaperOrderGuard(
+    max_notional="1", max_requests=int(os.getenv("AUTH_ATTEMPT_RATE_LIMIT", "10")),
+    window_seconds=int(os.getenv("AUTH_ATTEMPT_RATE_WINDOW_SECONDS", "300")),
+)
+
+def require_user(authorization: str | None):
+    supplied = (authorization or "").removeprefix("Bearer ").strip()
+    try:
+        return AUTH_SERVICE.authenticate(supplied)
+    except AuthenticationError as exc:
+        raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+def check_auth_attempt(request: Request):
+    client_key = request.client.host if request.client else "unknown"
+    try:
+        AUTH_ATTEMPT_GUARD.check(client_key, "1", "1")
+    except PaperOrderLimitExceeded as exc:
+        raise HTTPException(429, str(exc), headers={"Retry-After": str(exc.retry_after)}) from exc
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -562,3 +585,118 @@ async def transfer_paper_bucket(
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+# End-user paper account API. User identity and account ownership come only
+# from the signed access token; clients cannot select another account_id.
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=12, max_length=128)
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+
+@app.post("/api/v1/auth/register")
+async def register_user(body: RegisterRequest, request: Request):
+    check_auth_attempt(request)
+    try:
+        return await run_in_threadpool(AUTH_SERVICE.register, body.username, body.password)
+    except UsernameTaken as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+@app.post("/api/v1/auth/login")
+async def login_user(body: LoginRequest, request: Request):
+    check_auth_attempt(request)
+    try:
+        return await run_in_threadpool(AUTH_SERVICE.login, body.username, body.password)
+    except AuthenticationError as exc:
+        raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+@app.get("/api/v1/me")
+async def get_current_user(authorization: str | None = Header(default=None)):
+    return require_user(authorization)
+
+@app.get("/api/v1/me/balances")
+async def get_my_paper_balances(authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    return await run_in_threadpool(PAPER_LEDGER.get_balances, user["account_id"])
+
+@app.get("/api/v1/me/ledger")
+async def get_my_paper_ledger(
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    user = require_user(authorization)
+    return await run_in_threadpool(PAPER_LEDGER.list_entries, user["account_id"], limit)
+
+@app.get("/api/v1/me/orders")
+async def get_my_paper_orders(
+    symbol: str | None = None,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    user = require_user(authorization)
+    normalized = normalize_symbol(symbol) if symbol else None
+    return await run_in_threadpool(
+        PAPER_ENGINE.list_orders, normalized, limit, user["account_id"]
+    )
+
+@app.post("/api/v1/me/orders")
+async def create_my_paper_order(
+    body: PaperLimitOrderRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    user = require_user(authorization)
+    try:
+        PAPER_ORDER_GUARD.check(
+            request.client.host if request.client else "unknown",
+            body.quantity, body.price,
+        )
+        return await run_in_threadpool(
+            PAPER_ENGINE.place_limit_order,
+            normalize_symbol(body.symbol), body.side, body.quantity,
+            body.price, body.client_order_id, user["account_id"],
+        )
+    except PaperOrderLimitExceeded as exc:
+        raise HTTPException(
+            429 if "rate limit" in str(exc).lower() else 422,
+            str(exc), headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+    except KeyError as exc:
+        raise HTTPException(404, "Paper account not found.") from exc
+    except InsufficientPaperFunds as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except IdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+@app.delete("/api/v1/me/orders/{order_id}")
+async def cancel_my_paper_order(
+    order_id: str,
+    authorization: str | None = Header(default=None),
+):
+    user = require_user(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_ENGINE.cancel_order, order_id, user["account_id"]
+        )
+    except KeyError as exc:
+        # Avoid disclosing whether another user's order ID exists.
+        raise HTTPException(404, "Paper order not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
