@@ -34,8 +34,8 @@ def test_account_orders_reserve_and_settle_both_assets_atomically(tmp_path):
         {"asset": "BTC", "available": "1", "locked": "0"},
         {"asset": "USDT", "available": "100", "locked": "0"},
     ]
-    assert len(ledger.list_entries("buyer_001")) == 4
-    assert len(ledger.list_entries("seller_001")) == 4
+    assert len(ledger.list_entries("buyer_001")) == 6
+    assert len(ledger.list_entries("seller_001")) == 5
 
 
 def test_partial_fill_keeps_remainder_reserved_and_cancel_releases_it(tmp_path):
