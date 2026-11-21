@@ -95,3 +95,12 @@ This is not yet public-ready authentication: there is no email verification, MFA
 - Fee postings roll back with the trade if any part of settlement fails. No real exchange fees or actual revenue are generated.
 
 Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts, tax/accounting treatment, and a production finance reconciliation workflow are not implemented. These are paper simulation defaults, not a published customer fee schedule.
+
+
+## Market rules and order precision (paper trading)
+- `GET /api/v1/markets` lists enabled paper markets and their base/quote assets, tick size, quantity step, minimum quantity, minimum notional, and display precision. It is public market metadata.
+- `GET /api/v1/markets/{symbol}` returns one enabled market. Both `BTC/USDT` and normalized `BTC-USDT` forms are accepted.
+- Order validation is enforced in the matching engine before idempotency handling, balance reservation, or matching. Price must be an exact multiple of the market tick size; quantity must be an exact multiple of its step size, meet minimum quantity, and satisfy minimum notional.
+- The initial explicit paper-market registry contains BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT, XRP/USDT, and DOGE/USDT. Other symbols are rejected until a market rule is deliberately configured.
+- Current simulated defaults are maintained in `market_rules.py`. They are development defaults, not a live exchange's current filters. Before any real exchange integration, synchronize rules from the venue's authoritative exchange-info endpoint, persist versioned snapshots, and define asset-specific rounding and precision policies.
+- Display precision is metadata only; order validity uses exact Decimal multiples, not floating-point rounding. The engine rejects invalid input rather than silently rounding user orders.

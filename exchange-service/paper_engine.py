@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 
 from paper_ledger import InsufficientPaperFunds, PaperLedger
+from market_rules import MarketRuleRegistry
 
 
 class IdempotencyConflict(ValueError):
@@ -18,8 +19,9 @@ class IdempotencyConflict(ValueError):
 
 
 class PaperMatchingEngine:
-    def __init__(self, db_path: str, maker_fee_bps=0, taker_fee_bps=0):
+    def __init__(self, db_path: str, maker_fee_bps=0, taker_fee_bps=0, market_rules=None):
         self.db_path = str(db_path)
+        self.market_rules = market_rules or MarketRuleRegistry()
         self.maker_fee_bps = self._fee_bps(maker_fee_bps, "maker_fee_bps")
         self.taker_fee_bps = self._fee_bps(taker_fee_bps, "taker_fee_bps")
         if self.db_path != ":memory:":
@@ -120,6 +122,7 @@ class PaperMatchingEngine:
             raise ValueError("client_order_id must be 8-64 safe characters.")
         qty = self._decimal(quantity, "quantity")
         limit_price = self._decimal(price, "price")
+        self.market_rules.get(symbol).validate(limit_price, qty)
         if account_id is not None:
             account_id = PaperLedger._account_id(account_id)
         base_asset, quote_asset = symbol.split("/", 1)
