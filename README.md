@@ -1,6 +1,14 @@
-# ZenCrypto — deployable exchange UI prototype
+# ZenCrypto — paper-trading exchange prototype
 
-This is a **frontend-only prototype**, NOT a live exchange. There is no backend, authentication, custody, real-money ledger, actual trading, deposit address, withdrawal mechanism, or privileged admin access. Orders are simulated in browser memory and disappear on refresh. Portfolio balance remains zero. Some market values and chart shapes are illustrative; prices may be refreshed from CoinGecko's public API (rate limits/CORS apply). Never send money to anyone claiming this prototype accepts deposits.
+ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository includes a React/Vite trading UI and a separate FastAPI backend with authenticated paper accounts, an append-only double-entry journal, simulated orders, order history, balance and ledger endpoints, and a limited paper-fund faucet. Supported paper assets are BTC, ETH, SOL, BNB and XRP. Orders currently execute immediately at a client-supplied reference price; there is **not yet an independent limit-order book or matching engine**. Deposits, withdrawals, custody and real-money trading are disabled. Public market data and some chart values may be illustrative or subject to provider availability. Never send funds to anyone claiming this prototype accepts deposits.
+
+## Paper trading API additions
+
+- `GET /trade/assets` — authenticated canonical list of supported paper assets.
+- `GET /trade/orders` — authenticated, filtered and paginated paper order history.
+- `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header.
+
+All trading endpoints operate in `PAPER_ONLY` mode. Do not treat simulated fills, balances or summaries as real exchange activity.
 
 ## Run locally
 
