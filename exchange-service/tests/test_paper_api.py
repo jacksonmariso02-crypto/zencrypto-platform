@@ -4,6 +4,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import main
 from paper_engine import PaperMatchingEngine
+from market_stream import MarketStreamHub
 
 
 @pytest.fixture
@@ -252,3 +253,46 @@ def test_paper_trade_websocket_rejects_invalid_query(api):
         with api.websocket_connect("/ws/v1/paper/trades?symbol=NOT%20VALID"):
             pass
     assert disconnected.value.code == 1008
+
+
+def test_external_market_websocket_streams_shared_public_snapshot(api, monkeypatch):
+    async def fetch_snapshot(symbol):
+        return {
+            "source": "external_exchange",
+            "exchange": "binance",
+            "market_type": "spot",
+            "symbol": symbol,
+            "ticker": {"last": 65000},
+            "orderbook": {"bids": [[64999, 1]], "asks": [[65001, 1]]},
+        }
+
+    monkeypatch.setattr(
+        main, "MARKET_STREAM_HUB",
+        MarketStreamHub(fetch_snapshot, interval_seconds=2),
+    )
+    with api.websocket_connect("/ws/v1/markets/BTC-USDT") as websocket:
+        ready = websocket.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["source"] == "external_exchange"
+        assert ready["symbol"] == "BTC/USDT"
+
+        event = websocket.receive_json()
+        assert event["type"] == "market_snapshot"
+        assert event["data"]["source"] == "external_exchange"
+        assert event["data"]["ticker"]["last"] == 65000
+        assert event["data"]["orderbook"]["asks"][0][0] == 65001
+
+
+def test_external_market_websocket_rejects_invalid_symbol(api):
+    with pytest.raises(WebSocketDisconnect) as disconnected:
+        with api.websocket_connect("/ws/v1/markets/BTC%20USDT"):
+            pass
+    assert disconnected.value.code == 1008
+
+
+def test_market_data_status_identifies_external_spot_source(api):
+    response = api.get("/api/v1/market-data/status")
+    assert response.status_code == 200
+    assert response.json()["source"] == "external_exchange"
+    assert response.json()["market_type"] == "spot"
+    assert response.json()["transport"] == "websocket"
