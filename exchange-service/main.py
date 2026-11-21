@@ -1,4 +1,5 @@
-import asyncio\nimport os
+import asyncio
+import os
 import hmac
 import re
 from decimal import Decimal
