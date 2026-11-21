@@ -330,6 +330,98 @@ def trade_summary(u=Depends(require_user)):
         "notice": "Aggregates include recorded paper orders only; they are not live exchange volume or profit figures.",
     }
 
+
+def _limit_order_required_reserve(row, remaining_units):
+    if remaining_units <= 0:
+        return 0
+    if row["side"] == "sell":
+        return remaining_units
+    qty = Decimal(remaining_units) / Decimal(100000000)
+    notional = int((qty * Decimal(row["limit_price"]) * 100).to_integral_value(rounding="ROUND_CEILING"))
+    fee = max(1, int((Decimal(notional) * Decimal("0.001")).to_integral_value(rounding="ROUND_CEILING")))
+    return notional + fee
+
+def _release_limit_reserve(c, row, desired_reserve, now):
+    excess = int(row["reserve_minor"]) - int(desired_reserve)
+    if excess <= 0:
+        return
+    escrow = system_account(c, row["reserve_currency"], "paper-limit-reserve")
+    user_account = ensure_account(c, row["user_id"], row["reserve_currency"])
+    if balance_minor(c, escrow) < excess:
+        raise HTTPException(500, "Limit order escrow integrity check failed.")
+    post_journal(c, "paper_limit_release", row["id"] + ":match-release:" + str(now) + ":" + str(excess),
+                 [(escrow, row["reserve_currency"], -excess), (user_account, row["reserve_currency"], excess)])
+    c.execute("UPDATE limit_orders SET reserve_minor=reserve_minor-?,updated_at=? WHERE id=?", (excess, now, row["id"]))
+
+def _match_limit_order(c, incoming_order_id, now):
+    incoming = c.execute("SELECT * FROM limit_orders WHERE id=?", (incoming_order_id,)).fetchone()
+    if not incoming:
+        raise HTTPException(500, "Incoming limit order disappeared.")
+    fills = []
+    while True:
+        incoming = c.execute("SELECT * FROM limit_orders WHERE id=?", (incoming_order_id,)).fetchone()
+        incoming_units = int((Decimal(incoming["remaining_quantity"] or "0") * Decimal(100000000)).to_integral_value())
+        if incoming["status"] not in ("open", "partially_filled") or incoming_units <= 0:
+            break
+        opposite = "sell" if incoming["side"] == "buy" else "buy"
+        comparator = "<=" if incoming["side"] == "buy" else ">="
+        sort = "ASC" if incoming["side"] == "buy" else "DESC"
+        maker = c.execute(
+            "SELECT * FROM limit_orders WHERE symbol=? AND side=? AND status IN ('open','partially_filled') AND user_id<>? AND CAST(limit_price AS REAL) " + comparator + " CAST(? AS REAL) AND CAST(remaining_quantity AS REAL)>0 ORDER BY CAST(limit_price AS REAL) " + sort + ",created_at ASC,id ASC LIMIT 1",
+            (incoming["symbol"], opposite, incoming["user_id"], incoming["limit_price"])
+        ).fetchone()
+        if not maker:
+            break
+        maker_units = int((Decimal(maker["remaining_quantity"] or "0") * Decimal(100000000)).to_integral_value())
+        fill_units = min(incoming_units, maker_units)
+        quantity = Decimal(fill_units) / Decimal(100000000)
+        execution_price = Decimal(maker["limit_price"])
+        quote_minor = int((quantity * execution_price * 100).to_integral_value(rounding="ROUND_DOWN"))
+        if quote_minor <= 0:
+            break
+        buyer_order = incoming if incoming["side"] == "buy" else maker
+        seller_order = maker if incoming["side"] == "buy" else incoming
+        buyer_fee = int((Decimal(quote_minor) * Decimal("0.001")).to_integral_value(rounding="ROUND_DOWN"))
+        seller_fee = int((Decimal(quote_minor) * Decimal("0.001")).to_integral_value(rounding="ROUND_DOWN"))
+        buyer_debit = quote_minor + buyer_fee
+        if int(buyer_order["reserve_minor"]) < buyer_debit:
+            raise HTTPException(500, "Buyer limit-order reserve is insufficient for the matched fill.")
+        if int(seller_order["reserve_minor"]) < fill_units:
+            raise HTTPException(500, "Seller limit-order reserve is insufficient for the matched fill.")
+        buyer_escrow = system_account(c, "USD", "paper-limit-reserve")
+        seller_escrow = system_account(c, incoming["symbol"], "paper-limit-reserve")
+        buyer_asset = ensure_account(c, buyer_order["user_id"], incoming["symbol"])
+        seller_usd = ensure_account(c, seller_order["user_id"], "USD")
+        fee_account = system_account(c, "USD", "paper-trading-fees")
+        if balance_minor(c, buyer_escrow) < buyer_debit or balance_minor(c, seller_escrow) < fill_units:
+            raise HTTPException(500, "Limit-order escrow balance integrity check failed.")
+        usd_entries = [(buyer_escrow, "USD", -buyer_debit),
+                       (seller_usd, "USD", quote_minor - seller_fee)]
+        total_fees = buyer_fee + seller_fee
+        if total_fees:
+            usd_entries.append((fee_account, "USD", total_fees))
+        post_journal(c, "paper_limit_trade_usd", "limit-trade:" + incoming_order_id + ":" + maker["id"] + ":" + str(now) + ":usd", usd_entries)
+        post_journal(c, "paper_limit_trade_asset", "limit-trade:" + incoming_order_id + ":" + maker["id"] + ":" + str(now) + ":asset",
+                     [(seller_escrow, incoming["symbol"], -fill_units), (buyer_asset, incoming["symbol"], fill_units)])
+        trade_id = secrets.token_urlsafe(18)
+        c.execute("INSERT INTO limit_trades(id,symbol,buy_order_id,sell_order_id,buyer_user_id,seller_user_id,quantity,price,quote_minor,buyer_fee_minor,seller_fee_minor,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (trade_id, incoming["symbol"], buyer_order["id"], seller_order["id"], buyer_order["user_id"], seller_order["user_id"], format(quantity,"f"), format(execution_price,"f"), quote_minor, buyer_fee, seller_fee, now))
+        fills.append({"trade_id": trade_id, "quantity": format(quantity,"f"), "price": format(execution_price,"f"), "quote_amount": format(Decimal(quote_minor)/100,".2f"), "buyer_fee": format(Decimal(buyer_fee)/100,".2f"), "seller_fee": format(Decimal(seller_fee)/100,".2f"), "maker_order_id": maker["id"]})
+        for order in (buyer_order, seller_order):
+            current = c.execute("SELECT * FROM limit_orders WHERE id=?", (order["id"],)).fetchone()
+            old_units = int((Decimal(current["remaining_quantity"]) * Decimal(100000000)).to_integral_value())
+            new_units = old_units - fill_units
+            new_filled = Decimal(current["filled_quantity"] or "0") + quantity
+            new_remaining = Decimal(new_units) / Decimal(100000000)
+            new_status = "filled" if new_units == 0 else "partially_filled"
+            c.execute("UPDATE limit_orders SET remaining_quantity=?,filled_quantity=?,status=?,updated_at=? WHERE id=?",
+                      (format(new_remaining,"f"), format(new_filled,"f"), new_status, now, current["id"]))
+            refreshed = c.execute("SELECT * FROM limit_orders WHERE id=?", (current["id"],)).fetchone()
+            desired = _limit_order_required_reserve(refreshed, new_units)
+            _release_limit_reserve(c, refreshed, desired, now)
+        audit(c, incoming["user_id"], "paper_limit_order_matched", {"trade_id":trade_id,"incoming_order_id":incoming_order_id,"maker_order_id":maker["id"],"quantity":format(quantity,"f"),"price":format(execution_price,"f")})
+    return fills
+
 @app.post("/trade/limit-orders", status_code=201)
 def create_limit_order(body: LimitOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
     symbol = body.symbol.upper()
