@@ -102,9 +102,6 @@ def test_order_state_survives_engine_restart(tmp_path):
     ]
 
 
-def test_tiny_decimal_quantities_remain_visible_in_orderbook(engine):
-    order = place(engine, "buy", "0.00000000000000000001", "0.0001", "tiny-quantity-0001")
-    assert order["status"] == "open"
-    assert engine.orderbook("BTC/USDT")["bids"] == [
-        {"price": "0.0001", "quantity": "1E-20"}
-    ]
+def test_quantities_below_market_step_are_rejected(engine):
+    with pytest.raises(ValueError, match="multiple of"):
+        place(engine, "buy", "0.00000000000000000001", "50000", "tiny-quantity-0001")
