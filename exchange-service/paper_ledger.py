@@ -94,13 +94,14 @@ class PaperLedger:
 
     @staticmethod
     def _balance(db, account_code, asset):
-        row = db.execute(
-            """SELECT COALESCE(SUM(CAST(credit AS NUMERIC)), 0)
-                     - COALESCE(SUM(CAST(debit AS NUMERIC)), 0) AS balance
-               FROM ledger_entries WHERE account_code=? AND asset=?""",
+        rows = db.execute(
+            "SELECT debit, credit FROM ledger_entries WHERE account_code=? AND asset=?",
             (account_code, asset),
-        ).fetchone()
-        return Decimal(str(row["balance"]))
+        ).fetchall()
+        return sum(
+            (Decimal(row["credit"]) - Decimal(row["debit"]) for row in rows),
+            Decimal("0"),
+        )
 
     @staticmethod
     def _post(db, key, kind, memo, postings):
