@@ -108,3 +108,55 @@ def test_paper_api_rejects_bad_limits_and_invalid_order(api):
         },
     )
     assert bad_order.status_code == 422
+
+
+def test_public_market_metadata_and_market_detail(api):
+    markets = api.get("/api/v1/markets")
+    assert markets.status_code == 200
+    assert any(item["symbol"] == "BTC/USDT" for item in markets.json())
+
+    btc = api.get("/api/v1/markets/BTC-USDT")
+    assert btc.status_code == 200
+    assert btc.json()["tick_size"] == "0.01"
+    assert btc.json()["step_size"] == "0.000001"
+    assert btc.json()["min_notional"] == "5"
+
+    disabled = api.get("/api/v1/markets/UNKNOWN-USDT")
+    assert disabled.status_code == 404
+
+
+def test_paper_order_api_rejects_price_and_quantity_precision(api):
+    bad_price = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "0.001",
+            "price": "50000.001", "client_order_id": "precision-price-01",
+        },
+    )
+    assert bad_price.status_code == 422
+    assert "Price" in bad_price.json()["detail"]
+
+    bad_quantity = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "0.0000001",
+            "price": "50000", "client_order_id": "precision-qty-0001",
+        },
+    )
+    assert bad_quantity.status_code == 422
+    assert "Quantity" in bad_quantity.json()["detail"]
+
+
+def test_paper_order_api_rejects_below_minimum_notional(api):
+    response = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "0.0001",
+            "price": "1000", "client_order_id": "min-notional-0001",
+        },
+    )
+    assert response.status_code == 422
+    assert "notional" in response.json()["detail"].lower()
