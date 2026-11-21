@@ -353,6 +353,22 @@ async def get_enabled_market(symbol: str):
     return market
 
 
+@app.get("/api/v1/paper/markets/{symbol}/candles")
+async def paper_market_candles(
+    symbol: str,
+    timeframe: str = "1h",
+    limit: int = 100,
+    since: int | None = None,
+):
+    """OHLCV candles derived only from ZenCrypto paper-engine fills."""
+    try:
+        return await run_in_threadpool(
+            PAPER_ENGINE.list_candles, normalize_symbol(symbol), timeframe, limit, since
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/v1/paper/orders")
 async def create_paper_order(
     body: PaperLimitOrderRequest,

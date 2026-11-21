@@ -81,6 +81,10 @@ class PaperMatchingEngine:
                 "CREATE INDEX IF NOT EXISTS idx_paper_orders_account_book "
                 "ON paper_orders(symbol, account_id, side, status, created_at)"
             )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_paper_trades_symbol_time "
+                "ON paper_trades(symbol, created_at, id)"
+            )
             trade_columns = {row["name"] for row in db.execute("PRAGMA table_info(paper_trades)")}
             for column, definition in (
                 ("maker_fee_amount", "TEXT NOT NULL DEFAULT '0'"),
@@ -402,6 +406,81 @@ class PaperMatchingEngine:
                 grouped[p] = grouped.get(p, Decimal("0")) + Decimal(order["remaining"])
             return [{"price": price, "quantity": str(qty)} for price, qty in grouped.items()]
         return {"symbol": symbol, "bids": levels(bids), "asks": levels(asks)}
+
+    def list_candles(self, symbol, timeframe="1h", limit=100, since=None):
+        """Aggregate durable paper fills into OHLCV candles; timestamps are UTC milliseconds."""
+        intervals = {
+            "1m": 60_000, "5m": 300_000, "15m": 900_000,
+            "30m": 1_800_000, "1h": 3_600_000,
+            "4h": 14_400_000, "1d": 86_400_000,
+        }
+        if timeframe not in intervals:
+            raise ValueError("Unsupported timeframe. Use 1m, 5m, 15m, 30m, 1h, 4h or 1d.")
+        if not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000.")
+        normalized = str(symbol).strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,15}/[A-Z0-9]{2,15}", normalized):
+            raise ValueError("Use a symbol such as BTC/USDT.")
+        interval_ms = intervals[timeframe]
+        interval_ns = interval_ms * 1_000_000
+        params = [interval_ns, interval_ns, normalized]
+        since_clause = ""
+        if since is not None:
+            try:
+                since_ms = int(since)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("since must be a UTC Unix timestamp in milliseconds.") from exc
+            if since_ms < 0:
+                raise ValueError("since must be a non-negative UTC Unix timestamp in milliseconds.")
+            since_clause = " AND created_at >= ?"
+            params.append(since_ms * 1_000_000)
+        params.append(limit)
+        query = f"""
+            WITH bucketed AS (
+                SELECT id, symbol, price, quantity, created_at,
+                       (created_at / ?) * ? AS bucket
+                FROM paper_trades
+                WHERE symbol = ?{since_clause}
+            ),
+            recent AS (
+                SELECT DISTINCT bucket FROM bucketed
+                ORDER BY bucket DESC LIMIT ?
+            )
+            SELECT b.bucket, b.price, b.quantity, b.created_at, b.id
+            FROM bucketed b JOIN recent r ON r.bucket = b.bucket
+            ORDER BY b.bucket ASC, b.created_at ASC, b.id ASC
+        """
+        with closing(self._connect()) as db:
+            rows = db.execute(query, params).fetchall()
+
+        candles = []
+        current_bucket = None
+        current = None
+        for row in rows:
+            bucket = int(row["bucket"])
+            price = Decimal(row["price"])
+            quantity = Decimal(row["quantity"])
+            if bucket != current_bucket:
+                if current is not None:
+                    candles.append(current)
+                current_bucket = bucket
+                current = {
+                    "timestamp": bucket // 1_000_000,
+                    "open": price, "high": price, "low": price,
+                    "close": price, "volume": quantity,
+                }
+            else:
+                current["high"] = max(current["high"], price)
+                current["low"] = min(current["low"], price)
+                current["close"] = price
+                current["volume"] += quantity
+        if current is not None:
+            candles.append(current)
+        return [
+            {key: (value if key == "timestamp" else str(value))
+             for key, value in candle.items()}
+            for candle in candles
+        ]
 
     def list_trades(self, symbol=None, limit=100):
         with closing(self._connect()) as db:
