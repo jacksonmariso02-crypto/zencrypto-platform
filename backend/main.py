@@ -253,8 +253,8 @@ def list_orders(
     params: list[object] = [u["id"]]
     if symbol is not None:
         symbol = symbol.strip().upper()
-        if not re.fullmatch(r"[A-Z0-9]{2,20}", symbol):
-            raise HTTPException(422, "Invalid symbol filter.")
+        if symbol not in SUPPORTED_PAPER_ASSETS:
+            raise HTTPException(422, "Unsupported paper asset filter.")
         clauses.append("symbol=?")
         params.append(symbol)
     if side is not None:
@@ -265,8 +265,8 @@ def list_orders(
         params.append(side)
     if status is not None:
         status = status.strip().lower()
-        if status not in {"filled", "cancelled", "rejected", "open", "partially_filled"}:
-            raise HTTPException(422, "Invalid order status filter.")
+        if status != "filled":
+            raise HTTPException(422, "Only filled orders are currently supported by the immediate-fill paper engine.")
         clauses.append("status=?")
         params.append(status)
     where = " AND ".join(clauses)
