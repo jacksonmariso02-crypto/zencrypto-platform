@@ -79,7 +79,7 @@ def test_paper_candles_reject_unsupported_timeframes(tmp_path, timeframe):
 
 def test_paper_candles_validate_symbol_limit_and_since(tmp_path):
     engine = PaperMatchingEngine(str(tmp_path / "candles-params.sqlite3"))
-    with pytest.raises(ValueError, match="valid symbol"):
+    with pytest.raises(ValueError, match="symbol such as"):
         engine.list_candles("BTC USDT")
     with pytest.raises(ValueError, match="between 1 and 1000"):
         engine.list_candles("BTC/USDT", limit=1001)
