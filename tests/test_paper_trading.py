@@ -343,3 +343,27 @@ def test_order_history_rejects_unsupported_asset_and_unimplemented_status_filter
         filled = client.get("/trade/orders?status=filled", headers=headers)
         assert filled.status_code == 200
         assert filled.json()["orders"] == []
+
+
+def test_ledger_integrity_endpoint_reports_balanced_user_journals(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "ledger-integrity.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        assert client.get("/account/ledger/verify").status_code == 401
+        client.post("/auth/register", json={"email":"integrity@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"integrity@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        empty = client.get("/account/ledger/verify", headers=headers)
+        assert empty.status_code == 200
+        assert empty.json()["status"] == "balanced"
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"integrity-faucet-01"}, json={"amount":"100"})
+        assert funded.status_code == 201, funded.text
+        bought = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"integrity-buy-0001"},
+                             json={"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"})
+        assert bought.status_code == 201, bought.text
+        verified = client.get("/account/ledger/verify", headers=headers)
+        assert verified.status_code == 200
+        assert verified.json()["status"] == "balanced"
+        assert verified.json()["issue_count"] == 0
+        assert verified.json()["checked_journals"] >= 2
