@@ -313,10 +313,10 @@ def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, m
     try:
         price = Decimal(body.reference_price)
         quote = Decimal(body.quote_amount)
-        if not price.is_finite() or not quote.is_finite() or price <= 0 or quote <= 0 or quote > Decimal("1000000") or price > Decimal("1000000000"):
+        if not price.is_finite() or not quote.is_finite() or price <= 0 or quote <= 0 or quote > Decimal("1000000") or price > Decimal("1000000000") or quote != quote.quantize(Decimal("0.01")) or price != price.quantize(Decimal("0.000000000001")):
             raise ValueError()
     except (InvalidOperation, ValueError):
-        raise HTTPException(422, "Price and order amount must be positive valid numbers.")
+        raise HTTPException(422, "Price must have at most 12 decimal places and USD order amount at most 2; both must be positive and within limits.")
     notional_minor = int((quote * 100).quantize(Decimal("1"), rounding=ROUND_DOWN))
     if notional_minor:
         fee_minor = max(1, int((Decimal(notional_minor) * Decimal("0.001")).quantize(Decimal("1"), rounding=ROUND_DOWN)))
