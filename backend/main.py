@@ -418,8 +418,8 @@ def _match_limit_order(c, incoming_order_id, now):
             current = c.execute("SELECT * FROM limit_orders WHERE id=?", (order["id"],)).fetchone()
             old_units = int((Decimal(current["remaining_quantity"]) * Decimal(100000000)).to_integral_value())
             new_units = old_units - fill_units
-            new_filled = Decimal(current["filled_quantity"] or "0") + quantity
-            new_remaining = Decimal(new_units) / Decimal(100000000)
+            new_filled = (Decimal(current["filled_quantity"] or "0") + quantity).quantize(Decimal("0.00000001"))
+            new_remaining = (Decimal(new_units) / Decimal(100000000)).quantize(Decimal("0.00000001"))
             new_status = "filled" if new_units == 0 else "partially_filled"
             reserve_consumed = buyer_debit if current["id"] == buyer_order["id"] else fill_units
             if int(current["reserve_minor"]) < reserve_consumed:
