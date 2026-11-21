@@ -183,9 +183,9 @@ function App(){
   let active=true,controller=null,ws=null,retryTimer=null,retryDelay=1000,refreshTimer=null;
   const marketSymbol=symbol.toLowerCase()+"usdt";
   const parseKline=k=>{
-   const candle={timestamp:Number(k.t),time:new Date(Number(k.t)).toISOString(),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c),price:Number(k.c),volume:Number(k.v)};
-   if(!Number.isFinite(candle.timestamp)||![candle.open,candle.high,candle.low,candle.close,candle.volume].every(Number.isFinite)||candle.close<=0||candle.high<candle.low||candle.low>Math.min(candle.open,candle.close)||candle.high<Math.max(candle.open,candle.close))return null;
-   return candle;
+   const timestamp=Number(k.t),open=Number(k.o),high=Number(k.h),low=Number(k.l),close=Number(k.c),volume=Number(k.v);
+   if(!Number.isFinite(timestamp)||![open,high,low,close,volume].every(Number.isFinite)||close<=0||volume<0||high<low||low>Math.min(open,close)||high<Math.max(open,close))return null;
+   return {timestamp,time:new Date(timestamp).toISOString(),open,high,low,close,price:close,volume};
   };
   async function loadCandles(){
    if(controller)controller.abort();
