@@ -78,6 +78,10 @@ class FakeOrderClient:
         return {
             "BTC/USDT": {
                 "spot": True,
+                "base": "BTC",
+                "quote": "USDT",
+                "active": True,
+                "precision": {"amount": 4, "price": 2},
                 "limits": {
                     "amount": {"min": 0.0001, "max": 10},
                     "price": {"min": 1, "max": 1000000},
@@ -195,3 +199,25 @@ def test_limit_order_rejects_notional_below_market_minimum(monkeypatch):
         main.ADMIN_TOKEN = old_token
         main.SANDBOX = old_sandbox
         main.LIVE_TRADING_ENABLED = old_live
+
+
+def test_public_market_info_returns_precision_and_limits(monkeypatch):
+    fake = FakeOrderClient()
+    monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
+    response = client.get("/api/v1/markets/BTC-USDT/info")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["symbol"] == "BTC/USDT"
+    assert body["base"] == "BTC"
+    assert body["quote"] == "USDT"
+    assert body["spot"] is True
+    assert body["precision"] == {"amount": 4, "price": 2}
+    assert body["limits"]["amount"]["min"] == 0.0001
+    assert body["limits"]["cost"]["min"] == 10
+
+
+def test_public_market_info_rejects_unknown_market(monkeypatch):
+    fake = FakeOrderClient()
+    monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
+    response = client.get("/api/v1/markets/ETH-USDT/info")
+    assert response.status_code == 404
