@@ -121,20 +121,21 @@ function App(){
  useEffect(()=>{if(token&&!authChecking)refresh().catch(e=>setError(e.message));},[token,authChecking]);
  useEffect(()=>{let ws,timer,stopped=false;function connect(){ws=new WebSocket("wss://stream.binance.com:443/ws/!ticker_1d@arr");ws.onmessage=e=>{try{const rows=JSON.parse(e.data);if(Array.isArray(rows))setMarkets(prev=>prev.map(m=>{const q=rows.find(x=>x.s===m.symbol+"USDT");return q?{...m,price:Number(q.c),change:Number(q.P)}:m;}));}catch{}};ws.onclose=()=>{if(!stopped)timer=setTimeout(connect,5000);};ws.onerror=()=>ws.close();}connect();return()=>{stopped=true;clearTimeout(timer);if(ws)ws.close();};},[]);
  useEffect(()=>{
-  let active=true,ws=null,retry=null,buffer=[],lastUpdateId=0,synced=false,snapshotBusy=false;
-  const bids=new Map(),asks=new Map();
-  const symbolName=symbol.toLowerCase()+"usdt";
+  let active=true,ws=null,retry=null,buffer=[],lastUpdateId=0,synced=false,awaitingBridge=true,snapshotBusy=false;
+  const bids=new Map(),asks=new Map(),symbolName=symbol.toLowerCase()+"usdt";
   function applySide(target,updates){for(const [priceText,qtyText] of updates){const price=Number(priceText),qty=Number(qtyText);if(!Number.isFinite(price)||!Number.isFinite(qty))continue;if(qty===0)target.delete(price);else target.set(price,qty);}}
-  function publish(){const sort=(map,desc)=>Array.from(map,([p,q])=>[String(p),String(q)]).sort((a,b)=>desc?Number(b[0])-Number(a[0]):Number(a[0])-Number(b[0])).slice(0,100);setOrderBook({lastUpdateId,bids:sort(bids,true),asks:sort(asks,false),synchronized:synced});setDepthUpdated(Date.now());setDepthError("");}
+  function applyEvent(event){applySide(bids,event.b||[]);applySide(asks,event.a||[]);lastUpdateId=event.u;publish();}
+  function publish(){const sort=(map,desc)=>Array.from(map,([p,q])=>[String(p),String(q)]).sort((a,b)=>desc?Number(b[0])-Number(a[0]):Number(a[0])-Number(b[0])).slice(0,100);setOrderBook({lastUpdateId,bids:sort(bids,true),asks:sort(asks,false),synchronized:synced});setDepthUpdated(Date.now());if(synced)setDepthError("");}
   function processEvent(event){
-   if(!synced)return false;
    if(event.u<=lastUpdateId)return true;
+   if(awaitingBridge){if(event.U>lastUpdateId+1||event.u<lastUpdateId+1)return false;awaitingBridge=false;synced=true;applyEvent(event);return true;}
+   if(!synced)return false;
    if(event.pu!==undefined&&event.pu!==lastUpdateId)return false;
    if(event.U>lastUpdateId+1)return false;
-   applySide(bids,event.b||[]);applySide(asks,event.a||[]);lastUpdateId=event.u;publish();return true;
+   applyEvent(event);return true;
   }
   async function loadSnapshot(){
-   if(snapshotBusy||!active)return;snapshotBusy=true;synced=false;buffer=[];
+   if(snapshotBusy||!active)return;snapshotBusy=true;synced=false;awaitingBridge=true;buffer=[];
    try{
     const response=await fetch("https://api.binance.com/api/v3/depth?symbol="+symbol.toUpperCase()+"USDT&limit=100");
     if(!response.ok)throw Error("Binance order-book snapshot unavailable (HTTP "+response.status+").");
@@ -145,23 +146,14 @@ function App(){
     const bridgeIndex=relevant.findIndex(e=>e.U<=lastUpdateId+1&&e.u>=lastUpdateId+1);
     if(relevant.length&&bridgeIndex<0){snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}
     if(bridgeIndex>=0){
-     const first=relevant[bridgeIndex];applySide(bids,first.b||[]);applySide(asks,first.a||[]);lastUpdateId=first.u;
-     for(const event of relevant.slice(bridgeIndex+1)){if(event.u<=lastUpdateId)continue;if(event.pu!==undefined&&event.pu!==lastUpdateId){snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}if(event.U>lastUpdateId+1){snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}applySide(bids,event.b||[]);applySide(asks,event.a||[]);lastUpdateId=event.u;}
-    }
-    synced=true;publish();
+     const first=relevant[bridgeIndex];awaitingBridge=false;synced=true;applyEvent(first);
+     for(const event of relevant.slice(bridgeIndex+1)){if(event.u<=lastUpdateId)continue;if(event.pu!==undefined&&event.pu!==lastUpdateId){synced=false;awaitingBridge=true;snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}if(event.U>lastUpdateId+1){synced=false;awaitingBridge=true;snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}applyEvent(event);}
+    }else{synced=false;awaitingBridge=true;setDepthError("Waiting for first sequence-valid depth update…");}
    }catch(e){if(active){setDepthError(e.message||"Unable to synchronize order book.");retry=setTimeout(loadSnapshot,3000);}}
    finally{snapshotBusy=false;}
   }
-  function connect(){
-   if(!active)return;
-   ws=new WebSocket("wss://stream.binance.com:9443/ws/"+symbolName+"@depth@100ms");
-   ws.onmessage=e=>{try{const event=JSON.parse(e.data);if(!active||!Number.isFinite(Number(event.U))||!Number.isFinite(Number(event.u)))return;if(!synced){buffer.push(event);if(buffer.length>2000)buffer.shift();return;}if(!processEvent(event)){synced=false;setDepthError("Order-book sequence gap detected. Resynchronizing…");loadSnapshot();}}catch{}};
-   ws.onopen=()=>{setDepthError("");loadSnapshot();};
-   ws.onclose=()=>{synced=false;if(active)retry=setTimeout(connect,3000);};
-   ws.onerror=()=>{if(ws)ws.close();};
-  }
-  connect();
-  return()=>{active=false;clearTimeout(retry);if(ws)ws.close();};
+  function connect(){if(!active)return;ws=new WebSocket("wss://stream.binance.com:9443/ws/"+symbolName+"@depth@100ms");ws.onmessage=e=>{try{const event=JSON.parse(e.data);if(!active||!Number.isFinite(Number(event.U))||!Number.isFinite(Number(event.u)))return;if(!synced){buffer.push(event);if(buffer.length>2000)buffer.shift();return;}if(!processEvent(event)){synced=false;awaitingBridge=true;setDepthError("Order-book sequence gap detected. Resynchronizing…");loadSnapshot();}}catch{}};ws.onopen=()=>{setDepthError("Synchronizing order book…");loadSnapshot();};ws.onclose=()=>{synced=false;awaitingBridge=true;if(active)retry=setTimeout(connect,3000);};ws.onerror=()=>{if(ws)ws.close();};}
+  connect();return()=>{active=false;clearTimeout(retry);if(ws)ws.close();};
  },[symbol]);
 
  useEffect(()=>{let active=true,firstLoad=true,controller=null;async function loadCandles(){if(controller)controller.abort();controller=new AbortController();if(firstLoad)setChartLoading(true);try{const response=await fetch("https://api.binance.com/api/v3/klines?symbol="+symbol+"USDT&interval="+timeframe+"&limit=500",{signal:controller.signal});if(!response.ok)throw Error("Binance market data returned HTTP "+response.status);const rows=await response.json();if(!Array.isArray(rows)||!rows.length)throw Error("No historical OHLC data is currently available.");const parsed=rows.map(k=>({timestamp:Number(k[0]),time:new Date(k[0]).toISOString(),open:Number(k[1]),high:Number(k[2]),low:Number(k[3]),close:Number(k[4]),price:Number(k[4]),volume:Number(k[5])})).filter(k=>Number.isFinite(k.timestamp)&&Number.isFinite(k.open)&&Number.isFinite(k.high)&&Number.isFinite(k.low)&&Number.isFinite(k.close)&&Number.isFinite(k.volume)&&k.close>0&&k.high>=k.low);if(!parsed.length)throw Error("Historical candle data could not be validated.");if(active){setCandles(parsed);setChartError("");}}catch(e){if(active&&e.name!=="AbortError")setChartError(e.message||"Unable to load historical market data.");}finally{if(active&&firstLoad)setChartLoading(false);firstLoad=false;}}loadCandles();const timer=setInterval(loadCandles,15000);return()=>{active=false;clearInterval(timer);if(controller)controller.abort();};},[symbol,timeframe,chartRefresh]);
