@@ -122,6 +122,8 @@ class AuthService:
         })
 
     def register(self, username, password):
+        if len(self.token_secret.encode("utf-8")) < 32:
+            raise RuntimeError("AUTH_TOKEN_SECRET must contain at least 32 characters.")
         username = self._username(username)
         password = self._password(password)
         user_id = uuid.uuid4().hex
