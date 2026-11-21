@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/account-auth-foundation]
+    branches: [main, feature/account-auth-foundation]
   workflow_dispatch:
 permissions:
   contents: read
