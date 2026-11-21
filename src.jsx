@@ -143,7 +143,6 @@ function App(){
     lastUpdateId=Number(snapshot.lastUpdateId);if(!Number.isFinite(lastUpdateId))throw Error("Invalid order-book snapshot sequence.");
     const queued=buffer.slice();buffer=[];const relevant=queued.filter(e=>e.u>lastUpdateId);
     const bridgeIndex=relevant.findIndex(e=>e.U<=lastUpdateId+1&&e.u>=lastUpdateId+1);
-    if(relevant.length&&!bridgeIndex<0){}
     if(relevant.length&&bridgeIndex<0){snapshotBusy=false;retry=setTimeout(loadSnapshot,250);return;}
     if(bridgeIndex>=0){
      const first=relevant[bridgeIndex];applySide(bids,first.b||[]);applySide(asks,first.a||[]);lastUpdateId=first.u;
