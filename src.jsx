@@ -130,10 +130,10 @@ function App(){
  useEffect(()=>{let ws,timer,stopped=false;function connect(){setTickerStatus("connecting");ws=new WebSocket("wss://stream.binance.com:443/ws/!ticker_1d@arr");ws.onopen=()=>{if(!stopped)setTickerStatus("connecting");};ws.onmessage=e=>{try{const rows=JSON.parse(e.data);if(Array.isArray(rows)){const bySymbol=new Map(rows.filter(x=>x&&typeof x.s==="string").map(x=>[x.s,x]));const required=["BTC","ETH","SOL","BNB","XRP"];const valid=required.every(base=>{const q=bySymbol.get(base+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P));});setMarkets(prev=>prev.map(m=>{const q=bySymbol.get(m.symbol+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P))?{...m,price:Number(q.c),change:Number(q.P)}:m;}));if(valid){setTickerUpdatedAt(Date.now());setTickerStatus("live");}else{setTickerStatus(current=>current==="reconnecting"?"reconnecting":"stale");}}}catch{setTickerStatus("stale");}};ws.onclose=()=>{if(!stopped){setTickerStatus("reconnecting");timer=setTimeout(connect,5000);}};ws.onerror=()=>ws.close();}connect();return()=>{stopped=true;clearTimeout(timer);if(ws)ws.close();};},[]);
  useEffect(()=>{const watchdog=setInterval(()=>{if(!tickerUpdatedAt||Date.now()-tickerUpdatedAt>=15000){setTickerStatus(current=>current==="reconnecting"?"reconnecting":"stale");}},1000);return()=>clearInterval(watchdog);},[tickerUpdatedAt]);
  useEffect(()=>{
-  let active=true,ws=null,retry=null,buffer=[],lastUpdateId=0,synced=false,awaitingBridge=true,snapshotBusy=false;
+  let active=true,ws=null,retry=null,buffer=[],lastUpdateId=0,lastDepthMessageAt=0,synced=false,awaitingBridge=true,snapshotBusy=false;
   const bids=new Map(),asks=new Map(),symbolName=symbol.toLowerCase()+"usdt";
   function applySide(target,updates){for(const [priceText,qtyText] of updates){const price=Number(priceText),qty=Number(qtyText);if(!Number.isFinite(price)||!Number.isFinite(qty))continue;if(qty===0)target.delete(price);else target.set(price,qty);}}
-  function applyEvent(event){applySide(bids,event.b||[]);applySide(asks,event.a||[]);lastUpdateId=event.u;publish();}
+  function applyEvent(event){applySide(bids,event.b||[]);applySide(asks,event.a||[]);lastUpdateId=event.u;lastDepthMessageAt=Date.now();publish();}
   function publish(){const sort=(map,desc)=>Array.from(map,([p,q])=>[String(p),String(q)]).sort((a,b)=>desc?Number(b[0])-Number(a[0]):Number(a[0])-Number(b[0])).slice(0,100);setOrderBook({lastUpdateId,bids:sort(bids,true),asks:sort(asks,false),synchronized:synced});setDepthUpdated(Date.now());if(synced)setDepthError("");}
   function processEvent(event){
    if(event.u<=lastUpdateId)return true;
@@ -162,7 +162,7 @@ function App(){
    finally{snapshotBusy=false;}
   }
   function connect(){if(!active)return;ws=new WebSocket("wss://stream.binance.com:9443/ws/"+symbolName+"@depth@100ms");ws.onmessage=e=>{try{const event=JSON.parse(e.data);if(!active||!Number.isFinite(Number(event.U))||!Number.isFinite(Number(event.u)))return;if(!synced){buffer.push(event);if(buffer.length>2000)buffer.shift();return;}if(!processEvent(event)){synced=false;awaitingBridge=true;setDepthError("Order-book sequence gap detected. Resynchronizing…");loadSnapshot();}}catch{}};ws.onopen=()=>{setDepthError("Synchronizing order book…");loadSnapshot();};ws.onclose=()=>{synced=false;awaitingBridge=true;if(active)retry=setTimeout(connect,3000);};ws.onerror=()=>{if(ws)ws.close();};}
-  connect();return()=>{active=false;clearTimeout(retry);if(ws)ws.close();};
+  connect();const watchdog=setInterval(()=>{if(active&&synced&&lastDepthMessageAt&&Date.now()-lastDepthMessageAt>5000){synced=false;awaitingBridge=true;setDepthError("Order-book feed is stale. Resynchronizing snapshot and update sequence…");loadSnapshot();}},1000);return()=>{active=false;clearInterval(watchdog);clearTimeout(retry);if(ws)ws.close();};
  },[symbol]);
 
  useEffect(()=>{
