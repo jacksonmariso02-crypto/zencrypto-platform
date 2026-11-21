@@ -367,3 +367,34 @@ def test_ledger_integrity_endpoint_reports_balanced_user_journals(tmp_path, monk
         assert verified.json()["status"] == "balanced"
         assert verified.json()["issue_count"] == 0
         assert verified.json()["checked_journals"] >= 2
+
+
+def test_ledger_integrity_endpoint_detects_corrupted_posting(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "ledger-corruption.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"corrupt@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"corrupt@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"corrupt-faucet-01"}, json={"amount":"100"})
+        assert funded.status_code == 201, funded.text
+        with main.db() as connection:
+            connection.execute("DROP TRIGGER IF EXISTS postings_no_update")
+            connection.execute("""
+                UPDATE postings SET amount_minor=amount_minor+1
+                WHERE id=(
+                    SELECT p.id FROM postings p
+                    JOIN accounts a ON a.id=p.account_id
+                    JOIN users u ON u.id=a.user_id
+                    JOIN journal j ON j.id=p.journal_id
+                    WHERE u.email=? AND a.currency='USD'
+                    ORDER BY j.created_at DESC LIMIT 1
+                )
+            """, ("corrupt@example.test",))
+        verified = client.get("/account/ledger/verify", headers=headers)
+        assert verified.status_code == 200
+        body = verified.json()
+        assert body["status"] == "integrity_issue"
+        assert body["issue_count"] == 1
+        assert body["issues"][0]["currency"] == "USD"
