@@ -514,3 +514,25 @@ def test_limit_sell_reserves_and_cancel_releases_asset_and_is_user_scoped(tmp_pa
         assert cancelled.status_code==200,cancelled.text
         after={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=headers).json()["balances"]}
         assert after["BTC"]==before["BTC"]
+
+
+def test_limit_order_book_aggregates_open_orders_without_exposing_user_or_order_ids(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "limit-book.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register",json={"email":"book-one@example.test","password":"CorrectHorseBattery12"})
+        login=client.post("/auth/login",json={"email":"book-one@example.test","password":"CorrectHorseBattery12"})
+        headers={"Authorization":"Bearer "+login.json()["access_token"]}
+        client.post("/sandbox/faucet",headers={**headers,"Idempotency-Key":"book-faucet-01"},json={"amount":"1000"})
+        for key,qty in [("book-order-0001","0.00100000"),("book-order-0002","0.00200000")]:
+            response=client.post("/trade/limit-orders",headers={**headers,"Idempotency-Key":key},json={"symbol":"BTC","side":"buy","quantity":qty,"limit_price":"50000"})
+            assert response.status_code==201,response.text
+        book=client.get("/trade/limit-order-book/BTC",headers=headers)
+        assert book.status_code==200,book.text
+        data=book.json()
+        assert data["book_type"]=="ZENCRYPTO_USER_LIMIT_ORDERS"
+        assert data["bids"]==[{"price":"50000","quantity":"0.00300000","order_count":2}]
+        assert data["asks"]==[]
+        assert "user_id" not in str(data) and "order_id" not in str(data)
+        assert client.get("/trade/limit-order-book/DOGE",headers=headers).status_code==422
