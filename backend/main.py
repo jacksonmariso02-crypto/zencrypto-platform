@@ -366,10 +366,17 @@ def _match_limit_order(c, incoming_order_id, now):
         opposite = "sell" if incoming["side"] == "buy" else "buy"
         comparator = "<=" if incoming["side"] == "buy" else ">="
         sort = "ASC" if incoming["side"] == "buy" else "DESC"
-        maker = c.execute(
-            "SELECT * FROM limit_orders WHERE symbol=? AND side=? AND status IN ('open','partially_filled') AND user_id<>? AND CAST(limit_price AS REAL) " + comparator + " CAST(? AS REAL) AND CAST(remaining_quantity AS REAL)>0 ORDER BY CAST(limit_price AS REAL) " + sort + ",created_at ASC,id ASC LIMIT 1",
-            (incoming["symbol"], opposite, incoming["user_id"], incoming["limit_price"])
-        ).fetchone()
+        candidates = c.execute(
+            "SELECT * FROM limit_orders WHERE symbol=? AND side=? AND status IN ('open','partially_filled') AND user_id<>? AND remaining_quantity IS NOT NULL",
+            (incoming["symbol"], opposite, incoming["user_id"])
+        ).fetchall()
+        eligible = [r for r in candidates
+                    if Decimal(r["remaining_quantity"] or "0") > 0
+                    and ((Decimal(r["limit_price"]) <= Decimal(incoming["limit_price"])) if incoming["side"] == "buy"
+                         else (Decimal(r["limit_price"]) >= Decimal(incoming["limit_price"])))]
+        eligible.sort(key=lambda r: ((Decimal(r["limit_price"]) if incoming["side"] == "buy" else -Decimal(r["limit_price"])),
+                                     r["created_at"], r["id"]))
+        maker = eligible[0] if eligible else None
         if not maker:
             break
         maker_units = int((Decimal(maker["remaining_quantity"] or "0") * Decimal(100000000)).to_integral_value())
@@ -459,8 +466,10 @@ def create_limit_order(body: LimitOrder, idempotency_key: str = Header(min_lengt
             if balance_minor(c, user_account) < reserve_minor:
                 raise HTTPException(400, f"Insufficient available {reserve_currency} paper balance.")
             journal_id = post_journal(c, "paper_limit_reserve", order_id, [(user_account, reserve_currency, -reserve_minor), (escrow, reserve_currency, reserve_minor)])
-            c.execute("INSERT INTO limit_orders(id,user_id,symbol,side,quantity,limit_price,reserve_currency,reserve_minor,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (order_id,u["id"],symbol,body.side,format(qty,"f"),format(price,"f"),reserve_currency,reserve_minor,"open",now,now))
-            result = {"id":order_id,"symbol":symbol,"side":body.side,"quantity":format(qty,"f"),"limit_price":format(price,"f"),"reserve_currency":reserve_currency,"reserved_amount":format(Decimal(reserve_minor)/(100 if reserve_currency=="USD" else 100000000), ".2f" if reserve_currency=="USD" else ".8f"),"status":"open","journal_id":journal_id,"mode":"PAPER_ONLY","execution_model":"RESTING_LIMIT_ORDER_NO_MATCHING"}
+            c.execute("INSERT INTO limit_orders(id,user_id,symbol,side,quantity,limit_price,reserve_currency,reserve_minor,status,created_at,updated_at,remaining_quantity,filled_quantity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (order_id,u["id"],symbol,body.side,format(qty,"f"),format(price,"f"),reserve_currency,reserve_minor,"open",now,now,format(qty,"f"),"0"))
+            fills = _match_limit_order(c, order_id, now)
+            final_order = c.execute("SELECT * FROM limit_orders WHERE id=?", (order_id,)).fetchone()
+            result = {"id":order_id,"symbol":symbol,"side":body.side,"quantity":format(qty,"f"),"filled_quantity":final_order["filled_quantity"],"remaining_quantity":final_order["remaining_quantity"],"limit_price":format(price,"f"),"reserve_currency":reserve_currency,"reserved_amount":format(Decimal(final_order["reserve_minor"])/(100 if reserve_currency=="USD" else 100000000), ".2f" if reserve_currency=="USD" else ".8f"),"status":final_order["status"],"fills":fills,"journal_id":journal_id,"mode":"PAPER_ONLY","execution_model":"PAPER_PRICE_TIME_PRIORITY_MATCHING"}
             c.execute("INSERT INTO sandbox_operations VALUES(?,?,?,?,?)",(idempotency_key,u["id"],operation,json.dumps(result),now))
             audit(c,u["id"],"paper_limit_order_opened",{"order_id":order_id,"symbol":symbol,"side":body.side,"reserve_currency":reserve_currency,"reserve_minor":reserve_minor})
             c.execute("COMMIT")
@@ -475,7 +484,7 @@ def limit_order_book(symbol: str, u=Depends(require_user)):
     if symbol not in SUPPORTED_PAPER_ASSETS:
         raise HTTPException(422, "Unsupported paper asset.")
     with db() as c:
-        rows = c.execute("SELECT side,limit_price,quantity FROM limit_orders WHERE symbol=? AND status='open' ORDER BY created_at ASC", (symbol,)).fetchall()
+        rows = c.execute("SELECT side,limit_price,remaining_quantity AS quantity FROM limit_orders WHERE symbol=? AND status IN ('open','partially_filled') AND CAST(remaining_quantity AS REAL)>0 ORDER BY created_at ASC", (symbol,)).fetchall()
     levels = {"buy": {}, "sell": {}}
     for row in rows:
         price = Decimal(row["limit_price"])
@@ -493,8 +502,8 @@ def limit_order_book(symbol: str, u=Depends(require_user)):
 
 @app.get("/trade/limit-orders")
 def list_limit_orders(status: str | None = None, u=Depends(require_user)):
-    if status is not None and status not in {"open","cancelled"}:
-        raise HTTPException(422, "status must be open or cancelled.")
+    if status is not None and status not in {"open","partially_filled","filled","cancelled"}:
+        raise HTTPException(422, "status must be open, partially_filled, filled or cancelled.")
     with db() as c:
         if status:
             rows = c.execute("SELECT * FROM limit_orders WHERE user_id=? AND status=? ORDER BY created_at DESC",(u["id"],status)).fetchall()
@@ -514,14 +523,14 @@ def cancel_limit_order(order_id: str, u=Depends(require_user)):
             if row["status"] == "cancelled":
                 c.execute("COMMIT")
                 return {"id":order_id,"status":"cancelled","already_cancelled":True,"mode":"PAPER_ONLY"}
-            if row["status"] != "open":
-                raise HTTPException(409,"Only open limit orders can be cancelled.")
+            if row["status"] not in ("open", "partially_filled"):
+                raise HTTPException(409,"Only open or partially filled limit orders can be cancelled.")
             user_account = ensure_account(c,u["id"],row["reserve_currency"])
             escrow = system_account(c,row["reserve_currency"],"paper-limit-reserve")
             if balance_minor(c,escrow) < row["reserve_minor"]:
                 raise HTTPException(500,"Reserved paper balance integrity check failed.")
             journal_id = post_journal(c,"paper_limit_release",order_id+":cancel",[(escrow,row["reserve_currency"],-row["reserve_minor"]),(user_account,row["reserve_currency"],row["reserve_minor"])])
-            c.execute("UPDATE limit_orders SET status='cancelled',updated_at=? WHERE id=? AND status='open'",(now,order_id))
+            c.execute("UPDATE limit_orders SET status='cancelled',reserve_minor=0,updated_at=? WHERE id=? AND status IN ('open','partially_filled')",(now,order_id))
             audit(c,u["id"],"paper_limit_order_cancelled",{"order_id":order_id,"released_currency":row["reserve_currency"],"released_minor":row["reserve_minor"]})
             c.execute("COMMIT")
             return {"id":order_id,"status":"cancelled","released_currency":row["reserve_currency"],"released_amount":format(Decimal(row["reserve_minor"])/(100 if row["reserve_currency"]=="USD" else 100000000),".2f" if row["reserve_currency"]=="USD" else ".8f"),"journal_id":journal_id,"mode":"PAPER_ONLY"}
