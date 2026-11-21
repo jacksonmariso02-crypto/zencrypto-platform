@@ -232,3 +232,41 @@ def test_order_rejects_silent_rounding_and_excess_price_precision(tmp_path, monk
         valid = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"precision-order-3"}, json={"symbol":"BTC","side":"buy","quote_amount":"10.01","reference_price":"50000.123456789012"})
         assert valid.status_code == 201, valid.text
         assert valid.json()["notional"] == "10.01"
+
+
+def test_order_idempotency_returns_same_fill_without_double_debit(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "idempotency.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"retry@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"retry@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"retry-faucet-01"}, json={"amount":"100"})
+        order_headers = {**headers,"Idempotency-Key":"same-order-key-0001"}
+        payload = {"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"}
+        first = client.post("/trade/orders", headers=order_headers, json=payload)
+        retry = client.post("/trade/orders", headers=order_headers, json=payload)
+        assert first.status_code == 201, first.text
+        assert retry.status_code == 201, retry.text
+        assert retry.json()["id"] == first.json()["id"]
+        assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 1
+        usd = next(x for x in client.get("/account/balances", headers=headers).json()["balances"] if x["currency"] == "USD")
+        assert usd["amount"] == "74.97"
+
+
+def test_order_idempotency_key_cannot_be_reused_for_different_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "idempotency-conflict.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"conflict@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"conflict@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"conflict-faucet-01"}, json={"amount":"100"})
+        order_headers = {**headers,"Idempotency-Key":"reused-order-key-01"}
+        first = client.post("/trade/orders", headers=order_headers, json={"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"})
+        conflict = client.post("/trade/orders", headers=order_headers, json={"symbol":"ETH","side":"buy","quote_amount":"25.00","reference_price":"2500"})
+        assert first.status_code == 201, first.text
+        assert conflict.status_code == 409
+        assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 1
