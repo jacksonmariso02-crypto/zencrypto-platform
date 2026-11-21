@@ -167,3 +167,49 @@ def test_cors_does_not_allow_untrusted_origin():
             },
         )
         assert response.headers.get("access-control-allow-origin") != "https://untrusted.example"
+
+
+def test_journal_balances_per_currency_and_is_immutable(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "journal-integrity.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"integrity@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"integrity@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        funded = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"integrity-faucet-01"}, json={"amount":"250"})
+        assert funded.status_code == 201
+        bought = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"integrity-buy-0001"}, json={"symbol":"BTC","side":"buy","quote_amount":"75","reference_price":"50000"})
+        assert bought.status_code == 201, bought.text
+        with main.db() as conn:
+            bad = conn.execute("SELECT j.id,a.currency,SUM(p.amount_minor) total FROM journal j JOIN postings p ON p.journal_id=j.id JOIN accounts a ON a.id=p.account_id GROUP BY j.id,a.currency HAVING SUM(p.amount_minor)<>0").fetchall()
+            assert len(bad) == 0
+            journal_id = conn.execute("SELECT id FROM journal ORDER BY created_at DESC,id DESC LIMIT 1").fetchone()["id"]
+            update_blocked = False
+            delete_blocked = False
+            try:
+                conn.execute("UPDATE postings SET amount_minor=amount_minor+1 WHERE journal_id=?", (journal_id,))
+            except Exception:
+                update_blocked = True
+            try:
+                conn.execute("DELETE FROM journal WHERE id=?", (journal_id,))
+            except Exception:
+                delete_blocked = True
+            assert update_blocked and delete_blocked
+
+
+def test_ledger_integrity_endpoint_requires_admin(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "ledger-admin.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"ledger-admin@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"ledger-admin@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        assert client.get("/admin/ledger/integrity", headers=headers).status_code == 403
+        with main.db() as conn:
+            conn.execute("UPDATE users SET role='admin' WHERE email=?", ("ledger-admin@example.test",))
+        result = client.get("/admin/ledger/integrity", headers=headers)
+        assert result.status_code == 200
+        assert result.json()["balanced"] is True
+        assert result.json()["mode"] == "PAPER_ONLY"
