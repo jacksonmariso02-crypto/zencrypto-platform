@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from paper_engine import IdempotencyConflict, PaperMatchingEngine
+
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
 API_KEY = os.getenv("EXCHANGE_API_KEY", "")
@@ -23,6 +25,8 @@ ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
 ).split(",") if x.strip()]
 
 app = FastAPI(title=APP_NAME, version="0.1.0", docs_url="/docs")
+PAPER_ENGINE_DB_PATH = os.getenv("PAPER_ENGINE_DB_PATH", "/tmp/zencrypto-paper-engine.sqlite3")
+PAPER_ENGINE = PaperMatchingEngine(PAPER_ENGINE_DB_PATH)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -282,3 +286,79 @@ async def cancel_order(order_id: str, symbol: str, authorization: str | None = H
         raise HTTPException(502, f"Exchange cancel error: {exc}") from exc
     finally:
         client.close()
+
+
+# Paper-only internal matching endpoints. These never submit orders to CCXT.
+class PaperLimitOrderRequest(BaseModel):
+    symbol: str = Field(min_length=5, max_length=24)
+    side: Literal["buy", "sell"]
+    quantity: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0)
+    client_order_id: str = Field(min_length=8, max_length=64)
+
+
+@app.post("/api/v1/paper/orders")
+async def create_paper_order(body: PaperLimitOrderRequest, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_ENGINE.place_limit_order,
+            normalize_symbol(body.symbol),
+            body.side,
+            body.quantity,
+            body.price,
+            body.client_order_id,
+        )
+    except IdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/v1/paper/orders")
+async def list_paper_orders(
+    symbol: str | None = None,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    normalized = normalize_symbol(symbol) if symbol else None
+    return await run_in_threadpool(PAPER_ENGINE.list_orders, normalized, limit)
+
+
+@app.get("/api/v1/paper/orderbook/{symbol}")
+async def paper_orderbook(
+    symbol: str,
+    limit: int = 50,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 1 and 100.")
+    return await run_in_threadpool(PAPER_ENGINE.orderbook, normalize_symbol(symbol), limit)
+
+
+@app.get("/api/v1/paper/trades")
+async def list_paper_trades(
+    symbol: str | None = None,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500.")
+    normalized = normalize_symbol(symbol) if symbol else None
+    return await run_in_threadpool(PAPER_ENGINE.list_trades, normalized, limit)
+
+
+@app.delete("/api/v1/paper/orders/{order_id}")
+async def cancel_paper_order(order_id: str, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(PAPER_ENGINE.cancel_order, order_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
