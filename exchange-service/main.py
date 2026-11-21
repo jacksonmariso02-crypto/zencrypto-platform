@@ -18,6 +18,7 @@ from paper_risk import PaperOrderGuard, PaperOrderLimitExceeded
 from auth_service import AuthService, AuthenticationError, UsernameTaken
 from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
+from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -41,6 +42,20 @@ PAPER_ENGINE = PaperMatchingEngine(
     taker_fee_bps=PAPER_TAKER_FEE_BPS,
 )
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
+PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
+    0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
+)
+
+
+async def fetch_paper_orderbook_snapshot(symbol: str):
+    return await run_in_threadpool(PAPER_ENGINE.orderbook_depth, symbol, 100)
+
+
+PAPER_ORDERBOOK_HUB = PaperOrderBookHub(
+    fetch_paper_orderbook_snapshot,
+    interval_seconds=PAPER_BOOK_STREAM_INTERVAL_SECONDS,
+)
+
 PAPER_ORDER_GUARD = PaperOrderGuard(
     max_notional=os.getenv("PAPER_MAX_ORDER_NOTIONAL", "100000"),
     max_requests=int(os.getenv("PAPER_ORDER_RATE_LIMIT", "30")),
@@ -142,6 +157,7 @@ MARKET_STREAM_HUB = MarketStreamHub(
 @app.on_event("shutdown")
 async def close_market_streams():
     await MARKET_STREAM_HUB.close()
+    await PAPER_ORDERBOOK_HUB.close()
 
 
 @app.websocket("/ws/v1/markets/{symbol}")
@@ -588,6 +604,54 @@ async def list_paper_trades(
         raise HTTPException(400, "limit must be between 1 and 500.")
     normalized = normalize_symbol(symbol) if symbol else None
     return await run_in_threadpool(PAPER_ENGINE.list_trades, normalized, limit)
+
+
+@app.websocket("/ws/v1/paper/orderbook/{symbol}")
+async def stream_paper_orderbook(websocket: WebSocket, symbol: str):
+    """Stream a full paper depth snapshot followed by price-level deltas."""
+    try:
+        normalized = normalize_symbol(symbol)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Invalid market symbol.")
+        return
+
+    await websocket.accept()
+    queue = await PAPER_ORDERBOOK_HUB.subscribe(normalized)
+    await websocket.send_json({
+        "type": "ready",
+        "channel": "paper.orderbook",
+        "source": "zencrypto_paper",
+        "symbol": normalized,
+        "poll_interval_seconds": PAPER_BOOK_STREAM_INTERVAL_SECONDS,
+        "delta_quantity_zero_means": "remove_level",
+    })
+    previous = None
+    sequence = 0
+    try:
+        while True:
+            snapshot = await queue.get()
+            if snapshot.get("type") == "error":
+                await websocket.send_json(snapshot)
+                continue
+            sequence += 1
+            if previous is None:
+                event = {
+                    "type": "depth_snapshot",
+                    "source": "zencrypto_paper",
+                    "symbol": normalized,
+                    "sequence": sequence,
+                    "data": snapshot,
+                }
+            else:
+                event = build_depth_delta(previous, snapshot)
+                event["sequence"] = sequence
+                event["previous_sequence"] = sequence - 1
+            await websocket.send_json(event)
+            previous = snapshot
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await PAPER_ORDERBOOK_HUB.unsubscribe(normalized, queue)
 
 
 @app.websocket("/ws/v1/paper/trades")
