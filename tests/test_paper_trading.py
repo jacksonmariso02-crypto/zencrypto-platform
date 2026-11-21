@@ -307,3 +307,20 @@ def test_order_rejects_assets_not_supported_by_product(tmp_path, monkeypatch):
         assert response.status_code == 422
         assert "unsupported paper asset" in response.json()["detail"].lower()
         assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 0
+
+
+def test_supported_paper_assets_endpoint_is_authenticated_and_canonical(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "supported-assets.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        assert client.get("/trade/assets").status_code == 401
+        client.post("/auth/register", json={"email":"assets@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"assets@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        response = client.get("/trade/assets", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert {item["symbol"] for item in body["assets"]} == {"BTC", "ETH", "SOL", "BNB", "XRP"}
+        assert all(item["quote"] == "USD" and item["mode"] == "PAPER_ONLY" for item in body["assets"])
+        assert body["mode"] == "PAPER_ONLY"
