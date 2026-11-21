@@ -213,3 +213,22 @@ def test_ledger_integrity_endpoint_requires_admin(tmp_path, monkeypatch):
         assert result.status_code == 200
         assert result.json()["balanced"] is True
         assert result.json()["mode"] == "PAPER_ONLY"
+
+
+def test_order_rejects_silent_rounding_and_excess_price_precision(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "order-precision.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"precision@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"precision@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        faucet = client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"precision-faucet-1"}, json={"amount":"100"})
+        assert faucet.status_code == 201
+        bad_amount = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"precision-order-1"}, json={"symbol":"BTC","side":"buy","quote_amount":"10.009","reference_price":"50000"})
+        assert bad_amount.status_code == 422
+        bad_price = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"precision-order-2"}, json={"symbol":"BTC","side":"buy","quote_amount":"10.00","reference_price":"50000.1234567890123"})
+        assert bad_price.status_code == 422
+        valid = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"precision-order-3"}, json={"symbol":"BTC","side":"buy","quote_amount":"10.01","reference_price":"50000.123456789012"})
+        assert valid.status_code == 201, valid.text
+        assert valid.json()["notional"] == "10.01"
