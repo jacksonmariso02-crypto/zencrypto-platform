@@ -81,6 +81,7 @@ class FakeOrderClient:
                 "limits": {
                     "amount": {"min": 0.0001, "max": 10},
                     "price": {"min": 1, "max": 1000000},
+                    "cost": {"min": 10, "max": 1000000},
                 },
             }
         }
@@ -166,6 +167,30 @@ def test_order_accepts_exact_market_precision_and_uses_sandbox_client(monkeypatc
         assert len(fake.created) == 1
         assert fake.created[0]["amount"] == 0.0012
         assert fake.created[0]["price"] == 50000.0
+    finally:
+        main.ADMIN_TOKEN = old_token
+        main.SANDBOX = old_sandbox
+        main.LIVE_TRADING_ENABLED = old_live
+
+
+def test_limit_order_rejects_notional_below_market_minimum(monkeypatch):
+    fake = FakeOrderClient()
+    old_token = main.ADMIN_TOKEN
+    old_sandbox = main.SANDBOX
+    old_live = main.LIVE_TRADING_ENABLED
+    try:
+        main.ADMIN_TOKEN = "test-token"
+        main.SANDBOX = True
+        main.LIVE_TRADING_ENABLED = False
+        monkeypatch.setattr(main, "exchange_client", lambda private=False: fake)
+        response = client.post(
+            "/api/v1/orders",
+            headers={"Authorization": "Bearer test-token"},
+            json={"symbol": "BTC/USDT", "side": "buy", "type": "limit", "amount": "0.0001", "price": "50000.00"},
+        )
+        assert response.status_code == 422
+        assert "notional" in response.json()["detail"].lower()
+        assert fake.created == []
     finally:
         main.ADMIN_TOKEN = old_token
         main.SANDBOX = old_sandbox
