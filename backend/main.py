@@ -117,6 +117,7 @@ def init():
         CREATE TABLE IF NOT EXISTS postings(id INTEGER PRIMARY KEY,journal_id TEXT NOT NULL,account_id INTEGER NOT NULL,amount_minor INTEGER NOT NULL,FOREIGN KEY(journal_id) REFERENCES journal(id),FOREIGN KEY(account_id) REFERENCES accounts(id));
         CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,quantity TEXT NOT NULL,price TEXT NOT NULL,notional_minor INTEGER NOT NULL,fee_minor INTEGER NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
         CREATE TABLE IF NOT EXISTS limit_orders(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,quantity TEXT NOT NULL,limit_price TEXT NOT NULL,reserve_currency TEXT NOT NULL,reserve_minor INTEGER NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS limit_trades(id TEXT PRIMARY KEY,symbol TEXT NOT NULL,buy_order_id TEXT NOT NULL,sell_order_id TEXT NOT NULL,buyer_user_id INTEGER NOT NULL,seller_user_id INTEGER NOT NULL,quantity TEXT NOT NULL,price TEXT NOT NULL,quote_minor INTEGER NOT NULL,buyer_fee_minor INTEGER NOT NULL,seller_fee_minor INTEGER NOT NULL,created_at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS limit_orders_user_status_idx ON limit_orders(user_id,status,created_at DESC);
         CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,currency TEXT NOT NULL,amount_minor INTEGER NOT NULL,destination TEXT,status TEXT NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id));
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor_id INTEGER,event TEXT NOT NULL,detail TEXT NOT NULL,created_at INTEGER NOT NULL);
@@ -130,6 +131,13 @@ def init():
         CREATE TRIGGER IF NOT EXISTS postings_no_delete BEFORE DELETE ON postings BEGIN SELECT RAISE(ABORT,'immutable postings'); END;
         """)
         # Safe additive migration for databases created by earlier prototype revisions.
+        limit_cols = {r["name"] for r in c.execute("PRAGMA table_info(limit_orders)").fetchall()}
+        if "remaining_quantity" not in limit_cols:
+            c.execute("ALTER TABLE limit_orders ADD COLUMN remaining_quantity TEXT")
+            c.execute("UPDATE limit_orders SET remaining_quantity=quantity WHERE remaining_quantity IS NULL")
+        if "filled_quantity" not in limit_cols:
+            c.execute("ALTER TABLE limit_orders ADD COLUMN filled_quantity TEXT NOT NULL DEFAULT '0'")
+        c.execute("CREATE INDEX IF NOT EXISTS limit_book_match_idx ON limit_orders(symbol,side,status,created_at)")
         cols = {r["name"] for r in c.execute("PRAGMA table_info(orders)").fetchall()}
         if "notional_minor" not in cols:
             c.execute("ALTER TABLE orders ADD COLUMN notional_minor INTEGER NOT NULL DEFAULT 0")
