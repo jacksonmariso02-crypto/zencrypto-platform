@@ -536,3 +536,50 @@ def test_limit_order_book_aggregates_open_orders_without_exposing_user_or_order_
         assert data["asks"]==[]
         assert "user_id" not in str(data) and "order_id" not in str(data)
         assert client.get("/trade/limit-order-book/DOGE",headers=headers).status_code==422
+
+
+def test_limit_matching_partial_fill_settles_both_assets_and_releases_excess_reserve(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "limit-match.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        def create_user(email, faucet_key):
+            client.post("/auth/register",json={"email":email,"password":"CorrectHorseBattery12"})
+            login=client.post("/auth/login",json={"email":email,"password":"CorrectHorseBattery12"})
+            h={"Authorization":"Bearer "+login.json()["access_token"]}
+            funded=client.post("/sandbox/faucet",headers={**h,"Idempotency-Key":faucet_key},json={"amount":"1000"})
+            assert funded.status_code==201,funded.text
+            return h
+        seller=create_user("maker@example.test","maker-faucet-001")
+        buyer=create_user("taker@example.test","taker-faucet-001")
+        seed=client.post("/trade/orders",headers={**seller,"Idempotency-Key":"maker-seed-buy-01"},json={"symbol":"BTC","side":"buy","quote_amount":"100","reference_price":"10000"})
+        assert seed.status_code==201,seed.text
+        sell=client.post("/trade/limit-orders",headers={**seller,"Idempotency-Key":"maker-limit-sell-01"},json={"symbol":"BTC","side":"sell","quantity":"0.00400000","limit_price":"49000"})
+        assert sell.status_code==201,sell.text
+        buy=client.post("/trade/limit-orders",headers={**buyer,"Idempotency-Key":"taker-limit-buy-001"},json={"symbol":"BTC","side":"buy","quantity":"0.01000000","limit_price":"50000"})
+        assert buy.status_code==201,buy.text
+        data=buy.json()
+        assert data["status"]=="partially_filled"
+        assert data["filled_quantity"]=="0.00400000"
+        assert data["remaining_quantity"]=="0.00600000"
+        assert len(data["fills"])==1
+        assert data["fills"][0]["price"]=="49000"
+        maker_orders=client.get("/trade/limit-orders",headers=seller).json()["orders"]
+        assert maker_orders[0]["status"]=="filled"
+        buyer_orders=client.get("/trade/limit-orders?status=partially_filled",headers=buyer).json()["orders"]
+        assert len(buyer_orders)==1
+        assert buyer_orders[0]["remaining_quantity"]=="0.00600000"
+        assert buyer_orders[0]["reserved_amount"]=="300.30"
+        buyer_bal={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=buyer).json()["balances"]}
+        seller_bal={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=seller).json()["balances"]}
+        assert buyer_bal["BTC"]=="0.00400000"
+        assert seller_bal["USD"]=="489.51"
+        assert seller_bal["BTC"]=="0.00600000"
+        buyer_trades=client.get("/trade/limit-trades",headers=buyer)
+        seller_trades=client.get("/trade/limit-trades",headers=seller)
+        assert buyer_trades.status_code==200 and len(buyer_trades.json()["trades"])==1
+        assert seller_trades.status_code==200 and seller_trades.json()["trades"][0]["side"]=="sell"
+        cancelled=client.post("/trade/limit-orders/"+data["id"]+"/cancel",headers=buyer)
+        assert cancelled.status_code==200,cancelled.text
+        assert cancelled.json()["released_amount"]=="300.30"
+        assert client.get("/trade/limit-orders?status=cancelled",headers=buyer).json()["orders"][0]["status"]=="cancelled"
