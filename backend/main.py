@@ -280,6 +280,31 @@ def list_orders(
         "mode": "PAPER_ONLY",
     }
 
+@app.get("/trade/summary")
+def trade_summary(u=Depends(require_user)):
+    with db() as c:
+        row = c.execute("""
+            SELECT COUNT(*) AS order_count,
+                   SUM(CASE WHEN status='filled' THEN 1 ELSE 0 END) AS filled_count,
+                   SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buy_count,
+                   SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sell_count,
+                   COALESCE(SUM(CASE WHEN status='filled' THEN notional_minor ELSE 0 END),0) AS filled_notional_minor,
+                   COALESCE(SUM(CASE WHEN status='filled' THEN fee_minor ELSE 0 END),0) AS fees_minor
+            FROM orders WHERE user_id=?
+        """, (u["id"],)).fetchone()
+    return {
+        "mode": "PAPER_ONLY",
+        "summary": {
+            "order_count": row["order_count"] or 0,
+            "filled_count": row["filled_count"] or 0,
+            "buy_count": row["buy_count"] or 0,
+            "sell_count": row["sell_count"] or 0,
+            "filled_notional": format(Decimal(row["filled_notional_minor"])/100, ".2f"),
+            "fees": format(Decimal(row["fees_minor"])/100, ".2f"),
+        },
+        "notice": "Aggregates include recorded paper orders only; they are not live exchange volume or profit figures.",
+    }
+
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
     symbol = body.symbol.upper()
