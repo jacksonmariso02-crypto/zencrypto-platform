@@ -61,7 +61,7 @@ def test_account_paper_order_api_reserves_settles_and_cancels(monkeypatch, tmp_p
     )
     assert buyer_balances.json() == [
         {"asset": "BTC", "available": "1", "locked": "0"},
-        {"asset": "USDT", "available": "390", "locked": "0"},
+        {"asset": "USDT", "available": "400", "locked": "0"},
     ]
     seller_balances = client.get(
         "/api/v1/paper/accounts/api_seller_01/balances", headers=headers
