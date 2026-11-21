@@ -57,3 +57,8 @@ The account-backed paper routes connect the paper matching engine to the double-
 On each fill, the buyer's reserved quote amount is debited, any limit-price difference is returned to available funds, the seller receives quote proceeds, the seller's locked base asset is debited, and the buyer receives base asset. The order update, trade record, and ledger postings commit or roll back together. Account-backed orders match only other account-backed orders; legacy shared paper orders are kept in a separate matching pool.
 
 These endpoints still use the prototype's single administrator Bearer token. They are not end-user authentication, not production custody, and not connected to real deposits, withdrawals, or live exchange execution. The system remains paper-only.
+
+
+## Paper self-trade prevention
+
+For balance-backed paper orders, the matcher skips resting orders owned by the same account as the incoming order. It continues scanning other eligible counterparties in price/time order. Skipped resting orders and their reserves remain unchanged; an unmatched incoming order remains open with its reserve locked until filled or cancelled. This is account-level self-trade prevention only, not detection of common beneficial ownership across multiple accounts. No production-grade surveillance, identity verification, or anti-manipulation controls are implied.
