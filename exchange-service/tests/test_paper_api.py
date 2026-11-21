@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import main
 from paper_engine import PaperMatchingEngine
@@ -247,7 +248,7 @@ def test_paper_trade_websocket_streams_new_fills_and_resumes(api):
 
 
 def test_paper_trade_websocket_rejects_invalid_query(api):
-    with api.websocket_connect("/ws/v1/paper/trades?symbol=NOT%20VALID") as websocket:
-        message = websocket.receive()
-        assert message["type"] == "websocket.close"
-        assert message["code"] == 1008
+    with pytest.raises(WebSocketDisconnect) as disconnected:
+        with api.websocket_connect("/ws/v1/paper/trades?symbol=NOT%20VALID"):
+            pass
+    assert disconnected.value.code == 1008
