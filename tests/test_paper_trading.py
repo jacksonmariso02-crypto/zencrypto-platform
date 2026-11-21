@@ -134,3 +134,36 @@ def test_trade_summary_reports_only_users_paper_orders(tmp_path, monkeypatch):
         assert data["fees"] == "0.05"
         other = client.get("/trade/summary", headers=h2).json()["summary"]
         assert other["order_count"] == 0
+
+
+def test_cors_preflight_allows_production_pages_origin():
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        response = client.options(
+            "/auth/login",
+            headers={
+                "Origin": "https://jacksonmariso02-crypto.github.io",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type,idempotency-key",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == "https://jacksonmariso02-crypto.github.io"
+        allowed_headers = response.headers.get("access-control-allow-headers", "").lower()
+        assert "authorization" in allowed_headers
+        assert "content-type" in allowed_headers
+        assert "idempotency-key" in allowed_headers
+
+
+def test_cors_does_not_allow_untrusted_origin():
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        response = client.options(
+            "/auth/login",
+            headers={
+                "Origin": "https://untrusted.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert response.headers.get("access-control-allow-origin") != "https://untrusted.example"
