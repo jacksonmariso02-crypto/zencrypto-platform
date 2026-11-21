@@ -222,6 +222,28 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
                     raise HTTPException(422, "Limit order notional is below the market minimum.")
                 if cost_max is not None and notional > Decimal(str(cost_max)):
                     raise HTTPException(422, "Limit order notional exceeds the market maximum.")
+            else:
+                # Market orders have no client-supplied price. Estimate notional
+                # from the executable side of the live book and reject orders
+                # that are clearly outside exchange cost limits before submission.
+                ticker = await run_in_threadpool(client.fetch_ticker, symbol)
+                reference = ticker.get("ask") if body.side == "buy" else ticker.get("bid")
+                if reference is None:
+                    reference = ticker.get("last")
+                try:
+                    reference_price = Decimal(str(reference))
+                except Exception as exc:
+                    raise HTTPException(502, "Exchange did not provide a usable market reference price.") from exc
+                if not reference_price.is_finite() or reference_price <= 0:
+                    raise HTTPException(502, "Exchange did not provide a usable market reference price.")
+                cost_limits = market.get("limits", {}).get("cost", {})
+                estimated_notional = amount_decimal * reference_price
+                cost_min = cost_limits.get("min")
+                cost_max = cost_limits.get("max")
+                if cost_min is not None and estimated_notional < Decimal(str(cost_min)):
+                    raise HTTPException(422, "Estimated market order notional is below the market minimum.")
+                if cost_max is not None and estimated_notional > Decimal(str(cost_max)):
+                    raise HTTPException(422, "Estimated market order notional exceeds the market maximum.")
         except HTTPException:
             raise
         except (ccxt.BaseError, ArithmeticError, ValueError) as exc:
