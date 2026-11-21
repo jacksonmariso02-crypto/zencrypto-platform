@@ -360,3 +360,10 @@ header { background: #0b1220 !important; backdrop-filter: none; }
 .ledger-pagination>div { display:flex; gap:7px; }
 .ledger-pagination .tablebtn:disabled { opacity:.4; cursor:not-allowed; }
 @media(max-width:620px) { .ledger-heading { align-items:flex-start; flex-direction:column; } .ledger-panel table { min-width:640px; } }
+
+
+.order-history-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.order-history-head h3 { margin:0; }
+.order-filters { display:flex; gap:8px; }
+.order-filters select { background:#101a29; color:#dbe5f2; border:1px solid #29384b; border-radius:7px; padding:8px 10px; min-width:105px; }
+@media(max-width:620px) { .order-history-head { align-items:flex-start; flex-direction:column; } .order-filters { width:100%; } .order-filters select { flex:1; min-width:0; } }
