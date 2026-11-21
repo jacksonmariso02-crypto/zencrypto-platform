@@ -227,17 +227,58 @@ def balances(u=Depends(require_user)):
             for r in rows], "mode": "PAPER_ONLY"}
 
 @app.get("/trade/orders")
-def list_orders(u=Depends(require_user)):
+def list_orders(
+    limit: int = 50,
+    offset: int = 0,
+    symbol: str | None = None,
+    side: str | None = None,
+    status: str | None = None,
+    u=Depends(require_user),
+):
+    if not 1 <= limit <= 200:
+        raise HTTPException(422, "limit must be between 1 and 200.")
+    if offset < 0:
+        raise HTTPException(422, "offset must be zero or greater.")
+    clauses = ["user_id=?"]
+    params: list[object] = [u["id"]]
+    if symbol is not None:
+        symbol = symbol.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,20}", symbol):
+            raise HTTPException(422, "Invalid symbol filter.")
+        clauses.append("symbol=?")
+        params.append(symbol)
+    if side is not None:
+        side = side.strip().lower()
+        if side not in {"buy", "sell"}:
+            raise HTTPException(422, "side must be buy or sell.")
+        clauses.append("side=?")
+        params.append(side)
+    if status is not None:
+        status = status.strip().lower()
+        if status not in {"filled", "cancelled", "rejected", "open", "partially_filled"}:
+            raise HTTPException(422, "Invalid order status filter.")
+        clauses.append("status=?")
+        params.append(status)
+    where = " AND ".join(clauses)
     with db() as c:
-        rows = c.execute("""SELECT id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at
-                            FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 100""",
-                         (u["id"],)).fetchall()
-    return {"orders": [{"id": r["id"], "symbol": r["symbol"], "side": r["side"],
+        total = c.execute(f"SELECT COUNT(*) n FROM orders WHERE {where}", params).fetchone()["n"]
+        rows = c.execute(
+            f"""SELECT id,symbol,side,quantity,price,notional_minor,fee_minor,status,created_at
+                FROM orders WHERE {where}
+                ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?""",
+            [*params, limit, offset],
+        ).fetchall()
+    return {
+        "orders": [{"id": r["id"], "symbol": r["symbol"], "side": r["side"],
             "quantity": r["quantity"], "price": r["price"],
             "notional": format(Decimal(r["notional_minor"])/100, ".2f"),
             "fee": format(Decimal(r["fee_minor"])/100, ".2f"),
             "status": r["status"], "created_at": r["created_at"]} for r in rows],
-            "mode": "PAPER_ONLY"}
+        "pagination": {"limit": limit, "offset": offset, "total": total,
+            "has_more": offset + len(rows) < total},
+        "filters": {"symbol": symbol, "side": side, "status": status},
+        "mode": "PAPER_ONLY",
+    }
 
 @app.post("/trade/orders", status_code=201)
 def create_order(body: PaperOrder, idempotency_key: str = Header(min_length=8, max_length=100, alias="Idempotency-Key"), u=Depends(require_user)):
