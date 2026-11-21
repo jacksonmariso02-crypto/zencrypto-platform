@@ -296,3 +296,58 @@ def test_market_data_status_identifies_external_spot_source(api):
     assert response.json()["source"] == "external_exchange"
     assert response.json()["market_type"] == "spot"
     assert response.json()["transport"] == "websocket"
+
+
+def test_paper_depth_endpoint_requires_admin_and_returns_metrics(api):
+    ask = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "sell", "quantity": "0.001",
+            "price": "50010", "client_order_id": "depth-api-ask-01",
+        },
+    )
+    bid = api.post(
+        "/api/v1/paper/orders",
+        headers=auth(),
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "0.001",
+            "price": "50000", "client_order_id": "depth-api-bid-01",
+        },
+    )
+    assert ask.status_code == 200
+    assert bid.status_code == 200
+
+    response = api.get(
+        "/api/v1/paper/orderbook/BTC-USDT/depth?limit=10",
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "zencrypto_paper"
+    assert response.json()["metrics"]["best_bid"] == "50000"
+    assert response.json()["metrics"]["best_ask"] == "50010"
+    assert api.get("/api/v1/paper/orderbook/BTC-USDT/depth").status_code == 401
+
+
+def test_external_depth_endpoint_normalizes_provider_book(api, monkeypatch):
+    class FakeClient:
+        def fetch_order_book(self, symbol, limit):
+            assert symbol == "BTC/USDT"
+            assert limit == 5
+            return {
+                "bids": [[50000, 1], [49990, 2]],
+                "asks": [[50010, 3], [50020, 4]],
+            }
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(main, "exchange_client", lambda: FakeClient())
+    response = api.get("/api/v1/markets/BTC-USDT/depth?limit=5")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "external_exchange"
+    assert payload["metrics"]["best_bid"] == "50000"
+    assert payload["metrics"]["best_ask"] == "50010"
+    assert payload["bids"][0]["cumulative_quantity"] == "1"
+    assert payload["asks"][1]["cumulative_quantity"] == "7"
