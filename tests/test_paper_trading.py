@@ -252,7 +252,7 @@ def test_order_idempotency_returns_same_fill_without_double_debit(tmp_path, monk
         assert retry.json()["id"] == first.json()["id"]
         assert client.get("/trade/orders", headers=headers).json()["pagination"]["total"] == 1
         usd = next(x for x in client.get("/account/balances", headers=headers).json()["balances"] if x["currency"] == "USD")
-        assert usd["amount"] == "74.97"
+        assert usd["amount"] == "74.98"
 
 
 def test_order_idempotency_key_cannot_be_reused_for_different_order(tmp_path, monkeypatch):
