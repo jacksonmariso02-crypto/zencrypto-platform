@@ -346,13 +346,49 @@ def faucet(body: PaperTransfer, idempotency_key: str = Header(min_length=8, max_
             raise
 
 @app.get("/account/ledger")
-def account_ledger(u=Depends(require_user)):
+def account_ledger(
+    limit: int = 50,
+    offset: int = 0,
+    currency: str | None = None,
+    u=Depends(require_user),
+):
+    if not 1 <= limit <= 200:
+        raise HTTPException(422, "limit must be between 1 and 200.")
+    if offset < 0:
+        raise HTTPException(422, "offset must be zero or greater.")
+    if currency is not None:
+        currency = currency.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,12}", currency):
+            raise HTTPException(422, "Invalid currency filter.")
+    clauses = ["a.user_id=?"]
+    params: list[object] = [u["id"]]
+    if currency:
+        clauses.append("a.currency=?")
+        params.append(currency)
+    where = " AND ".join(clauses)
     with db() as c:
-        rows = c.execute("""SELECT j.id,j.kind,j.reference,j.created_at,a.currency,p.amount_minor
-                            FROM postings p JOIN accounts a ON a.id=p.account_id
-                            JOIN journal j ON j.id=p.journal_id WHERE a.user_id=?
-                            ORDER BY j.created_at DESC LIMIT 200""", (u["id"],)).fetchall()
-    return {"mode": "PAPER_ONLY", "entries": [dict(r) for r in rows]}
+        total = c.execute(
+            f"""SELECT COUNT(*) n FROM postings p
+                JOIN accounts a ON a.id=p.account_id
+                JOIN journal j ON j.id=p.journal_id WHERE {where}""",
+            params,
+        ).fetchone()["n"]
+        rows = c.execute(
+            f"""SELECT j.id,j.kind,j.reference,j.created_at,a.currency,p.amount_minor
+                FROM postings p JOIN accounts a ON a.id=p.account_id
+                JOIN journal j ON j.id=p.journal_id WHERE {where}
+                ORDER BY j.created_at DESC,j.id DESC,p.id DESC LIMIT ? OFFSET ?""",
+            [*params, limit, offset],
+        ).fetchall()
+    return {
+        "mode": "PAPER_ONLY",
+        "entries": [dict(r) for r in rows],
+        "pagination": {
+            "limit": limit, "offset": offset, "total": total,
+            "has_more": offset + len(rows) < total,
+        },
+        "filters": {"currency": currency},
+    }
 
 # All real-money endpoints are hard-disabled. These routes never accept or move funds.
 @app.post("/deposits/request", status_code=403)
