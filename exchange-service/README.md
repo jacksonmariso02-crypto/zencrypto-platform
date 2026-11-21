@@ -142,3 +142,13 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - External depth is sourced only from the configured external spot venue. The external market WebSocket now includes the normalized `depth` object alongside the raw top-20 book snapshot.
 - Imbalance is `(bid depth quantity - ask depth quantity) / total depth quantity` over the returned levels. It is a descriptive book metric, not a predictive signal or execution guarantee. Depth snapshots are not an atomic cross-venue view and can change immediately after retrieval.
 - The existing paper order-book endpoint remains backward compatible. The new `/depth` endpoints provide the enriched schema.
+
+
+## Incremental ZenCrypto paper order-book WebSocket
+- Connect to `/ws/v1/paper/orderbook/BTC-USDT` for the platform's own simulated resting-order depth.
+- The first event is `ready`, followed by a complete `depth_snapshot` with sequence 1.
+- Later events are `depth_delta` messages. Each side contains changed `[price, quantity]` pairs; a quantity of `"0"` removes that price level. Metrics are refreshed with every delta.
+- Sequence numbers are per connection. `previous_sequence` identifies the immediately preceding event. If a client detects a gap or reconnects, it must fetch `/api/v1/paper/orderbook/{symbol}/depth` to rebuild a fresh snapshot before applying more deltas.
+- One shared poller per symbol reads the durable paper matching-engine database. Unchanged snapshots are suppressed; bounded subscriber queues discard stale snapshots for slow clients so the next delivered event represents the latest book state.
+- Polling defaults to 500ms and is clamped to a minimum of 250ms by `PAPER_BOOK_STREAM_INTERVAL_SECONDS`. This is shared database polling, not event-driven matching-engine publication; it is an intermediate implementation for development and moderate traffic. Production should publish order mutations from the matching engine through a durable broker/outbox and use explicit snapshot sequence/version recovery.
+- The stream contains ZenCrypto paper orders only. It never combines external venue depth or exposes account IDs and balances.
