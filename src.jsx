@@ -3,7 +3,7 @@ import{createRoot}from"react-dom/client";
 
 import{LayoutDashboard,ChartCandlestick,Wallet,ArrowDownToLine,ArrowUpFromLine,Shield,Globe,Menu}from"lucide-react";
 import"./style.css";
-const API=import.meta.env.VITE_API_BASE_URL||"https://zencrypto-api-backend.onrender.com";
+const API=import.meta.env.VITE_API_BASE_URL||"https://zencrypto-api.onrender.com";
 const SEED=[{symbol:"BTC",name:"Bitcoin",price:96400,change:1.2},{symbol:"ETH",name:"Ethereum",price:3200,change:.8},{symbol:"SOL",name:"Solana",price:145,change:-.6},{symbol:"BNB",name:"BNB",price:615,change:.4},{symbol:"XRP",name:"XRP",price:2.2,change:-1.1}];
 const fmt=(n,d=2)=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 function ema(values,period){
