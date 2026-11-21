@@ -32,8 +32,9 @@ def test_paper_orderbook_depth_excludes_filled_and_cancelled_orders(tmp_path):
     engine = PaperMatchingEngine(str(tmp_path / "depth-status.sqlite3"))
     engine.place_limit_order("BTC/USDT", "sell", "0.001", "50000", "depth-status-ask")
     engine.place_limit_order("BTC/USDT", "buy", "0.001", "50000", "depth-status-bid")
-    engine.place_limit_order("BTC/USDT", "sell", "0.001", "51000", "depth-status-cancel")
-    cancelled = engine.list_orders("BTC/USDT")[-1]
+    cancelled = engine.place_limit_order(
+        "BTC/USDT", "sell", "0.001", "51000", "depth-status-cancel"
+    )
     engine.cancel_order(cancelled["id"])
 
     depth = engine.orderbook_depth("BTC/USDT")
