@@ -7,7 +7,7 @@ ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository 
 - `GET /trade/assets` — authenticated canonical list of supported paper assets.
 - `GET /account/ledger/verify` — authenticated, read-only per-user double-entry integrity check for paper ledger journals.
 - `GET /trade/orders` — authenticated, filtered and paginated paper order history; currently only `filled` status is supported because orders execute immediately.
-- `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header.
+- `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header and returns `execution_model=IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE` plus `price_source=CLIENT_SUPPLIED_REFERENCE`.
 
 All trading endpoints operate in `PAPER_ONLY` mode. Do not treat simulated fills, balances or summaries as real exchange activity.
 
