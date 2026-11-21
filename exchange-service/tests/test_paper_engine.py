@@ -100,3 +100,11 @@ def test_order_state_survives_engine_restart(tmp_path):
     assert second_engine.orderbook("ETH/USDT")["asks"] == [
         {"price": "3000", "quantity": "2"}
     ]
+
+
+def test_tiny_decimal_quantities_remain_visible_in_orderbook(engine):
+    order = place(engine, "buy", "0.00000000000000000001", "0.0001", "tiny-quantity-0001")
+    assert order["status"] == "open"
+    assert engine.orderbook("BTC/USDT")["bids"] == [
+        {"price": "0.0001", "quantity": "1E-20"}
+    ]
