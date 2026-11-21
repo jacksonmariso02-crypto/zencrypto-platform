@@ -179,7 +179,69 @@ function App(){
   }).catch(()=>{if(active){setMarketInfo(null);setMarketInfoStatus("error");}});
   return()=>{active=false;};
  },[symbol]);
- useEffect(()=>{let active=true,firstLoad=true,controller=null;async function loadCandles(){if(controller)controller.abort();controller=new AbortController();if(firstLoad)setChartLoading(true);try{const response=await fetch("https://api.binance.com/api/v3/klines?symbol="+symbol+"USDT&interval="+timeframe+"&limit=500",{signal:controller.signal});if(!response.ok)throw Error("Binance market data returned HTTP "+response.status);const rows=await response.json();if(!Array.isArray(rows)||!rows.length)throw Error("No historical OHLC data is currently available.");const parsed=rows.map(k=>({timestamp:Number(k[0]),time:new Date(k[0]).toISOString(),open:Number(k[1]),high:Number(k[2]),low:Number(k[3]),close:Number(k[4]),price:Number(k[4]),volume:Number(k[5])})).filter(k=>Number.isFinite(k.timestamp)&&Number.isFinite(k.open)&&Number.isFinite(k.high)&&Number.isFinite(k.low)&&Number.isFinite(k.close)&&Number.isFinite(k.volume)&&k.close>0&&k.high>=k.low);if(!parsed.length)throw Error("Historical candle data could not be validated.");if(active){setCandles(parsed);setChartError("");}}catch(e){if(active&&e.name!=="AbortError")setChartError(e.message||"Unable to load historical market data.");}finally{if(active&&firstLoad)setChartLoading(false);firstLoad=false;}}loadCandles();const timer=setInterval(loadCandles,15000);return()=>{active=false;clearInterval(timer);if(controller)controller.abort();};},[symbol,timeframe,chartRefresh]);
+ useEffect(()=>{
+  let active=true,controller=null,ws=null,retryTimer=null,retryDelay=1000,refreshTimer=null;
+  const marketSymbol=symbol.toLowerCase()+"usdt";
+  const parseKline=k=>{
+   const candle={timestamp:Number(k.t),time:new Date(Number(k.t)).toISOString(),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c),price:Number(k.c),volume:Number(k.v)};
+   if(!Number.isFinite(candle.timestamp)||![candle.open,candle.high,candle.low,candle.close,candle.volume].every(Number.isFinite)||candle.close<=0||candle.high<candle.low||candle.low>Math.min(candle.open,candle.close)||candle.high<Math.max(candle.open,candle.close))return null;
+   return candle;
+  };
+  async function loadCandles(){
+   if(controller)controller.abort();
+   controller=new AbortController();
+   try{
+    const response=await fetch("https://api.binance.com/api/v3/klines?symbol="+marketSymbol.toUpperCase()+"&interval="+timeframe+"&limit=500",{signal:controller.signal});
+    if(!response.ok)throw Error("Binance market data returned HTTP "+response.status);
+    const rows=await response.json();
+    if(!Array.isArray(rows)||!rows.length)throw Error("No historical OHLC data is currently available.");
+    const parsed=rows.map(k=>parseKline({t:k[0],o:k[1],h:k[2],l:k[3],c:k[4],v:k[5]})).filter(Boolean);
+    if(!parsed.length)throw Error("Historical candle data could not be validated.");
+    if(active){setCandles(parsed);setChartError("");}
+   }catch(e){if(active&&e.name!=="AbortError")setChartError(e.message||"Unable to load historical market data.");}
+   finally{if(active)setChartLoading(false);}
+  }
+  function scheduleReconnect(){
+   if(!active||retryTimer)return;
+   retryTimer=setTimeout(()=>{retryTimer=null;connectSocket();},retryDelay);
+   retryDelay=Math.min(retryDelay*2,30000);
+  }
+  function connectSocket(){
+   if(!active)return;
+   try{
+    ws=new WebSocket("wss://stream.binance.com:9443/ws/"+marketSymbol+"@kline_"+timeframe);
+    ws.onopen=()=>{retryDelay=1000;};
+    ws.onmessage=event=>{
+     if(!active)return;
+     try{
+      const payload=JSON.parse(event.data),candle=payload?.k?parseKline(payload.k):null;
+      if(!candle)return;
+      setCandles(previous=>{
+       const next=previous.slice(),last=next[next.length-1];
+       if(last&&last.timestamp===candle.timestamp)next[next.length-1]=candle;
+       else if(!last||candle.timestamp>last.timestamp)next.push(candle);
+       else return previous;
+       return next.slice(-500);
+      });
+      setChartError("");
+     }catch{setChartError("A live candle update could not be read; waiting for the next update.");}
+    };
+    ws.onerror=()=>{try{ws?.close();}catch{}};
+    ws.onclose=()=>{if(active)scheduleReconnect();};
+   }catch{scheduleReconnect();}
+  }
+  setChartLoading(true);
+  loadCandles();
+  connectSocket();
+  refreshTimer=setInterval(()=>{if(active)loadCandles();},60000);
+  return()=>{
+   active=false;
+   if(controller)controller.abort();
+   if(refreshTimer)clearInterval(refreshTimer);
+   if(retryTimer)clearTimeout(retryTimer);
+   if(ws){ws.onopen=null;ws.onmessage=null;ws.onclose=null;ws.onerror=null;ws.close();}
+  };
+ },[symbol,timeframe,chartRefresh]);
 
  const selected=markets.find(x=>x.symbol===symbol)||markets[0],tickerAgeMs=tickerUpdatedAt?Date.now()-tickerUpdatedAt:Infinity,quoteFresh=tickerStatus==="live"&&tickerAgeMs<15000,chart=candles,usd=Number(balances.find(x=>x.currency==="USD")?.amount||0),assetBalance=Number(balances.find(x=>x.currency===symbol)?.amount||0),portfolio=balances.reduce((s,b)=>s+(b.currency==="USD"?Number(b.amount):Number(b.amount)*(markets.find(m=>m.symbol===b.currency)?.price||0)),0),filtered=markets.filter(m=>(m.symbol+" "+m.name).toLowerCase().includes(search.toLowerCase()));
  const riskBudget=portfolio*(Number(riskPercent)||0)/100,entryPrice=Number(selected.price)||0,stopValue=Number(stopPrice),targetValue=Number(targetPrice),validStop=stopPrice!==""&&entryPrice>0&&(side==="buy"?stopValue>0&&stopValue<entryPrice:stopValue>entryPrice),riskDistance=validStop?Math.abs(entryPrice-stopValue):0,riskQuantity=riskDistance?riskBudget/riskDistance:0,riskNotional=riskQuantity*entryPrice,rewardDistance=targetPrice!==""&&targetValue>0?(side==="buy"?targetValue-entryPrice:entryPrice-targetValue):0,rewardRisk=validStop&&rewardDistance>0?rewardDistance/riskDistance:null;
