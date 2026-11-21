@@ -46,6 +46,12 @@ def test_password_and_signing_secret_policy(tmp_path):
     unconfigured = AuthService(str(tmp_path / "no-secret.sqlite3"), "short")
     with pytest.raises(RuntimeError, match="AUTH_TOKEN_SECRET"):
         unconfigured.register("new_user", "strong password 1234")
+    placeholder = AuthService(
+        str(tmp_path / "placeholder.sqlite3"),
+        "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS",
+    )
+    with pytest.raises(RuntimeError, match="AUTH_TOKEN_SECRET"):
+        placeholder.register("new_user", "strong password 1234")
 
 
 def test_disabled_user_token_is_rejected(tmp_path):
