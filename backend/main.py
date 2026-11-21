@@ -367,7 +367,7 @@ def _match_limit_order(c, incoming_order_id, now):
         comparator = "<=" if incoming["side"] == "buy" else ">="
         sort = "ASC" if incoming["side"] == "buy" else "DESC"
         candidates = c.execute(
-            "SELECT * FROM limit_orders WHERE symbol=? AND side=? AND status IN ('open','partially_filled') AND user_id<>? AND remaining_quantity IS NOT NULL",
+            "SELECT rowid AS insertion_seq,* FROM limit_orders WHERE symbol=? AND side=? AND status IN ('open','partially_filled') AND user_id<>? AND remaining_quantity IS NOT NULL",
             (incoming["symbol"], opposite, incoming["user_id"])
         ).fetchall()
         eligible = [r for r in candidates
@@ -375,7 +375,7 @@ def _match_limit_order(c, incoming_order_id, now):
                     and ((Decimal(r["limit_price"]) <= Decimal(incoming["limit_price"])) if incoming["side"] == "buy"
                          else (Decimal(r["limit_price"]) >= Decimal(incoming["limit_price"])))]
         eligible.sort(key=lambda r: ((Decimal(r["limit_price"]) if incoming["side"] == "buy" else -Decimal(r["limit_price"])),
-                                     r["created_at"], r["id"]))
+                                     r["created_at"], r["insertion_seq"]))
         maker = eligible[0] if eligible else None
         if not maker:
             break
