@@ -20,3 +20,53 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: https://jacksonmariso02-crypto.github.io
+
+  - type: web
+    name: zencrypto-exchange
+    runtime: python
+    plan: starter
+    region: oregon
+    rootDir: exchange-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: zencrypto-exchange-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: EXCHANGE_ID
+        value: binance
+      - key: EXCHANGE_SANDBOX
+        value: "true"
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        value: https://jacksonmariso02-crypto.github.io
+      - key: PAPER_ENGINE_DB_PATH
+        value: /var/data/zencrypto-paper-engine.sqlite3
+      - key: ZENCRYPTO_ADMIN_TOKEN
+        generateValue: true
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
+      - key: PAPER_MAX_ORDER_NOTIONAL
+        value: "100000"
+      - key: PAPER_ORDER_RATE_LIMIT
+        value: "30"
+      - key: PAPER_ORDER_RATE_WINDOW_SECONDS
+        value: "60"
+      - key: AUTH_TOKEN_TTL_SECONDS
+        value: "900"
+      - key: AUTH_ATTEMPT_RATE_LIMIT
+        value: "10"
+      - key: AUTH_ATTEMPT_RATE_WINDOW_SECONDS
+        value: "300"
+      - key: PAPER_MAKER_FEE_BPS
+        value: "10"
+      - key: PAPER_TAKER_FEE_BPS
+        value: "20"
+      - key: MARKET_STREAM_INTERVAL_SECONDS
+        value: "2"
+      - key: PAPER_BOOK_STREAM_INTERVAL_SECONDS
+        value: "0.5"
