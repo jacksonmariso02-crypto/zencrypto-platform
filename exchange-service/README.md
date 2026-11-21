@@ -104,3 +104,12 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - The initial explicit paper-market registry contains BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT, XRP/USDT, and DOGE/USDT. Other symbols are rejected until a market rule is deliberately configured.
 - Current simulated defaults are maintained in `market_rules.py`. They are development defaults, not a live exchange's current filters. Before any real exchange integration, synchronize rules from the venue's authoritative exchange-info endpoint, persist versioned snapshots, and define asset-specific rounding and precision policies.
 - Display precision is metadata only; order validity uses exact Decimal multiples, not floating-point rounding. The engine rejects invalid input rather than silently rounding user orders.
+
+
+## Paper-market OHLCV candles
+- `GET /api/v1/paper/markets/{symbol}/candles?timeframe=1m&limit=100&since=...` returns candles derived exclusively from persisted fills in ZenCrypto's paper matching engine. It does not query or mix external exchange prices.
+- Supported intervals: `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, and `1d`. `limit` is 1-1000. Optional `since` is a UTC Unix timestamp in milliseconds.
+- Candle timestamps are UTC bucket-start milliseconds. OHLC values follow paper trade chronology; volume is the exact Decimal sum of executed base-asset quantities.
+- The endpoint returns only buckets with at least one paper fill. It does not fabricate empty candles or seed history. Markets without paper fills return an empty array.
+- A SQLite index on `(symbol, created_at, id)` supports time-bucket selection. Candle values are aggregated in Python Decimal arithmetic to avoid binary floating-point volume errors.
+- Existing `/api/v1/markets/{symbol}/candles` remains the external CCXT venue's OHLCV endpoint. Use that for reference-market candles and the new `/api/v1/paper/markets/...` endpoint for ZenCrypto's own simulated market history.
