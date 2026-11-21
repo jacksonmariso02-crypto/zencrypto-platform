@@ -247,18 +247,13 @@ class PaperMatchingEngine:
         postings = [
             (f"user:{buyer_id}:locked", quote_asset, "debit", buyer_reserved),
             (f"user:{seller_id}:available", quote_asset, "credit", execution_value),
-            (f"user:seller-clearing:{seller_id}", base_asset, "debit", quantity),
-            (f"user:buyer-clearing:{buyer_id}", base_asset, "credit", quantity),
-            (f"user:seller-clearing:{seller_id}", quote_asset, "debit", execution_value),
+            (f"user:{seller_id}:locked", base_asset, "debit", quantity),
+            (f"user:{buyer_id}:available", base_asset, "credit", quantity),
         ]
-        # The base asset moves from the seller's locked bucket to the buyer's
-        # available bucket; quote proceeds move from buyer reserve to seller.
-        postings[2] = (f"user:{seller_id}:locked", base_asset, "debit", quantity)
-        postings[3] = (f"user:{buyer_id}:available", base_asset, "credit", quantity)
         if refund > 0:
             postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
-        # Quote postings balance at the buyer's reserved limit; base postings
-        # balance between seller locked and buyer available.
+        # For each asset, buyer reserve equals seller proceeds plus buyer refund;
+        # seller's locked base equals the buyer's received base.
         PaperLedger._post(
             db, f"paper-trade-settlement:{trade_id}", "trade_settlement",
             f"Settle paper trade {trade_id}", postings,
