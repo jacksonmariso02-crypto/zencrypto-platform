@@ -357,3 +357,47 @@ def test_external_depth_endpoint_normalizes_provider_book(api, monkeypatch):
     assert payload["metrics"]["best_ask"] == "50010"
     assert payload["bids"][0]["cumulative_quantity"] == "1"
     assert payload["asks"][1]["cumulative_quantity"] == "7"
+
+
+def test_paper_orderbook_websocket_sends_snapshot_then_price_level_delta(api, monkeypatch):
+    async def fetch_snapshot(symbol):
+        return await main.run_in_threadpool(main.PAPER_ENGINE.orderbook_depth, symbol, 100)
+
+    monkeypatch.setattr(
+        main, "PAPER_ORDERBOOK_HUB",
+        main.PaperOrderBookHub(fetch_snapshot, interval_seconds=0.25),
+    )
+    with api.websocket_connect("/ws/v1/paper/orderbook/BTC-USDT") as websocket:
+        ready = websocket.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["source"] == "zencrypto_paper"
+        assert ready["symbol"] == "BTC/USDT"
+
+        initial = websocket.receive_json()
+        assert initial["type"] == "depth_snapshot"
+        assert initial["sequence"] == 1
+        assert initial["data"]["bids"] == []
+
+        response = api.post(
+            "/api/v1/paper/orders",
+            headers=auth(),
+            json={
+                "symbol": "BTC/USDT", "side": "buy", "quantity": "0.001",
+                "price": "40000", "client_order_id": "ws-depth-bid-0001",
+            },
+        )
+        assert response.status_code == 200
+
+        delta = websocket.receive_json()
+        assert delta["type"] == "depth_delta"
+        assert delta["sequence"] == 2
+        assert delta["previous_sequence"] == 1
+        assert delta["bids"] == [["40000", "0.001"]]
+        assert delta["asks"] == []
+
+
+def test_paper_orderbook_websocket_rejects_invalid_symbol(api):
+    with pytest.raises(WebSocketDisconnect) as disconnected:
+        with api.websocket_connect("/ws/v1/paper/orderbook/NOT%20VALID"):
+            pass
+    assert disconnected.value.code == 1008
