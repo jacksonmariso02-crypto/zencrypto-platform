@@ -398,3 +398,18 @@ def test_ledger_integrity_endpoint_detects_corrupted_posting(tmp_path, monkeypat
         assert body["status"] == "integrity_issue"
         assert body["issue_count"] == 1
         assert body["issues"][0]["currency"] == "USD"
+
+
+def test_paper_order_response_discloses_client_reference_price(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "price-provenance.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"provenance@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"provenance@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        client.post("/sandbox/faucet", headers={**headers,"Idempotency-Key":"provenance-faucet-01"}, json={"amount":"100"})
+        order = client.post("/trade/orders", headers={**headers,"Idempotency-Key":"provenance-buy-0001"}, json={"symbol":"BTC","side":"buy","quote_amount":"25.00","reference_price":"50000"})
+        assert order.status_code == 201, order.text
+        assert order.json()["execution_model"] == "IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE"
+        assert order.json()["price_source"] == "CLIENT_SUPPLIED_REFERENCE"
