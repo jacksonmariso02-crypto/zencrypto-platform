@@ -401,3 +401,29 @@ def test_paper_orderbook_websocket_rejects_invalid_symbol(api):
         with api.websocket_connect("/ws/v1/paper/orderbook/NOT%20VALID"):
             pass
     assert disconnected.value.code == 1008
+
+
+def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkeypatch):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    response = api.get("/ready")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["checks"] == {
+        "database": True,
+        "user_auth_secret": True,
+        "admin_token": True,
+    }
+    assert payload["sandbox"] is True
+    assert payload["live_trading_enabled"] is False
+
+
+def test_exchange_readiness_fails_closed_when_auth_secret_missing(api, monkeypatch):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    response = api.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["status"] == "not_ready"
+    assert response.json()["detail"]["checks"]["database"] is True
+    assert response.json()["detail"]["checks"]["user_auth_secret"] is False
