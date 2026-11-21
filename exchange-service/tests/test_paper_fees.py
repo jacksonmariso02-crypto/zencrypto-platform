@@ -108,3 +108,58 @@ def test_fee_rates_are_bounded_to_ten_percent(tmp_path):
         PaperMatchingEngine(str(tmp_path / "invalid-fee.sqlite3"), maker_fee_bps=1001)
     with pytest.raises(ValueError, match="between 0 and 1000"):
         PaperMatchingEngine(str(tmp_path / "invalid-fee2.sqlite3"), taker_fee_bps=-1)
+
+
+def test_admin_fee_endpoint_reports_only_platform_fee_account(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    import main
+
+    path = str(tmp_path / "fee-api.sqlite3")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "fee-admin-token")
+    monkeypatch.setattr(
+        main, "PAPER_ENGINE",
+        PaperMatchingEngine(path, maker_fee_bps=10, taker_fee_bps=20),
+    )
+    monkeypatch.setattr(main, "PAPER_LEDGER", PaperLedger(path))
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer fee-admin-token"}
+
+    for account in ("endpoint_seller", "endpoint_buyer"):
+        response = client.post(
+            "/api/v1/paper/accounts", headers=headers, json={"account_id": account}
+        )
+        assert response.status_code == 200
+    client.post(
+        "/api/v1/paper/accounts/endpoint_seller/credit",
+        headers=headers,
+        json={"asset": "BTC", "amount": "1", "idempotency_key": "endpoint-seller-btc"},
+    )
+    client.post(
+        "/api/v1/paper/accounts/endpoint_buyer/credit",
+        headers=headers,
+        json={"asset": "USDT", "amount": "200", "idempotency_key": "endpoint-buyer-usdt"},
+    )
+    client.post(
+        "/api/v1/paper/accounts/endpoint_seller/orders",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT", "side": "sell", "quantity": "1",
+            "price": "100", "client_order_id": "endpoint-seller-ask",
+        },
+    )
+    client.post(
+        "/api/v1/paper/accounts/endpoint_buyer/orders",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "quantity": "1",
+            "price": "100", "client_order_id": "endpoint-buyer-bid",
+        },
+    )
+
+    fees = client.get("/api/v1/paper/fees", headers=headers)
+    assert fees.status_code == 200
+    assert fees.json() == [
+        {"asset": "BTC", "amount": "0.002"},
+        {"asset": "USDT", "amount": "0.100"},
+    ]
+    assert client.get("/api/v1/paper/fees").status_code == 401
