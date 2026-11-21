@@ -12,6 +12,7 @@ import re
 
 from paper_ledger import InsufficientPaperFunds, PaperLedger
 from market_rules import MarketRuleRegistry
+from orderbook_depth import build_depth
 
 
 class IdempotencyConflict(ValueError):
@@ -406,6 +407,24 @@ class PaperMatchingEngine:
                 grouped[p] = grouped.get(p, Decimal("0")) + Decimal(order["remaining"])
             return [{"price": price, "quantity": str(qty)} for price, qty in grouped.items()]
         return {"symbol": symbol, "bids": levels(bids), "asks": levels(asks)}
+
+    def orderbook_depth(self, symbol, limit=50):
+        normalized = str(symbol).strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,15}/[A-Z0-9]{2,15}", normalized):
+            raise ValueError("Use a symbol such as BTC/USDT.")
+        if not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100.")
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                """SELECT side, price, remaining
+                   FROM paper_orders
+                   WHERE symbol=? AND status IN ('open','partially_filled')
+                     AND CAST(remaining AS NUMERIC) > 0""",
+                (normalized,),
+            ).fetchall()
+        bids = [(row["price"], row["remaining"]) for row in rows if row["side"] == "buy"]
+        asks = [(row["price"], row["remaining"]) for row in rows if row["side"] == "sell"]
+        return build_depth(normalized, bids, asks, limit=limit, source="zencrypto_paper")
 
     def list_candles(self, symbol, timeframe="1h", limit=100, since=None):
         """Aggregate durable paper fills into OHLCV candles; timestamps are UTC milliseconds."""
