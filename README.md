@@ -5,7 +5,7 @@ ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository 
 ## Paper trading API additions
 
 - `GET /trade/assets` — authenticated canonical list of supported paper assets.
-- `GET /trade/orders` — authenticated, filtered and paginated paper order history.
+- `GET /trade/orders` — authenticated, filtered and paginated paper order history; currently only `filled` status is supported because orders execute immediately.
 - `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header.
 
 All trading endpoints operate in `PAPER_ONLY` mode. Do not treat simulated fills, balances or summaries as real exchange activity.
