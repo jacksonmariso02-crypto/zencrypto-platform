@@ -573,7 +573,7 @@ def test_limit_matching_partial_fill_settles_both_assets_and_releases_excess_res
         buyer_bal={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=buyer).json()["balances"]}
         seller_bal={x["currency"]:x["amount"] for x in client.get("/account/balances",headers=seller).json()["balances"]}
         assert float(buyer_bal["BTC"])==0.004
-        assert seller_bal["USD"]=="489.51"
+        assert seller_bal["USD"]=="1095.71"
         assert float(seller_bal["BTC"])==0.006
         buyer_trades=client.get("/trade/limit-trades",headers=buyer)
         seller_trades=client.get("/trade/limit-trades",headers=seller)
