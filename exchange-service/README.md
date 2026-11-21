@@ -34,7 +34,7 @@ This is a separate server-side service. GitHub Pages is static hosting and canno
 - `GET /api/v1/paper/trades`
 - `DELETE /api/v1/paper/orders/{order_id}`
 
-The SQLite-backed simulation supports price-time priority, partial fills, resting maker-price execution, cancellation, order-book snapshots, trade history, and idempotent client order IDs. The paper ledger adds isolated simulated accounts, balanced double-entry journal entries, exact Decimal balance calculations, available/locked buckets, idempotent simulated credits, and account-scoped ledger history. Paper credits are administrator-issued test funds only. These components do not call CCXT, process real deposits, or move real assets. Important: the ledger is not yet wired into order reservation and trade settlement, so balances do not yet constrain matching orders. The prototype is not a public multi-user exchange.
+The SQLite-backed simulation supports price-time priority, partial fills, resting maker-price execution, cancellation, order-book snapshots, trade history, and idempotent client order IDs. The paper ledger adds isolated simulated accounts, balanced double-entry journal entries, exact Decimal balance calculations, available/locked buckets, idempotent simulated credits, and account-scoped ledger history. Paper credits are administrator-issued test funds only. Account-backed paper orders reserve funds, settle fills, and release cancelled-order reserves through the same SQLite transaction as the matching engine. These components do not call CCXT, process real deposits, or move real assets. The prototype is not a public multi-user exchange.
 
 ## Authenticated external exchange API
 - `GET /api/v1/account/balance`
@@ -43,7 +43,7 @@ The SQLite-backed simulation supports price-time priority, partial fills, restin
 - `DELETE /api/v1/orders/{order_id}?symbol=BTC-USDT`
 
 ## Before real-money trading
-This starter is not a production exchange or custody system. The paper matching engine persists simulated orders and trades in SQLite, but there is not yet a per-user double-entry asset ledger, user authorization, rate limiting, production-grade audit pipeline, withdrawal controls, reconciliation, or operational monitoring. Do not enable live trading until those controls, legal/compliance review, and end-to-end testnet validation are complete. A single shared server API key/token is suitable only for a controlled private prototype, not a public multi-user exchange.
+This starter is not a production exchange or custody system. The paper matching engine persists simulated orders and trades in SQLite, but there is not yet end-user authentication/authorization, a distributed rate limiter, production-grade audit pipeline, withdrawal controls, reconciliation, or operational monitoring. Do not enable live trading until those controls, legal/compliance review, and end-to-end testnet validation are complete. A single shared server API key/token is suitable only for a controlled private prototype, not a public multi-user exchange.
 
 
 ## Account-backed paper order settlement
@@ -62,3 +62,11 @@ These endpoints still use the prototype's single administrator Bearer token. The
 ## Paper self-trade prevention
 
 For balance-backed paper orders, the matcher skips resting orders owned by the same account as the incoming order. It continues scanning other eligible counterparties in price/time order. Skipped resting orders and their reserves remain unchanged; an unmatched incoming order remains open with its reserve locked until filled or cancelled. This is account-level self-trade prevention only, not detection of common beneficial ownership across multiple accounts. No production-grade surveillance, identity verification, or anti-manipulation controls are implied.
+
+
+## Paper-order risk guardrails
+- `PAPER_MAX_ORDER_NOTIONAL` caps quantity × limit price (default 100000 paper quote units).
+- `PAPER_ORDER_RATE_LIMIT` and `PAPER_ORDER_RATE_WINDOW_SECONDS` configure a per-client-IP sliding-window limit (defaults 30 requests per 60 seconds).
+- Oversized paper orders return HTTP 422. Requests over the rate limit return HTTP 429 with a `Retry-After` header.
+
+The current limiter is process-local and uses the direct ASGI client address. It is suitable only as a basic prototype safeguard: it is not shared across multiple workers/instances and must not trust arbitrary forwarded-IP headers. Before public deployment, use a shared Redis/API-gateway limiter behind a correctly configured trusted proxy, and add per-user quotas after real user authentication exists.
