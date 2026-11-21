@@ -343,15 +343,14 @@ async def list_enabled_markets():
 @app.get("/api/v1/markets/{symbol:path}")
 async def get_enabled_market(symbol: str):
     normalized = normalize_symbol(symbol)
-    try:
-        return await run_in_threadpool(
-            lambda: next(
-                market for market in PAPER_ENGINE.market_rules.list_markets()
-                if market["symbol"] == normalized
-            )
-        )
-    except StopIteration as exc:
-        raise HTTPException(404, "Market not found or trading is disabled.") from exc
+    market = next(
+        (item for item in PAPER_ENGINE.market_rules.list_markets()
+         if item["symbol"] == normalized),
+        None,
+    )
+    if market is None:
+        raise HTTPException(404, "Market not found or trading is disabled.")
+    return market
 
 
 @app.post("/api/v1/paper/orders")
