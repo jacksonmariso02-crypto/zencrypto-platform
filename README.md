@@ -6,6 +6,9 @@ ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository 
 
 - `GET /trade/assets` — authenticated canonical list of supported paper assets.
 - `POST /trade/preview` — authenticated, read-only server-side estimate of paper order quantity, fee and available balance; uses a client-supplied reference price and does not execute or reserve funds.
+- `POST /trade/limit-orders` — creates a resting paper limit order and reserves simulated quote funds for buys or base assets for sells; requires `Idempotency-Key`. Orders remain open and are not matched yet.
+- `GET /trade/limit-orders` — lists the authenticated user's resting paper limit orders.
+- `POST /trade/limit-orders/{order_id}/cancel` — cancels an open paper limit order and releases its reserved simulated balance through a balanced ledger journal.
 - `GET /account/ledger/verify` — authenticated, read-only per-user double-entry integrity check for paper ledger journals.
 - `GET /trade/orders` — authenticated, filtered and paginated paper order history; currently only `filled` status is supported because orders execute immediately.
 - `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header and returns `execution_model=IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE` plus `price_source=CLIENT_SUPPLIED_REFERENCE`.
