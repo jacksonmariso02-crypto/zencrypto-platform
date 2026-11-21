@@ -324,3 +324,22 @@ def test_supported_paper_assets_endpoint_is_authenticated_and_canonical(tmp_path
         assert {item["symbol"] for item in body["assets"]} == {"BTC", "ETH", "SOL", "BNB", "XRP"}
         assert all(item["quote"] == "USD" and item["mode"] == "PAPER_ONLY" for item in body["assets"])
         assert body["mode"] == "PAPER_ONLY"
+
+ 
+ 
+def test_order_history_rejects_unsupported_asset_and_unimplemented_status_filters(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB", str(tmp_path / "order-filters.db"))
+    main.init()
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client:
+        client.post("/auth/register", json={"email":"filters@example.test","password":"CorrectHorseBattery12"})
+        login = client.post("/auth/login", json={"email":"filters@example.test","password":"CorrectHorseBattery12"})
+        headers = {"Authorization":"Bearer " + login.json()["access_token"]}
+        unsupported = client.get("/trade/orders?symbol=DOGE", headers=headers)
+        assert unsupported.status_code == 422
+        open_orders = client.get("/trade/orders?status=open", headers=headers)
+        assert open_orders.status_code == 422
+        assert "immediate-fill" in open_orders.json()["detail"]
+        filled = client.get("/trade/orders?status=filled", headers=headers)
+        assert filled.status_code == 200
+        assert filled.json()["orders"] == []
