@@ -164,16 +164,17 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
         market = markets[symbol]
         try:
             amount_text = client.amount_to_precision(symbol, str(body.amount))
-            amount = Decimal(amount_text)
-            if amount != body.amount:
+            amount_decimal = Decimal(amount_text)
+            if amount_decimal != body.amount:
                 raise HTTPException(422, "Order amount exceeds the precision supported by this market.")
             amount_limits = market.get("limits", {}).get("amount", {})
             minimum = amount_limits.get("min")
             maximum = amount_limits.get("max")
-            if minimum is not None and amount < Decimal(str(minimum)):
+            if minimum is not None and amount_decimal < Decimal(str(minimum)):
                 raise HTTPException(422, "Order amount is below the market minimum.")
-            if maximum is not None and amount > Decimal(str(maximum)):
+            if maximum is not None and amount_decimal > Decimal(str(maximum)):
                 raise HTTPException(422, "Order amount exceeds the market maximum.")
+            amount = float(amount_decimal)
             price = None
             if body.price is not None:
                 price_text = client.price_to_precision(symbol, str(body.price))
