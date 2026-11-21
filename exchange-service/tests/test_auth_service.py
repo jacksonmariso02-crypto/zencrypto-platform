@@ -130,5 +130,6 @@ def test_self_service_paper_api_enforces_account_ownership(monkeypatch, tmp_path
         {"asset": "USDT", "available": "100", "locked": "0"}
     ]
     assert client.get("/api/v1/me/balances", headers=bob_headers).json() == [
-        {"asset": "BTC", "available": "1", "locked": "0"}
+        {"asset": "BTC", "available": "1", "locked": "0"},
+        {"asset": "USDT", "available": "400", "locked": "0"},
     ]
