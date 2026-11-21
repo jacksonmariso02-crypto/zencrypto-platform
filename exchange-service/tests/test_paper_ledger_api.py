@@ -46,7 +46,7 @@ def test_paper_ledger_api_lifecycle(monkeypatch, tmp_path):
         "/api/v1/paper/accounts/api_user_01/ledger", headers=auth()
     )
     assert entries.status_code == 200
-    assert len(entries.json()) == 2
+    assert len(entries.json()) == 3  # credit line plus both sides of the bucket transfer
 
     insufficient = client.post(
         "/api/v1/paper/accounts/api_user_01/bucket-transfer",
