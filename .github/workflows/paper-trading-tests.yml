@@ -26,4 +26,5 @@ jobs:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt -r exchange-service/requirements.txt httpx pytest
       - run: python -m py_compile backend/main.py
-      - run: pytest -q
+      - run: pytest -q tests/test_paper_trading.py
+      - run: pytest -q exchange-service/tests/test_api.py
