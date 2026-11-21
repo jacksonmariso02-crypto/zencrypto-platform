@@ -35,9 +35,9 @@ def test_price_priority_then_time_priority(engine):
     second = place(engine, "sell", "0.5", "99", "ask-second-0002")
     third = place(engine, "sell", "0.5", "100", "ask-third-0003")
 
-    bid = place(engine, "buy", "1.3", "101", "bid-batch-0001")
+    bid = place(engine, "buy", "1.7", "101", "bid-batch-0001")
     assert bid["status"] == "partially_filled"
-    assert Decimal(bid["remaining"]) == Decimal("0.3")
+    assert Decimal(bid["remaining"]) == Decimal("0.2")
 
     trades = engine.list_trades("BTC/USDT")
     assert [t["maker_order_id"] for t in reversed(trades)] == [
