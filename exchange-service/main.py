@@ -465,6 +465,8 @@ async def market_data_status():
         "customer_order_routing_enabled": False,
         "customer_account_linking_enabled": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
         "credential_vault_configured": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
+        "customer_account_verification_environment": "live_exchange_read_only",
+        "order_execution_environment": "sandbox_locked",
     }
 
 
