@@ -226,18 +226,18 @@ function App(){
    try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),8000);
-    let response;
-    try{response=await fetch(EXCHANGE_API+"/health",{signal:controller.signal,cache:"no-store"});}
-    finally{clearTimeout(timeout);}
-    const health=await response.json().catch(()=>({}));
-    if(!response.ok)throw Error("Health endpoint HTTP "+response.status+(health.detail?": "+String(health.detail):""));
-    if(health.status!=="ok"||health.exchange!=="binance")throw Error("Unexpected exchange connector health response.");
-    const statusResponse=await fetch(EXCHANGE_API+"/api/v1/market-data/status",{signal:controller.signal,cache:"no-store"});
-    const status=await statusResponse.json().catch(()=>({}));
-    if(!statusResponse.ok)throw Error("Market status HTTP "+statusResponse.status+(status.detail?": "+String(status.detail):""));
-    if(!active)return;
-    setExchangeStatus({...status,build_revision:health.build_revision,health_verified:true});
-    setExchangeStatusError("");
+    try{
+     const response=await fetch(EXCHANGE_API+"/health",{signal:controller.signal,cache:"no-store"});
+     const health=await response.json().catch(()=>({}));
+     if(!response.ok)throw Error("Health endpoint HTTP "+response.status+(health.detail?": "+String(health.detail):""));
+     if(health.status!=="ok"||health.exchange!=="binance")throw Error("Unexpected exchange connector health response.");
+     const statusResponse=await fetch(EXCHANGE_API+"/api/v1/market-data/status",{signal:controller.signal,cache:"no-store"});
+     const status=await statusResponse.json().catch(()=>({}));
+     if(!statusResponse.ok)throw Error("Market status HTTP "+statusResponse.status+(status.detail?": "+String(status.detail):""));
+     if(!active)return;
+     setExchangeStatus({...status,build_revision:health.build_revision,health_verified:true});
+     setExchangeStatusError("");
+    }finally{clearTimeout(timeout);}
    }catch(e){
     if(active){setExchangeStatusError(e.name==="AbortError"?"Exchange connector health check timed out.":e.message||"Connector unavailable.");setExchangeStatus(null);}
    }finally{
