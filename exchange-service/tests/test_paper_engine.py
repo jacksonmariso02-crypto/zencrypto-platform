@@ -172,8 +172,8 @@ def test_order_funds_audit_matches_reserves_settlements_and_cancel_releases(engi
     engine.cancel_order(resting["id"])
 
     result = engine.audit_order_funds_integrity()
-    assert result["status"] == "ok"
-    assert all(result["checks"].values())
+    assert result["status"] == "ok", result["issues"]
+    assert all(result["checks"].values()), result["issues"]
     assert result["counts"]["orders_checked"] == 3
     assert result["counts"]["trades_checked"] == 1
     assert ask["status"] == "open"
