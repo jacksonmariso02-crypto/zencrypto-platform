@@ -482,6 +482,151 @@ class PaperMatchingEngine:
             "source": "paper_orders_and_trades",
         }
 
+    def audit_order_funds_integrity(self):
+        """Reconcile account-backed paper orders and fills to their ledger postings."""
+        with closing(self._connect()) as db:
+            tables = {row["name"] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            required = {"ledger_transactions", "ledger_entries"}
+            if not required.issubset(tables):
+                return {
+                    "mode": "paper",
+                    "status": "attention_required",
+                    "checks": {"ledger_schema_available": False},
+                    "counts": {"orders_checked": 0, "trades_checked": 0},
+                    "issues": {"missing_ledger_schema": sorted(required - tables)},
+                    "source": "paper_orders_and_double_entry_ledger",
+                }
+
+            orders = db.execute(
+                "SELECT * FROM paper_orders WHERE account_id IS NOT NULL ORDER BY id"
+            ).fetchall()
+            trades = db.execute("SELECT * FROM paper_trades ORDER BY id").fetchall()
+            order_by_id = {row["id"]: row for row in orders}
+
+            def ledger_postings(key):
+                tx = db.execute(
+                    "SELECT id FROM ledger_transactions WHERE idempotency_key=?", (key,)
+                ).fetchone()
+                if tx is None:
+                    return None
+                return [
+                    (row["account_code"], row["asset"], row["debit"], row["credit"])
+                    for row in db.execute(
+                        """SELECT account_code,asset,debit,credit FROM ledger_entries
+                           WHERE transaction_id=? ORDER BY id""", (tx["id"],)
+                    ).fetchall()
+                ]
+
+            def encoded(postings):
+                return [
+                    (account, asset,
+                     str(amount) if side == "debit" else "0",
+                     str(amount) if side == "credit" else "0")
+                    for account, asset, side, amount in postings
+                ]
+
+            issues = {
+                "missing_or_mismatched_reserves": [],
+                "missing_or_mismatched_settlements": [],
+                "missing_or_mismatched_cancellations": [],
+                "account_order_without_account": [],
+            }
+
+            for order in orders:
+                base_asset, quote_asset = order["symbol"].split("/", 1)
+                reserve_asset = quote_asset if order["side"] == "buy" else base_asset
+                reserve_amount = (
+                    Decimal(order["quantity"]) * Decimal(order["price"])
+                    if order["side"] == "buy" else Decimal(order["quantity"])
+                )
+                account_id = order["account_id"]
+                expected = encoded([
+                    (f"user:{account_id}:available", reserve_asset, "debit", reserve_amount),
+                    (f"user:{account_id}:locked", reserve_asset, "credit", reserve_amount),
+                ])
+                if ledger_postings(f"paper-order-reserve:{order['id']}") != expected:
+                    issues["missing_or_mismatched_reserves"].append(order["id"])
+
+                if order["status"] == "cancelled":
+                    remaining = Decimal(order["remaining"])
+                    release_amount = (
+                        remaining * Decimal(order["price"])
+                        if order["side"] == "buy" else remaining
+                    )
+                    expected_release = encoded([
+                        (f"user:{account_id}:locked", reserve_asset, "debit", release_amount),
+                        (f"user:{account_id}:available", reserve_asset, "credit", release_amount),
+                    ]) if release_amount > 0 else []
+                    if ledger_postings(f"paper-order-cancel:{order['id']}") != expected_release:
+                        issues["missing_or_mismatched_cancellations"].append(order["id"])
+
+            for trade in trades:
+                maker = order_by_id.get(trade["maker_order_id"])
+                taker = order_by_id.get(trade["taker_order_id"])
+                if maker is None and taker is None:
+                    # Legacy/admin-only orders have no account-backed ledger settlement.
+                    continue
+                if maker is None or taker is None:
+                    issues["account_order_without_account"].append(trade["id"])
+                    continue
+
+                base_asset, quote_asset = trade["symbol"].split("/", 1)
+                quantity = Decimal(trade["quantity"])
+                price = Decimal(trade["price"])
+                execution_value = price * quantity
+                buy_order = taker if taker["side"] == "buy" else maker
+                sell_order = maker if taker["side"] == "sell" else taker
+                buyer_id, seller_id = buy_order["account_id"], sell_order["account_id"]
+                if not buyer_id or not seller_id:
+                    issues["account_order_without_account"].append(trade["id"])
+                    continue
+
+                buyer_reserved = Decimal(buy_order["price"]) * quantity
+                refund = buyer_reserved - execution_value
+                buyer_is_maker = buy_order["id"] == maker["id"]
+                seller_is_maker = sell_order["id"] == maker["id"]
+                buyer_rate = self.maker_fee_bps if buyer_is_maker else self.taker_fee_bps
+                seller_rate = self.maker_fee_bps if seller_is_maker else self.taker_fee_bps
+                buyer_fee = quantity * Decimal(buyer_rate) / Decimal("10000")
+                seller_fee = execution_value * Decimal(seller_rate) / Decimal("10000")
+                postings = [
+                    (f"user:{buyer_id}:locked", quote_asset, "debit", buyer_reserved),
+                    (f"user:{seller_id}:available", quote_asset, "credit", execution_value - seller_fee),
+                    (f"user:{seller_id}:locked", base_asset, "debit", quantity),
+                    (f"user:{buyer_id}:available", base_asset, "credit", quantity - buyer_fee),
+                ]
+                if seller_fee > 0:
+                    postings.append(("platform:fees", quote_asset, "credit", seller_fee))
+                if buyer_fee > 0:
+                    postings.append(("platform:fees", base_asset, "credit", buyer_fee))
+                if refund > 0:
+                    postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
+                if ledger_postings(f"paper-trade-settlement:{trade['id']}") != encoded(postings):
+                    issues["missing_or_mismatched_settlements"].append(trade["id"])
+
+        issue_counts = {key: len(value) for key, value in issues.items()}
+        clean = not any(issue_counts.values())
+        return {
+            "mode": "paper",
+            "status": "ok" if clean else "attention_required",
+            "checks": {
+                "ledger_schema_available": True,
+                "order_reserves_match_ledger": issue_counts["missing_or_mismatched_reserves"] == 0,
+                "trade_settlements_match_ledger": issue_counts["missing_or_mismatched_settlements"] == 0,
+                "cancel_releases_match_ledger": issue_counts["missing_or_mismatched_cancellations"] == 0,
+                "account_orders_have_account_counterparties": issue_counts["account_order_without_account"] == 0,
+            },
+            "counts": {
+                "orders_checked": len(orders),
+                "trades_checked": len(trades),
+                "issues": issue_counts,
+            },
+            "issues": {key: value[:50] for key, value in issues.items()},
+            "source": "paper_orders_and_double_entry_ledger",
+        }
+
     def orderbook(self, symbol, limit=50):
         symbol = symbol.strip().upper()
         with closing(self._connect()) as db:
