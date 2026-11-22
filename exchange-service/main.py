@@ -195,7 +195,7 @@ def _customer_connection(user_id: str):
         "status": row["status"],
         "connected_at": row["connected_at"],
         "last_verified_at": row["last_verified_at"],
-        "live_order_routing_enabled": False,
+        "live_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED and LIVE_TRADING_ENABLED and not SANDBOX),
     }
 
 
@@ -766,8 +766,8 @@ async def market_data_status():
         "polling_interval_seconds": MARKET_STREAM_INTERVAL_SECONDS,
         "sandbox": SANDBOX,
         "execution_environment": "sandbox" if SANDBOX else "live_provider_configured",
-        "live_order_placement_enabled": False,
-        "customer_order_routing_enabled": False,
+        "live_order_placement_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED and LIVE_TRADING_ENABLED and not SANDBOX),
+        "customer_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED and LIVE_TRADING_ENABLED and not SANDBOX),
         "customer_account_linking_enabled": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
         "credential_vault_configured": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
         "customer_account_verification_environment": "live_exchange_read_only",
