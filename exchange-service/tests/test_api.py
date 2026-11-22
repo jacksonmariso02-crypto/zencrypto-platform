@@ -53,6 +53,7 @@ def test_market_data_status_never_claims_live_order_routing_by_default(monkeypat
 
 def test_health_reports_sandbox_defaults(monkeypatch):
     monkeypatch.setenv("RENDER_GIT_COMMIT", "health-revision-456")
+    monkeypatch.setattr(main, "EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "c" * 48)
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
