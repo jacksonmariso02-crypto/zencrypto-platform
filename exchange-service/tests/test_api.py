@@ -274,3 +274,36 @@ def test_market_order_uses_ask_for_buy_notional_estimate(monkeypatch):
         main.ADMIN_TOKEN = old_token
         main.SANDBOX = old_sandbox
         main.LIVE_TRADING_ENABLED = old_live
+
+
+def test_live_order_configuration_is_never_allowed(monkeypatch):
+    old_sandbox = main.SANDBOX
+    old_live = main.LIVE_TRADING_ENABLED
+    old_token = main.ADMIN_TOKEN
+    try:
+        main.ADMIN_TOKEN = "test-token"
+        main.SANDBOX = True
+        main.LIVE_TRADING_ENABLED = True
+        monkeypatch.setattr(
+            main, "exchange_client",
+            lambda private=False: (_ for _ in ()).throw(AssertionError("live route must not create an exchange client")),
+        )
+        response = client.post(
+            "/api/v1/orders",
+            headers={"Authorization": "Bearer test-token"},
+            json={"symbol": "BTC/USDT", "side": "buy", "type": "market", "amount": "0.001"},
+        )
+        assert response.status_code == 403
+        assert "not supported" in response.json()["detail"].lower()
+    finally:
+        main.ADMIN_TOKEN = old_token
+        main.SANDBOX = old_sandbox
+        main.LIVE_TRADING_ENABLED = old_live
+
+
+def test_market_status_never_advertises_live_customer_order_routing():
+    response = client.get("/api/v1/market-data/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["live_order_placement_enabled"] is False
+    assert body["customer_order_routing_enabled"] is False
