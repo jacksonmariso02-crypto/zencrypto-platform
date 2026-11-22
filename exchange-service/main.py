@@ -917,7 +917,7 @@ async def receive_bitgo_webhook(request: Request):
             ).fetchone()
             if existing is None:
                 raise HTTPException(503, "Webhook deduplication state could not be verified.")
-            if not hmac.compare_digest(str(existing["payload_hash"]), digest):
+            if not hmac.compare_digest(str(existing[0]), digest):
                 raise HTTPException(409, "This BitGo event ID was already received with different payload contents. The event is quarantined for manual review.")
     return {
         "accepted": True,
