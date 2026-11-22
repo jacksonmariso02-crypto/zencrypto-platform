@@ -573,3 +573,19 @@ def test_order_trade_reconciliation_endpoint_is_admin_only_and_read_only(api):
     assert payload["status"] == "ok"
     assert payload["counts"]["orders"] == 2
     assert payload["counts"]["trades"] == 1
+
+
+def test_order_funds_reconciliation_endpoint_is_admin_only_and_reports_clean_state(api):
+    denied = api.get("/api/v1/paper/admin/orders/funds-reconciliation")
+    assert denied.status_code == 401
+
+    response = api.get(
+        "/api/v1/paper/admin/orders/funds-reconciliation",
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "paper"
+    assert payload["status"] in ("ok", "attention_required")
+    assert "order_reserves_match_ledger" in payload["checks"]
+    assert "trade_settlements_match_ledger" in payload["checks"]
