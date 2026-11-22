@@ -132,3 +132,24 @@ BitGo is the preferred provider candidate for ZenCrypto's independent custody wa
 
 ### Current implementation boundary
 The repository now has the BitGo configuration placeholders, customer wallet/address mapping tables, a signed webhook intake endpoint with event deduplication, customer address listing, and an idempotent balanced ledger posting helper. The webhook intake deliberately leaves events pending provider verification and never credits balances. The actual BitGo wallet/address creation, transfer lookup, confirmation worker, withdrawal submission, MFA/dual approval, production reconciliation and provider credentials are not connected yet. Deposit and withdrawal feature flags remain false; no customer funds should be sent to the platform.
+
+
+## Production deployment runbook
+
+The GitHub Pages frontend and the Render API services are separate deployments. A successful Pages deployment does not prove that the Render exchange connector exists or is running the same commit.
+
+### Required Render Blueprint state
+- Connect the GitHub repository `jacksonmariso02-crypto/zencrypto-platform` to Render using the repository root `render.yaml`.
+- Select branch `main` and sync the Blueprint so both web services are created/updated:
+  - `zencrypto-api` (root directory `backend`, health check `/health`)
+  - `zencrypto-exchange` (root directory `exchange-service`, health check `/health`)
+- Confirm each service has Auto-Deploy enabled and the latest deploy is from the current `main` commit.
+- Confirm the exchange service URL configured in the frontend build is the actual public URL assigned by Render. If Render assigned a different hostname, update `VITE_EXCHANGE_API_BASE_URL` in `.github/workflows/deploy.yml` and the smoke-test URL before deploying again.
+- Do not mark production deployment complete until these endpoints respond from the deployed exchange service:
+  - `GET /health` — reports `service`, `build_revision`, sandbox state, order-routing lock and credential-vault configuration.
+  - `GET /ready` — returns HTTP 200 only when database, authentication secrets, admin token, sandbox mode, live-order lock and credential vault checks pass.
+  - `GET /api/v1/market-data/status` — confirms customer account linking is configured while live order placement remains disabled.
+- A 404 from `/ready` is not a readiness success. It indicates that the requested route is not being served at that hostname; verify the Render service, deployed commit and assigned URL rather than weakening the smoke test.
+
+### Safe launch boundary
+The current Render Blueprint intentionally keeps `EXCHANGE_SANDBOX=true`, `LIVE_TRADING_ENABLED=false`, `LIVE_CUSTOMER_ORDER_ROUTING_ENABLED=false`, `WALLET_DEPOSITS_ENABLED=false` and `WALLET_WITHDRAWALS_ENABLED=false`. Do not change these flags until live exchange order lifecycle tests, custody provider verification, reconciliation, operational controls, security review and jurisdiction-specific legal/compliance approval are complete.
