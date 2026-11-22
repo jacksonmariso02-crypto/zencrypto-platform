@@ -384,6 +384,104 @@ class PaperMatchingEngine:
                 db.rollback()
                 raise
 
+    def audit_order_integrity(self):
+        """Read-only consistency audit for paper orders and their recorded fills."""
+        with closing(self._connect()) as db:
+            orders = db.execute("SELECT * FROM paper_orders ORDER BY id").fetchall()
+            trades = db.execute("SELECT * FROM paper_trades ORDER BY id").fetchall()
+
+        by_id = {row["id"]: row for row in orders}
+        filled = {order_id: Decimal("0") for order_id in by_id}
+        fill_counts = {order_id: 0 for order_id in by_id}
+        issues = {
+            "orphan_trades": [],
+            "invalid_trades": [],
+            "self_trades": [],
+            "fill_quantity_mismatches": [],
+            "invalid_order_states": [],
+        }
+
+        for trade in trades:
+            maker = by_id.get(trade["maker_order_id"])
+            taker = by_id.get(trade["taker_order_id"])
+            if maker is None or taker is None:
+                issues["orphan_trades"].append(trade["id"])
+                continue
+            try:
+                price = Decimal(trade["price"])
+                quantity = Decimal(trade["quantity"])
+                valid_amounts = price.is_finite() and quantity.is_finite() and price > 0 and quantity > 0
+            except Exception:
+                valid_amounts = False
+                quantity = Decimal("0")
+            valid_pair = (
+                maker["symbol"] == trade["symbol"] == taker["symbol"]
+                and maker["side"] != taker["side"]
+                and maker["id"] != taker["id"]
+                and ((maker["account_id"] is None and taker["account_id"] is None)
+                     or (maker["account_id"] is not None and taker["account_id"] is not None))
+            )
+            if not valid_amounts or not valid_pair:
+                issues["invalid_trades"].append(trade["id"])
+                continue
+            if maker["account_id"] is not None and maker["account_id"] == taker["account_id"]:
+                issues["self_trades"].append(trade["id"])
+            filled[maker["id"]] += quantity
+            filled[taker["id"]] += quantity
+            fill_counts[maker["id"]] += 1
+            fill_counts[taker["id"]] += 1
+
+        for order_id, order in by_id.items():
+            try:
+                quantity = Decimal(order["quantity"])
+                remaining = Decimal(order["remaining"])
+                accounted = filled[order_id] + remaining
+                valid_numeric = (
+                    quantity.is_finite() and remaining.is_finite()
+                    and quantity > 0 and remaining >= 0
+                )
+            except Exception:
+                valid_numeric = False
+                quantity = remaining = accounted = Decimal("0")
+            if not valid_numeric or accounted != quantity or filled[order_id] > quantity:
+                issues["fill_quantity_mismatches"].append(order_id)
+                continue
+
+            expected_status = (
+                "filled" if remaining == 0
+                else "partially_filled" if filled[order_id] > 0
+                else "open"
+            )
+            actual_status = order["status"]
+            if actual_status == "cancelled":
+                state_ok = remaining > 0
+            else:
+                state_ok = actual_status == expected_status
+            if not state_ok:
+                issues["invalid_order_states"].append(order_id)
+
+        issue_counts = {key: len(value) for key, value in issues.items()}
+        clean = not any(issue_counts.values())
+        return {
+            "mode": "paper",
+            "status": "ok" if clean else "attention_required",
+            "checks": {
+                "trade_references_valid": issue_counts["orphan_trades"] == 0,
+                "trade_pairing_valid": issue_counts["invalid_trades"] == 0,
+                "no_self_trades": issue_counts["self_trades"] == 0,
+                "order_fill_quantities_reconcile": issue_counts["fill_quantity_mismatches"] == 0,
+                "order_status_matches_fills": issue_counts["invalid_order_states"] == 0,
+            },
+            "counts": {
+                "orders": len(orders),
+                "trades": len(trades),
+                "orders_with_fills": sum(1 for count in fill_counts.values() if count),
+                "issues": issue_counts,
+            },
+            "issues": {key: value[:50] for key, value in issues.items()},
+            "source": "paper_orders_and_trades",
+        }
+
     def orderbook(self, symbol, limit=50):
         symbol = symbol.strip().upper()
         with closing(self._connect()) as db:
