@@ -140,7 +140,7 @@ function App(){
   setExchangeConnectBusy(true);
   try{
    const data=await exchangeApi("/api/v1/user/exchange-connections/binance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({api_key:exchangeApiKey.trim(),api_secret:exchangeApiSecret.trim()})});
-   setExchangeConnection(data);setExchangeBalances([]);setNotice("Binance account verified. API credentials were encrypted on the server.");setExchangeConnectMessage(data.message||"Account connected.");
+   setExchangeConnection(data);setExchangeBalances([]);setNotice("Binance account verified. API credentials were encrypted on the server.");setExchangeConnectMessage(data.message||"Account connected.");await loadExchangeBalances();
   }catch(e){setExchangeConnectMessage(e.message||"Unable to connect Binance account.");}
   finally{setExchangeApiKey("");setExchangeApiSecret("");setExchangeConnectBusy(false);}
  }
@@ -207,6 +207,7 @@ function App(){
   finally{setExchangeBalancesLoading(false);}
  }
  useEffect(()=>{if(token&&!authChecking){loadExchangeConnection();}else{setExchangeConnection(null);setExchangeBalances([]);}},[token,authChecking]);
+ useEffect(()=>{if(token&&exchangeConnection?.connected){loadExchangeBalances();}else{setExchangeBalances([]);}},[token,exchangeConnection?.connected]);
  useEffect(()=>{if(token){loadCustomerOrders();}else{setCustomerOrders([]);}},[token]);
  useEffect(()=>{let active=true;if(!EXCHANGE_API){setExchangeStatusError("Exchange connector URL is not configured.");setExchangeStatusLoading(false);return()=>{active=false;};}fetch(EXCHANGE_API+"/api/v1/market-data/status").then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Connector status unavailable.");if(active){setExchangeStatus(d);setExchangeStatusError("");}}).catch(e=>{if(active)setExchangeStatusError(e.message||"Connector unavailable.");}).finally(()=>{if(active)setExchangeStatusLoading(false);});return()=>{active=false;};},[]);
  useEffect(()=>{let dead=false;if(!token){setUser(null);setBalances([]);setOrders([]);setAuthChecking(false);return;}setAuthChecking(true);fetch(API+"/account/me",{headers:{Authorization:"Bearer "+token}}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.detail||"Session expired");if(!dead)setUser(d);}).catch(()=>{if(!dead){localStorage.removeItem("zencrypto_token");setToken("");setUser(null);}}).finally(()=>{if(!dead)setAuthChecking(false);});return()=>{dead=true;};},[token]);
