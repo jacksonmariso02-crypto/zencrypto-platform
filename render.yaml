@@ -49,7 +49,7 @@ services:
       - key: LIVE_CUSTOMER_ORDER_ROUTING_ENABLED
         value: "false"
       - key: WALLET_CUSTODY_PROVIDER
-        value: ""
+        value: "bitgo"
       - key: WALLET_DEPOSITS_ENABLED
         value: "false"
       - key: WALLET_WITHDRAWALS_ENABLED
