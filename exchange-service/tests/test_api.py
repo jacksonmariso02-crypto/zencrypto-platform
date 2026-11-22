@@ -51,6 +51,23 @@ def test_market_data_status_never_claims_live_order_routing_by_default(monkeypat
     assert body["order_execution_environment"] == "sandbox_locked"
 
 
+def test_exchange_cors_allows_authenticated_idempotent_order_preflight():
+    response = client.options(
+        "/api/v1/user/orders",
+        headers={
+            "Origin": "https://jacksonmariso02-crypto.github.io",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,idempotency-key",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://jacksonmariso02-crypto.github.io"
+    allowed = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed
+    assert "content-type" in allowed
+    assert "idempotency-key" in allowed
+
+
 def test_health_reports_sandbox_defaults(monkeypatch):
     monkeypatch.setenv("RENDER_GIT_COMMIT", "health-revision-456")
     monkeypatch.setattr(main, "EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "c" * 48)
