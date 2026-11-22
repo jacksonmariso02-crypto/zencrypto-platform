@@ -191,6 +191,13 @@ def _init_customer_credential_store():
             )
         """)
         db.execute("""
+            CREATE TABLE IF NOT EXISTS custody_webhook_security_events (
+                security_event_id TEXT PRIMARY KEY, provider TEXT NOT NULL, event_id TEXT NOT NULL,
+                accepted_payload_hash TEXT NOT NULL, rejected_payload_hash TEXT NOT NULL,
+                received_at INTEGER NOT NULL, status TEXT NOT NULL
+            )
+        """)
+        db.execute("""
             CREATE TABLE IF NOT EXISTS customer_withdrawal_requests (
                 request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL,
                 asset TEXT NOT NULL, network TEXT NOT NULL, amount TEXT NOT NULL,
@@ -902,6 +909,7 @@ async def receive_bitgo_webhook(request: Request):
         raise HTTPException(400, "Webhook event identifier is missing or invalid.")
     digest = hashlib.sha256(raw).hexdigest()
     now = int(time.time())
+    payload_collision = False
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
         cursor = db.execute(
             """INSERT OR IGNORE INTO custody_webhook_events
@@ -917,8 +925,18 @@ async def receive_bitgo_webhook(request: Request):
             ).fetchone()
             if existing is None:
                 raise HTTPException(503, "Webhook deduplication state could not be verified.")
-            if not hmac.compare_digest(str(existing[0]), digest):
-                raise HTTPException(409, "This BitGo event ID was already received with different payload contents. The event is quarantined for manual review.")
+            accepted_hash = str(existing[0])
+            if not hmac.compare_digest(accepted_hash, digest):
+                payload_collision = True
+                db.execute(
+                    """INSERT INTO custody_webhook_security_events
+                       (security_event_id, provider, event_id, accepted_payload_hash,
+                        rejected_payload_hash, received_at, status)
+                       VALUES (?, "bitgo", ?, ?, ?, ?, "manual_review_required")""",
+                    (str(uuid.uuid4()), event_id, accepted_hash, digest, now),
+                )
+    if payload_collision:
+        raise HTTPException(409, "This BitGo event ID was already received with different payload contents. The conflicting delivery was recorded for manual review.")
     return {
         "accepted": True,
         "duplicate": not inserted,
