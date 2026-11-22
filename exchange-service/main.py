@@ -602,7 +602,7 @@ async def refresh_customer_order(exchange_order_id: str, user=Depends(require_pl
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
         row = db.execute(
             """SELECT encrypted_credentials FROM customer_exchange_connections
-               WHERE user_id=? AND exchange_id="binance" AND status="connected" """,
+               WHERE user_id=? AND exchange_id='binance' AND status='connected' """,
             (user["id"],),
         ).fetchone()
     if not row:
