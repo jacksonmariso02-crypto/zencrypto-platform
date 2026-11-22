@@ -542,3 +542,37 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 
 .brand-subtitle{display:block;margin-top:2px;color:#848e9c;font-size:8px;line-height:1;letter-spacing:1.5px;font-weight:700}.brand>span{display:flex;flex-direction:column;line-height:1.05}
 @media(max-width:420px){.brand-subtitle{display:none}}
+
+
+/* Live homepage market dashboard */
+.zc-home-top{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:26px 28px;margin:0 0 18px;background:linear-gradient(112deg,#171c22,#11161b);border:1px solid #2b3139;border-radius:7px}
+.zc-home-top>div:first-child{max-width:760px}
+.zc-home-title{font-size:clamp(26px,3.2vw,40px);letter-spacing:-1.1px;margin:8px 0 10px;color:#eaecef}
+.zc-home-copy{max-width:650px;margin:0;color:#aeb4bc;line-height:1.7;font-size:13px}
+.zc-home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.zc-home-actions .zc-btn{padding:11px 16px;border-radius:4px}
+.zc-home-health{display:flex;align-items:flex-start;gap:11px;min-width:245px;padding:14px 15px;background:#0b0e11;border:1px solid #2b3139;border-radius:5px}
+.zc-home-health strong,.zc-home-health small{display:block}
+.zc-home-health strong{font-size:12px;color:#eaecef;margin:0 0 5px}
+.zc-home-health small{font-size:10px;line-height:1.6;color:#848e9c}
+.zc-health-dot{width:8px;height:8px;flex:0 0 8px;margin-top:4px;border-radius:50%;background:#f0b90b;box-shadow:0 0 0 3px #f0b90b20}
+.zc-health-dot.online{background:#0ecb81;box-shadow:0 0 0 3px #0ecb8120}
+.zc-home-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin:18px 0 10px}
+.zc-home-section-head .zc-section-title{margin:0 0 5px}
+.zc-home-section-head .muted{margin:0}
+.zc-market-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;overflow:visible;padding:0;margin:0 0 22px}
+.zc-market-card-button{display:block;width:100%;min-width:0;text-align:left;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.zc-market-card-button:hover{border-color:#f0b90b;background:#1b2025}
+.zc-market-symbol{display:flex;justify-content:space-between;gap:8px}
+.zc-market-symbol span{color:#848e9c}
+.zc-market-price{font-size:clamp(15px,1.5vw,21px);overflow-wrap:anywhere}
+.zc-market-change small{font-size:10px;color:#848e9c;margin-left:3px}
+.zc-market-search{display:flex;align-items:center;gap:8px;min-width:220px;padding:0 10px;background:#0b0e11;border:1px solid #343b45;border-radius:4px;color:#848e9c}
+.zc-market-search input{width:100%;min-width:0;padding:10px 0;background:transparent;border:0;outline:0;color:#eaecef}
+.zc-market-search input:focus-visible{outline:0}
+.zc-table-live,.zc-table-stale{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;padding:4px 6px;border-radius:3px}
+.zc-table-live{color:#0ecb81;background:#0ecb8115}
+.zc-table-stale{color:#f0b90b;background:#f0b90b15}
+.zc-home-footnote{margin:12px 2px 0;color:#69727e;font-size:10px;line-height:1.6}
+@media(max-width:1000px){.zc-market-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-home-top{align-items:flex-start;flex-direction:column}.zc-home-health{width:100%}}
+@media(max-width:640px){.zc-home-top{padding:19px 16px;gap:16px}.zc-home-title{font-size:27px}.zc-home-copy{font-size:12px}.zc-home-actions{width:100%}.zc-home-actions .zc-btn{flex:1}.zc-market-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.zc-market-card{padding:12px}.zc-market-price{font-size:16px}.zc-home-section-head{align-items:flex-start;flex-direction:column}.zc-market-search{width:100%;min-width:0}.zc-home-section-head>.tablebtn{align-self:flex-end}}
