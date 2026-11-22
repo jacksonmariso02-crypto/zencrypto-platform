@@ -2,6 +2,12 @@ name: Verify ZenCrypto Exchange Production
 
 on:
   workflow_dispatch:
+    inputs:
+      exchange_base_url:
+        description: "Exact public URL assigned to the zencrypto-exchange Render service"
+        required: false
+        type: string
+        default: "https://zencrypto-exchange.onrender.com"
   push:
     branches: [main]
     paths:
@@ -21,9 +27,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      EXCHANGE_BASE_URL: https://zencrypto-exchange.onrender.com
+      EXCHANGE_BASE_URL: ${{ inputs.exchange_base_url || vars.EXCHANGE_BASE_URL || 'https://zencrypto-exchange.onrender.com' }}
       FRONTEND_ORIGIN: https://jacksonmariso02-crypto.github.io
     steps:
+      - name: Validate configured exchange service URL
+        run: |
+          case "$EXCHANGE_BASE_URL" in
+            https://*) ;;
+            *) echo "::error::Exchange service URL must use HTTPS."; exit 1 ;;
+          esac
+          case "$EXCHANGE_BASE_URL" in
+            *[!a-zA-Z0-9:/._-]*) echo "::error::Exchange service URL contains unsupported characters."; exit 1 ;;
+          esac
       - name: Check exchange service health and deployment revision
         run: |
           status=$(curl --silent --show-error --output /tmp/health.json --write-out '%{http_code}' --location "$EXCHANGE_BASE_URL/health")
