@@ -613,11 +613,20 @@ class PaperMatchingEngine:
                         for account, asset, debit, credit in lines
                     )
 
-                if canonical_postings(actual_postings) != canonical_postings(expected_postings):
+                actual_canonical = canonical_postings(actual_postings)
+                expected_canonical = canonical_postings(expected_postings)
+                if actual_canonical != expected_canonical:
+                    actual_remaining = list(actual_canonical or [])
+                    expected_only = []
+                    for line in expected_canonical or []:
+                        if line in actual_remaining:
+                            actual_remaining.remove(line)
+                        else:
+                            expected_only.append(line)
                     issues["missing_or_mismatched_settlements"].append({
                         "trade_id": trade["id"],
-                        "expected": expected_postings,
-                        "actual": actual_postings,
+                        "expected_only": expected_only,
+                        "actual_only": actual_remaining,
                     })
 
         issue_counts = {key: len(value) for key, value in issues.items()}
