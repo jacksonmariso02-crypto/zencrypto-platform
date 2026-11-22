@@ -1040,7 +1040,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 
 def exchange_client(private: bool = False):
