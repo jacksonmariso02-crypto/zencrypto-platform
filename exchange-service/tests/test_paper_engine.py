@@ -105,3 +105,46 @@ def test_order_state_survives_engine_restart(tmp_path):
 def test_quantities_below_market_step_are_rejected(engine):
     with pytest.raises(ValueError, match="multiple of"):
         place(engine, "buy", "0.00000000000000000001", "50000", "tiny-quantity-0001")
+
+
+def test_order_trade_integrity_audit_passes_for_partial_fill_and_cancel(engine):
+    ask = place(engine, "sell", "1", "100", "audit-ask-0001")
+    bid = place(engine, "buy", "0.4", "105", "audit-bid-0001")
+    engine.cancel_order(ask["id"])
+
+    result = engine.audit_order_integrity()
+    assert result["status"] == "ok"
+    assert all(result["checks"].values())
+    assert result["counts"]["orders"] == 2
+    assert result["counts"]["trades"] == 1
+    assert result["counts"]["orders_with_fills"] == 2
+
+
+def test_order_trade_integrity_audit_detects_fill_quantity_tampering(engine):
+    import sqlite3
+
+    ask = place(engine, "sell", "1", "100", "tamper-ask-0001")
+    place(engine, "buy", "0.4", "105", "tamper-bid-0001")
+    with sqlite3.connect(engine.db_path) as db:
+        db.execute("UPDATE paper_trades SET quantity='0.3'")
+
+    result = engine.audit_order_integrity()
+    assert result["status"] == "attention_required"
+    assert result["checks"]["order_fill_quantities_reconcile"] is False
+    assert result["counts"]["issues"]["fill_quantity_mismatches"] == 2
+    assert ask["id"] in result["issues"]["fill_quantity_mismatches"]
+
+
+def test_order_trade_integrity_audit_detects_orphan_trade(engine):
+    import sqlite3
+
+    with sqlite3.connect(engine.db_path) as db:
+        db.execute(
+            """INSERT INTO paper_trades
+               (symbol,maker_order_id,taker_order_id,price,quantity,created_at)
+               VALUES('BTC/USDT','missing-maker','missing-taker','100','1',1)"""
+        )
+    result = engine.audit_order_integrity()
+    assert result["status"] == "attention_required"
+    assert result["checks"]["trade_references_valid"] is False
+    assert result["counts"]["issues"]["orphan_trades"] == 1
