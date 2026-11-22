@@ -166,3 +166,10 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - The exchange service is considered ready only when Binance sandbox mode is enabled and live trading is explicitly disabled.
 - The administrator token must be at least 32 characters, as must the user-token signing secret. The readiness response exposes only pass/fail booleans.
 - A deployment with sandbox disabled, live trading enabled, missing schema, or missing/short secrets fails readiness with HTTP 503. Do not weaken these checks to force a deployment green.
+
+
+## Read-only paper ledger reconciliation
+- Admins can call `GET /api/v1/paper/admin/ledger/reconciliation` with the configured `ZENCRYPTO_ADMIN_TOKEN`.
+- The endpoint verifies SQLite integrity and foreign keys, checks every transaction balances debit and credit independently per asset, detects transactions without entries, and flags negative user available/locked buckets.
+- The endpoint is read-only. It never repairs, reverses, deletes, or edits ledger rows. Investigate and reconcile any reported issue through a separately reviewed accounting procedure.
+- The response contains aggregate counts and a capped list of affected transaction/account references; do not expose this endpoint publicly without admin authentication.
