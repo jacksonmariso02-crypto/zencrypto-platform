@@ -35,6 +35,9 @@ ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
 LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", "false").lower() == "true"
+WALLET_CUSTODY_PROVIDER = os.getenv("WALLET_CUSTODY_PROVIDER", "").strip().lower()
+WALLET_DEPOSITS_ENABLED = os.getenv("WALLET_DEPOSITS_ENABLED", "false").lower() == "true"
+WALLET_WITHDRAWALS_ENABLED = os.getenv("WALLET_WITHDRAWALS_ENABLED", "false").lower() == "true"
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -128,6 +131,36 @@ def _init_customer_credential_store():
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_customer_order_requests_user_time
             ON customer_order_requests(user_id, created_at DESC)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_journals (
+                journal_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                provider_reference TEXT,
+                created_at INTEGER NOT NULL,
+                UNIQUE(user_id, idempotency_key)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_ledger_entries (
+                entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                journal_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                account_code TEXT NOT NULL,
+                direction TEXT NOT NULL CHECK(direction IN ('debit', 'credit')),
+                amount TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(journal_id) REFERENCES wallet_journals(journal_id)
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_wallet_ledger_user_asset
+            ON wallet_ledger_entries(user_id, asset, created_at DESC)
         """)
 
 
