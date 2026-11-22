@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from paper_engine import IdempotencyConflict, PaperMatchingEngine
+from paper_ledger import PaperLedger
 
 
 @pytest.fixture
@@ -148,3 +149,74 @@ def test_order_trade_integrity_audit_detects_orphan_trade(engine):
     assert result["status"] == "attention_required"
     assert result["checks"]["trade_references_valid"] is False
     assert result["counts"]["issues"]["orphan_trades"] == 1
+
+
+def test_order_funds_audit_matches_reserves_settlements_and_cancel_releases(engine):
+    ledger = PaperLedger(engine.db_path)
+    ledger.create_account("fund_seller")
+    ledger.create_account("fund_buyer")
+    ledger.create_account("fund_cancel")
+    ledger.credit_paper_funds("fund_seller", "BTC", "2", "fund-seller-credit")
+    ledger.credit_paper_funds("fund_buyer", "USDT", "500", "fund-buyer-credit")
+    ledger.credit_paper_funds("fund_cancel", "USDT", "250", "fund-cancel-credit")
+
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "funds-sell-order-001", "fund_seller"
+    )
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "0.5", "110", "funds-buy-order-001", "fund_buyer"
+    )
+    resting = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "90", "funds-cancel-order-1", "fund_cancel"
+    )
+    engine.cancel_order(resting["id"])
+
+    result = engine.audit_order_funds_integrity()
+    assert result["status"] == "ok", result["issues"]
+    assert all(result["checks"].values()), result["issues"]
+    assert result["counts"]["orders_checked"] == 3
+    assert result["counts"]["trades_checked"] == 1
+    assert ask["status"] == "open"
+    assert bid["status"] == "filled"
+
+
+def test_order_funds_audit_detects_missing_ledger_reserve(engine):
+    import sqlite3
+    ledger = PaperLedger(engine.db_path)
+    ledger.create_account("fund_missing")
+    ledger.credit_paper_funds("fund_missing", "USDT", "200", "fund-missing-credit")
+    order = engine.place_limit_order(
+        "BTC/USDT", "buy", "1", "100", "fund-missing-order-001", "fund_missing"
+    )
+    with sqlite3.connect(engine.db_path) as db:
+        db.execute(
+            "DELETE FROM ledger_transactions WHERE idempotency_key=?",
+            (f"paper-order-reserve:{order['id']}",),
+        )
+    result = engine.audit_order_funds_integrity()
+    assert result["status"] == "attention_required"
+    assert result["checks"]["order_reserves_match_ledger"] is False
+    assert order["id"] in result["issues"]["missing_or_mismatched_reserves"]
+
+
+def test_order_funds_audit_matches_when_resting_maker_is_the_buyer(engine):
+    ledger = PaperLedger(engine.db_path)
+    ledger.create_account("maker_buyer")
+    ledger.create_account("taker_seller")
+    ledger.credit_paper_funds("maker_buyer", "USDT", "500", "maker-buyer-credit")
+    ledger.credit_paper_funds("taker_seller", "BTC", "2", "taker-seller-credit")
+
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "0.5", "110", "funds-maker-bid-0001", "maker_buyer"
+    )
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "0.5", "100", "funds-taker-ask-001", "taker_seller"
+    )
+
+    result = engine.audit_order_funds_integrity()
+    assert result["status"] == "ok", result["issues"]
+    assert all(result["checks"].values()), result["issues"]
+    assert result["counts"]["orders_checked"] == 2
+    assert result["counts"]["trades_checked"] == 1
+    assert bid["status"] == "open"
+    assert ask["status"] == "filled"
