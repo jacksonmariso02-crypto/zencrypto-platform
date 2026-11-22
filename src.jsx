@@ -217,7 +217,38 @@ function App(){
  useEffect(()=>{if(token&&exchangeConnection?.connected){loadExchangeBalances();}else{setExchangeBalances([]);}},[token,exchangeConnection?.connected]);
  useEffect(()=>{if(token){loadWalletSummary();}else{setWalletSummary(null);}},[token]);
  useEffect(()=>{if(token){loadCustomerOrders();}else{setCustomerOrders([]);}},[token]);
- useEffect(()=>{let active=true;if(!EXCHANGE_API){setExchangeStatusError("Exchange connector URL is not configured.");setExchangeStatusLoading(false);return()=>{active=false;};}fetch(EXCHANGE_API+"/api/v1/market-data/status").then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Connector status unavailable.");if(active){setExchangeStatus(d);setExchangeStatusError("");}}).catch(e=>{if(active)setExchangeStatusError(e.message||"Connector unavailable.");}).finally(()=>{if(active)setExchangeStatusLoading(false);});return()=>{active=false;};},[]);
+ useEffect(()=>{
+  let active=true,busy=false,timer=null;
+  if(!EXCHANGE_API){setExchangeStatusError("Exchange connector URL is not configured.");setExchangeStatusLoading(false);return()=>{active=false;};}
+  const checkConnector=async()=>{
+   if(busy||!active)return;
+   busy=true;
+   try{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),8000);
+    let response;
+    try{response=await fetch(EXCHANGE_API+"/health",{signal:controller.signal,cache:"no-store"});}
+    finally{clearTimeout(timeout);}
+    const health=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error("Health endpoint HTTP "+response.status+(health.detail?": "+String(health.detail):""));
+    if(health.status!=="ok"||health.exchange!=="binance")throw Error("Unexpected exchange connector health response.");
+    const statusResponse=await fetch(EXCHANGE_API+"/api/v1/market-data/status",{signal:controller.signal,cache:"no-store"});
+    const status=await statusResponse.json().catch(()=>({}));
+    if(!statusResponse.ok)throw Error("Market status HTTP "+statusResponse.status+(status.detail?": "+String(status.detail):""));
+    if(!active)return;
+    setExchangeStatus({...status,build_revision:health.build_revision,health_verified:true});
+    setExchangeStatusError("");
+   }catch(e){
+    if(active){setExchangeStatusError(e.name==="AbortError"?"Exchange connector health check timed out.":e.message||"Connector unavailable.");setExchangeStatus(null);}
+   }finally{
+    busy=false;
+    if(active)setExchangeStatusLoading(false);
+   }
+  };
+  checkConnector();
+  timer=setInterval(checkConnector,30000);
+  return()=>{active=false;if(timer)clearInterval(timer);};
+ },[]);
  useEffect(()=>{let dead=false;if(!token){setUser(null);setBalances([]);setOrders([]);setAuthChecking(false);return;}setAuthChecking(true);fetch(API+"/account/me",{headers:{Authorization:"Bearer "+token}}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.detail||"Session expired");if(!dead)setUser(d);}).catch(()=>{if(!dead){localStorage.removeItem("zencrypto_token");setToken("");setUser(null);}}).finally(()=>{if(!dead)setAuthChecking(false);});return()=>{dead=true;};},[token]);
  useEffect(()=>{
   let ws=null,retryTimer=null,connectionTimer=null,stopped=false;
