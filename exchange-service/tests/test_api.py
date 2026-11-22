@@ -1041,3 +1041,23 @@ def test_bitgo_webhook_requires_valid_signature_and_deduplicates(tmp_path, monke
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM custody_webhook_events").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 0
+
+def test_bitgo_webhook_rejects_same_event_id_with_different_payload(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "bitgo-webhook-collision.sqlite3")
+    secret = "test-webhook-secret-for-unit-tests"
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    monkeypatch.setattr(main, "BITGO_WEBHOOK_SECRET", secret)
+    main._init_customer_credential_store()
+    first_raw = json.dumps({"eventId": "evt-collision", "type": "transfer", "transfer": {"id": "tx-1"}}).encode()
+    second_raw = json.dumps({"eventId": "evt-collision", "type": "transfer", "transfer": {"id": "tx-2"}}).encode()
+    first_signature = hmac.new(secret.encode(), first_raw, hashlib.sha256).hexdigest()
+    second_signature = hmac.new(secret.encode(), second_raw, hashlib.sha256).hexdigest()
+    first = client.post("/api/v1/webhooks/bitgo", content=first_raw, headers={"x-signature-sha256": first_signature})
+    collision = client.post("/api/v1/webhooks/bitgo", content=second_raw, headers={"x-signature-sha256": second_signature})
+    assert first.status_code == 200
+    assert first.json()["credited"] is False
+    assert collision.status_code == 409
+    assert "different payload" in collision.json()["detail"]
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM custody_webhook_events").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 0
