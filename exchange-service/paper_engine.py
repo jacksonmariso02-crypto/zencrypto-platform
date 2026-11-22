@@ -576,8 +576,11 @@ class PaperMatchingEngine:
                 quantity = Decimal(trade["quantity"])
                 price = Decimal(trade["price"])
                 execution_value = price * quantity
+                # Exactly one side is the buyer. When the taker buys, the
+                # resting maker is the seller; when the taker sells, the
+                # resting maker is the buyer.
                 buy_order = taker if taker["side"] == "buy" else maker
-                sell_order = maker if taker["side"] == "sell" else taker
+                sell_order = maker if taker["side"] == "buy" else taker
                 buyer_id, seller_id = buy_order["account_id"], sell_order["account_id"]
                 if not buyer_id or not seller_id:
                     issues["account_order_without_account"].append(trade["id"])
