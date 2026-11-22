@@ -833,3 +833,65 @@ def test_customer_order_refresh_cannot_read_another_users_order(tmp_path, monkey
         assert response.status_code == 404
     finally:
         main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_wallet_summary_uses_customer_scoped_double_entry_ledger(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "wallet-ledger.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    monkeypatch.setattr(main, "WALLET_CUSTODY_PROVIDER", "")
+    monkeypatch.setattr(main, "WALLET_DEPOSITS_ENABLED", False)
+    monkeypatch.setattr(main, "WALLET_WITHDRAWALS_ENABLED", False)
+    main._init_customer_credential_store()
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            """INSERT INTO wallet_journals
+               (journal_id, user_id, asset, event_type, status, idempotency_key, created_at)
+               VALUES ('j1', 'wallet-user', 'USDT', 'deposit', 'confirmed', 'key-1', 1)"""
+        )
+        db.executemany(
+            """INSERT INTO wallet_ledger_entries
+               (journal_id, user_id, asset, account_code, direction, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [
+                ("j1", "wallet-user", "USDT", "customer_available", "credit", "1.25", 1),
+                ("j1", "wallet-user", "USDT", "custody_asset", "debit", "1.25", 1),
+                ("j1", "another-user", "USDT", "customer_available", "credit", "99", 1),
+                ("j1", "wallet-user", "USDT", "customer_available", "debit", "0.25", 2),
+            ],
+        )
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "wallet-user", "email": "wallet@example.com", "role": "user"}
+    try:
+        response = client.get("/api/v1/user/wallet")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["balances"] == [{"asset": "USDT", "available": "1.00"}]
+        assert body["provider_configured"] is False
+        assert body["deposits_enabled"] is False
+        assert body["withdrawals_enabled"] is False
+        assert body["activity"][0]["journal_id"] == "j1"
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_wallet_deposit_intent_refuses_without_custody_provider(monkeypatch):
+    monkeypatch.setattr(main, "WALLET_CUSTODY_PROVIDER", "")
+    monkeypatch.setattr(main, "WALLET_DEPOSITS_ENABLED", False)
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "wallet-user", "email": "wallet@example.com", "role": "user"}
+    try:
+        response = client.post("/api/v1/user/wallet/deposit-intents")
+        assert response.status_code == 503
+        assert "Do not send funds" in response.json()["detail"]
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_wallet_withdrawal_request_refuses_without_custody_provider(monkeypatch):
+    monkeypatch.setattr(main, "WALLET_CUSTODY_PROVIDER", "")
+    monkeypatch.setattr(main, "WALLET_WITHDRAWALS_ENABLED", False)
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "wallet-user", "email": "wallet@example.com", "role": "user"}
+    try:
+        response = client.post("/api/v1/user/wallet/withdrawal-requests")
+        assert response.status_code == 503
+        assert "unavailable" in response.json()["detail"].lower()
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
