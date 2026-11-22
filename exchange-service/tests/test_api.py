@@ -1,4 +1,6 @@
 import os
+import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -102,8 +104,10 @@ class FakeOrderClient:
     def fetch_balance(self):
         return {"free": {"USDT": 1000, "BTC": 0.5}}
 
-    def create_order(self, symbol, order_type, side, amount, price):
-        order = {"symbol": symbol, "type": order_type, "side": side, "amount": amount, "price": price}
+    def create_order(self, symbol, order_type, side, amount, price, params=None):
+        order = {"id": "fake-order-123", "symbol": symbol, "type": order_type, "side": side,
+                 "amount": amount, "price": price, "status": "open", "filled": 0,
+                 "remaining": amount, "cost": 0, "params": params or {}}
         self.created.append(order)
         return order
 
@@ -592,3 +596,127 @@ def test_customer_sell_preview_checks_available_base_asset():
     else:
         raise AssertionError("Sell preview with insufficient base balance was accepted")
     assert fake.created == []
+
+
+def test_customer_order_idempotency_claim_replays_success_and_rejects_payload_change(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "customer-orders.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    main._init_customer_credential_store()
+    request_hash = "a" * 64
+    client_order_id, replay = main._claim_customer_order_request("user-1", "request-key-000001", request_hash)
+    assert client_order_id.startswith("zc")
+    assert replay is None
+    stored = {"exchange_order_id": "123", "execution_status": "SUBMITTED"}
+    main._finish_customer_order_request("user-1", "request-key-000001", "SUBMITTED", stored)
+    replay = main._lookup_customer_order_request("user-1", "request-key-000001", request_hash)
+    assert replay["exchange_order_id"] == "123"
+    assert replay["idempotent_replay"] is True
+    try:
+        main._lookup_customer_order_request("user-1", "request-key-000001", "b" * 64)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+    else:
+        raise AssertionError("Changed payload was accepted for an existing idempotency key")
+
+
+def test_customer_order_idempotency_blocks_unknown_exchange_outcome(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", str(tmp_path / "unknown.sqlite3"))
+    main._init_customer_credential_store()
+    request_hash = "c" * 64
+    main._claim_customer_order_request("user-2", "request-key-000002", request_hash)
+    main._finish_customer_order_request("user-2", "request-key-000002", "UNKNOWN", None)
+    try:
+        main._lookup_customer_order_request("user-2", "request-key-000002", request_hash)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+        assert "reconciliation" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Unknown exchange outcome was allowed to retry")
+
+
+def test_customer_order_submission_is_disabled_by_default_even_with_customer_gate_enabled(monkeypatch):
+    old_customer_gate = main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED
+    old_live = main.LIVE_TRADING_ENABLED
+    old_sandbox = main.SANDBOX
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "test-user", "email": "test@example.com", "role": "user"}
+    try:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = True
+        main.LIVE_TRADING_ENABLED = False
+        main.SANDBOX = False
+        response = client.post(
+            "/api/v1/user/orders",
+            headers={"Idempotency-Key": "request-key-000003"},
+            json={"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": "0.001"},
+        )
+        assert response.status_code == 403
+    finally:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = old_customer_gate
+        main.LIVE_TRADING_ENABLED = old_live
+        main.SANDBOX = old_sandbox
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_order_submission_requires_idempotency_key_when_gates_are_open(monkeypatch):
+    old_customer_gate = main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED
+    old_live = main.LIVE_TRADING_ENABLED
+    old_sandbox = main.SANDBOX
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "test-user", "email": "test@example.com", "role": "user"}
+    try:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = True
+        main.LIVE_TRADING_ENABLED = True
+        main.SANDBOX = False
+        response = client.post(
+            "/api/v1/user/orders",
+            json={"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": "0.001"},
+        )
+        assert response.status_code == 400
+    finally:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = old_customer_gate
+        main.LIVE_TRADING_ENABLED = old_live
+        main.SANDBOX = old_sandbox
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_order_submission_uses_customer_credentials_and_idempotent_replay(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "submit.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    main._init_customer_credential_store()
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            """INSERT INTO customer_exchange_connections
+               (user_id, exchange_id, encrypted_credentials, masked_api_key,
+                permissions_json, status, connected_at, last_verified_at)
+               VALUES (?, 'binance', ?, ?, ?, 'connected', ?, ?)""",
+            ("submit-user", b"test-envelope", "••••1234",
+             json.dumps({"read": True, "spot_trading": True, "withdrawals": False}), 1, 1),
+        )
+    fake = FakeOrderClient()
+    old_customer_gate = main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED
+    old_live = main.LIVE_TRADING_ENABLED
+    old_sandbox = main.SANDBOX
+    old_limit = main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "submit-user", "email": "test@example.com", "role": "user"}
+    monkeypatch.setattr(main, "_decrypt_customer_credentials", lambda user_id, envelope: {"api_key": "customer-key", "api_secret": "customer-secret"})
+    monkeypatch.setattr(main.ccxt, "binance", lambda config: fake)
+    try:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = True
+        main.LIVE_TRADING_ENABLED = True
+        main.SANDBOX = False
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = main.Decimal("250")
+        headers = {"Idempotency-Key": "request-key-000004"}
+        payload = {"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": "0.001"}
+        first = client.post("/api/v1/user/orders", headers=headers, json=payload)
+        assert first.status_code == 200, first.text
+        assert first.json()["execution_status"] == "SUBMITTED"
+        assert first.json()["idempotent_replay"] is False
+        second = client.post("/api/v1/user/orders", headers=headers, json=payload)
+        assert second.status_code == 200, second.text
+        assert second.json()["idempotent_replay"] is True
+        assert len(fake.created) == 1
+        assert fake.created[0]["side"] == "buy"
+    finally:
+        main.LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = old_customer_gate
+        main.LIVE_TRADING_ENABLED = old_live
+        main.SANDBOX = old_sandbox
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = old_limit
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
