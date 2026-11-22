@@ -173,3 +173,12 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - The endpoint verifies SQLite integrity and foreign keys, checks every transaction balances debit and credit independently per asset, detects transactions without entries, and flags negative user available/locked buckets.
 - The endpoint is read-only. It never repairs, reverses, deletes, or edits ledger rows. Investigate and reconcile any reported issue through a separately reviewed accounting procedure.
 - The response contains aggregate counts and a capped list of affected transaction/account references; do not expose this endpoint publicly without admin authentication.
+
+
+## Daily paper asset snapshots
+- Admin-only capture: `POST /api/v1/paper/admin/ledger/daily-snapshots`.
+- Admin-only history: `GET /api/v1/paper/admin/ledger/daily-snapshots?account_id=ACCOUNT_ID&limit=100`.
+- Snapshots are keyed by UTC date, account and asset. Repeating capture on the same date is idempotent; existing rows are never overwritten after later trades or transfers.
+- Capture only accepts the current UTC date. It rejects backdated requests rather than labelling today's balances as historical data.
+- Snapshot rows preserve exact decimal strings for available and locked balances. They are immutable audit evidence and do not replace the live ledger as the source of truth.
+- Capture is currently an admin-triggered operation, not an automatic scheduled job. Schedule it only after the production Render service is running and its UTC operating schedule/monitoring is configured.
