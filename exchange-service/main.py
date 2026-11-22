@@ -41,6 +41,7 @@ WALLET_WITHDRAWALS_ENABLED = os.getenv("WALLET_WITHDRAWALS_ENABLED", "false").lo
 BITGO_API_ENV = os.getenv("BITGO_API_ENV", "test").strip().lower()
 BITGO_WEBHOOK_SECRET = os.getenv("BITGO_WEBHOOK_SECRET", "")
 BITGO_ENTERPRISE_ID = os.getenv("BITGO_ENTERPRISE_ID", "")
+BITGO_ACCESS_TOKEN = os.getenv("BITGO_ACCESS_TOKEN", "")
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -781,9 +782,9 @@ def _post_wallet_journal(user_id: str, asset: str, event_type: str, idempotency_
 
 
 def _wallet_provider_status():
-    configured = bool(WALLET_CUSTODY_PROVIDER)
+    configured = bool(WALLET_CUSTODY_PROVIDER == "bitgo" and BITGO_ENTERPRISE_ID and BITGO_ACCESS_TOKEN and BITGO_WEBHOOK_SECRET)
     return {
-        "custody_provider": WALLET_CUSTODY_PROVIDER or None,
+        "custody_provider": "bitgo" if WALLET_CUSTODY_PROVIDER == "bitgo" else None,
         "provider_configured": configured,
         "wallet_enabled": configured,
         "deposits_enabled": bool(configured and WALLET_DEPOSITS_ENABLED),
