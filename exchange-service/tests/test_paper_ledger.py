@@ -122,3 +122,65 @@ def test_tiny_decimal_balance_is_checked_without_float_rounding(ledger):
             "tiny_006", "BTC", "0.0000000000000000000100000000001",
             "available", "locked", "tiny-lock-fail-01",
         )
+
+
+def test_reconciliation_reports_balanced_transactions_and_nonnegative_buckets(ledger):
+    ledger.create_account("audit_001")
+    ledger.credit_paper_funds("audit_001", "USDT", "250.75", "audit-credit-001")
+    ledger.transfer(
+        "audit_001", "USDT", "50", "available", "locked",
+        "audit-lock-0001", "Reserve open paper order",
+    )
+    result = ledger.audit_integrity()
+    assert result["status"] == "ok"
+    assert all(result["checks"].values())
+    assert result["counts"]["transactions"] == 2
+    assert result["counts"]["unbalanced_transactions"] == 0
+    assert result["counts"]["negative_buckets"] == 0
+
+
+def test_reconciliation_detects_tampered_unbalanced_transaction(ledger):
+    import sqlite3
+
+    ledger.create_account("audit_002")
+    credit = ledger.credit_paper_funds(
+        "audit_002", "USDT", "100", "audit-credit-002"
+    )
+    with sqlite3.connect(ledger.db_path) as db:
+        db.execute(
+            "UPDATE ledger_entries SET credit='99' "
+            "WHERE transaction_id=? AND account_code=?",
+            (credit["transaction_id"], "user:audit_002:available"),
+        )
+
+    result = ledger.audit_integrity()
+    assert result["status"] == "attention_required"
+    assert result["checks"]["transactions_balanced"] is False
+    assert result["counts"]["unbalanced_transactions"] == 1
+    assert result["issues"]["unbalanced_transactions"][0]["transaction_id"] == credit["transaction_id"]
+
+
+def test_reconciliation_detects_negative_user_bucket(ledger):
+    import sqlite3
+
+    ledger.create_account("audit_003")
+    with sqlite3.connect(ledger.db_path) as db:
+        db.execute(
+            """INSERT INTO ledger_transactions
+               (id,idempotency_key,kind,memo,created_at)
+               VALUES('manual-test-tx','manual-negative-001','test','test',1)"""
+        )
+        db.executemany(
+            """INSERT INTO ledger_entries
+               (transaction_id,account_code,asset,debit,credit)
+               VALUES(?,?,?,?,?)""",
+            [
+                ("manual-test-tx", "user:audit_003:available", "USDT", "5", "0"),
+                ("manual-test-tx", "system:test", "USDT", "0", "5"),
+            ],
+        )
+
+    result = ledger.audit_integrity()
+    assert result["status"] == "attention_required"
+    assert result["checks"]["user_buckets_nonnegative"] is False
+    assert result["counts"]["negative_buckets"] == 1

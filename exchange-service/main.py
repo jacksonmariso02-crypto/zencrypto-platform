@@ -897,6 +897,15 @@ async def paper_account_balances(
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.get("/api/v1/paper/admin/ledger/reconciliation")
+async def paper_ledger_reconciliation(
+    authorization: str | None = Header(default=None),
+):
+    """Admin-only, read-only reconciliation of simulated account ledger integrity."""
+    require_admin(authorization)
+    return await run_in_threadpool(PAPER_LEDGER.audit_integrity)
+
+
 @app.get("/api/v1/paper/accounts/{account_id}/ledger")
 async def paper_account_ledger(
     account_id: str,

@@ -283,3 +283,98 @@ class PaperLedger:
                 (f"user:{account_id}:available", f"user:{account_id}:locked", limit * 2),
             ).fetchall()
             return [dict(row) for row in rows]
+
+
+    def audit_integrity(self):
+        """Read-only reconciliation of double-entry balance and user bucket solvency."""
+        with closing(self._connect()) as db:
+            quick = db.execute("PRAGMA quick_check").fetchone()
+            integrity_ok = bool(quick and quick[0] == "ok")
+            foreign_key_errors = db.execute("PRAGMA foreign_key_check").fetchall()
+
+            transaction_rows = db.execute(
+                """
+                SELECT t.id AS transaction_id, e.asset,
+                       SUM(CAST(e.debit AS NUMERIC)) AS debits,
+                       SUM(CAST(e.credit AS NUMERIC)) AS credits,
+                       COUNT(e.id) AS entry_count
+                FROM ledger_transactions t
+                LEFT JOIN ledger_entries e ON e.transaction_id=t.id
+                GROUP BY t.id, e.asset
+                """
+            ).fetchall()
+            unbalanced_transactions = []
+            empty_transactions = []
+            # Use Decimal for exact comparisons; SQL aggregation is used only to group rows.
+            for row in transaction_rows:
+                if row["asset"] is None or row["entry_count"] == 0:
+                    empty_transactions.append(row["transaction_id"])
+                    continue
+                entries = db.execute(
+                    """SELECT debit, credit FROM ledger_entries
+                       WHERE transaction_id=? AND asset=?""",
+                    (row["transaction_id"], row["asset"]),
+                ).fetchall()
+                debit_total = sum((Decimal(x["debit"]) for x in entries), Decimal("0"))
+                credit_total = sum((Decimal(x["credit"]) for x in entries), Decimal("0"))
+                if debit_total != credit_total:
+                    unbalanced_transactions.append({
+                        "transaction_id": row["transaction_id"],
+                        "asset": row["asset"],
+                    })
+
+            negative_buckets = []
+            rows = db.execute(
+                """SELECT account_code, asset, debit, credit FROM ledger_entries
+                   WHERE account_code LIKE 'user:%:available'
+                      OR account_code LIKE 'user:%:locked'
+                   ORDER BY id"""
+            ).fetchall()
+            balances = {}
+            for row in rows:
+                key = (row["account_code"], row["asset"])
+                balances[key] = balances.get(key, Decimal("0")) + (
+                    Decimal(row["credit"]) - Decimal(row["debit"])
+                )
+            for (account_code, asset), amount in balances.items():
+                if amount < 0:
+                    negative_buckets.append({
+                        "account_code": account_code,
+                        "asset": asset,
+                        "amount": str(amount),
+                    })
+
+            return {
+                "status": "ok" if (
+                    integrity_ok and not foreign_key_errors
+                    and not unbalanced_transactions and not empty_transactions
+                    and not negative_buckets
+                ) else "attention_required",
+                "checks": {
+                    "sqlite_integrity": integrity_ok,
+                    "foreign_keys": not foreign_key_errors,
+                    "transactions_balanced": not unbalanced_transactions,
+                    "transactions_have_entries": not empty_transactions,
+                    "user_buckets_nonnegative": not negative_buckets,
+                },
+                "counts": {
+                    "transactions": db.execute(
+                        "SELECT COUNT(*) FROM ledger_transactions"
+                    ).fetchone()[0],
+                    "entries": db.execute(
+                        "SELECT COUNT(*) FROM ledger_entries"
+                    ).fetchone()[0],
+                    "accounts": db.execute(
+                        "SELECT COUNT(*) FROM paper_accounts"
+                    ).fetchone()[0],
+                    "unbalanced_transactions": len(unbalanced_transactions),
+                    "empty_transactions": len(empty_transactions),
+                    "negative_buckets": len(negative_buckets),
+                    "foreign_key_errors": len(foreign_key_errors),
+                },
+                "issues": {
+                    "unbalanced_transactions": unbalanced_transactions[:50],
+                    "empty_transactions": empty_transactions[:50],
+                    "negative_buckets": negative_buckets[:50],
+                },
+            }
