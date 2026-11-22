@@ -307,3 +307,137 @@ def test_market_status_never_advertises_live_customer_order_routing():
     body = response.json()
     assert body["live_order_placement_enabled"] is False
     assert body["customer_order_routing_enabled"] is False
+
+
+def _override_customer_user(user_id="customer-101"):
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {
+        "id": user_id, "email": user_id + "@example.test", "role": "user"
+    }
+
+
+def _vault_test_key():
+    import base64
+    return base64.urlsafe_b64encode(b"z" * 32).decode("ascii")
+
+
+def test_customer_binance_credentials_are_encrypted_and_user_scoped(monkeypatch):
+    old_key = main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY
+    try:
+        main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = _vault_test_key()
+        _override_customer_user("customer-101")
+        monkeypatch.setattr(
+            main, "_verify_binance_customer_credentials",
+            lambda api_key, api_secret: (
+                {"read": True, "spot_trading": True, "withdrawals": False,
+                 "margin_endpoints_used": False, "futures_endpoints_used": False},
+                {"total": {"USDT": 50}},
+            ),
+        )
+        response = client.post(
+            "/api/v1/user/exchange-connections/binance",
+            json={"api_key": "A" * 32, "api_secret": "S" * 40},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["connected"] is True
+        assert body["masked_api_key"] == "••••AAAA"
+        assert body["live_order_routing_enabled"] is False
+        assert "api_secret" not in body
+
+        status = client.get("/api/v1/user/exchange-connections")
+        assert status.status_code == 200
+        assert status.json()["connections"][0]["connected"] is True
+
+        with __import__("sqlite3").connect(main.PAPER_ENGINE_DB_PATH) as db:
+            row = db.execute(
+                "SELECT encrypted_credentials FROM customer_exchange_connections WHERE user_id=?",
+                ("customer-101",),
+            ).fetchone()
+        assert row is not None
+        assert b"S" * 20 not in bytes(row[0])
+
+        _override_customer_user("customer-202")
+        other_user = client.get("/api/v1/user/exchange-connections")
+        assert other_user.status_code == 200
+        assert other_user.json()["connections"][0]["connected"] is False
+
+        _override_customer_user("customer-101")
+        removed = client.delete("/api/v1/user/exchange-connections/binance")
+        assert removed.status_code == 200
+        assert removed.json()["disconnected"] is True
+    finally:
+        main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = old_key
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_exchange_connection_requires_platform_session():
+    response = client.get("/api/v1/user/exchange-connections")
+    assert response.status_code == 401
+
+
+def test_customer_exchange_connection_fails_closed_without_vault_key(monkeypatch):
+    old_key = main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY
+    try:
+        main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = ""
+        _override_customer_user("customer-no-vault")
+        monkeypatch.setattr(
+            main, "_verify_binance_customer_credentials",
+            lambda api_key, api_secret: (
+                {"read": True, "spot_trading": True, "withdrawals": False}, {}
+            ),
+        )
+        response = client.post(
+            "/api/v1/user/exchange-connections/binance",
+            json={"api_key": "A" * 32, "api_secret": "S" * 40},
+        )
+        assert response.status_code == 503
+        assert "vault" in response.json()["detail"].lower()
+    finally:
+        main.EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = old_key
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_binance_credential_verification_rejects_withdrawal_permission(monkeypatch):
+    class FakeCredentialClient:
+        def privateGetAccountApiRestrictions(self):
+            return {
+                "enableReading": True,
+                "enableSpotAndMarginTrading": True,
+                "enableWithdrawals": True,
+            }
+        def fetch_balance(self):
+            return {"total": {"USDT": 100}}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main.ccxt, "binance", lambda config: FakeCredentialClient())
+    try:
+        main._verify_binance_customer_credentials("A" * 32, "S" * 40)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 422
+        assert "withdrawal" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("API key with withdrawal permission was accepted")
+
+
+def test_binance_credential_verification_requires_spot_trade_permission(monkeypatch):
+    class FakeCredentialClient:
+        def privateGetAccountApiRestrictions(self):
+            return {
+                "enableReading": True,
+                "enableSpotAndMarginTrading": False,
+                "enableWithdrawals": False,
+            }
+        def fetch_balance(self):
+            return {"total": {}}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main.ccxt, "binance", lambda config: FakeCredentialClient())
+    try:
+        main._verify_binance_customer_credentials("A" * 32, "S" * 40)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 422
+        assert "spot" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Read-only key was incorrectly accepted for trading")

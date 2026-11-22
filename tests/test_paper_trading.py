@@ -1,5 +1,8 @@
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("PAPER_TRADING_ENABLED", "true")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import main
@@ -583,3 +586,18 @@ def test_limit_matching_partial_fill_settles_both_assets_and_releases_excess_res
         assert cancelled.status_code==200,cancelled.text
         assert cancelled.json()["released_amount"]=="300.30"
         assert client.get("/trade/limit-orders?status=cancelled",headers=buyer).json()["orders"][0]["status"]=="cancelled"
+
+
+def test_legacy_paper_api_is_retired_when_feature_flag_is_off(monkeypatch):
+    from fastapi.testclient import TestClient
+    old = main.PAPER_TRADING_ENABLED
+    try:
+        main.PAPER_TRADING_ENABLED = False
+        with TestClient(main.app) as client:
+            response = client.get("/trade/assets")
+            assert response.status_code == 410
+            assert "simulated trading has been retired" in response.json()["detail"].lower()
+            balance = client.get("/account/balances")
+            assert balance.status_code == 410
+    finally:
+        main.PAPER_TRADING_ENABLED = old

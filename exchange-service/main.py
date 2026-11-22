@@ -4,11 +4,17 @@ import hmac
 import re
 import sqlite3
 import time
+import json
+import base64
+import hashlib
 from decimal import Decimal
 from typing import Literal
 
 import ccxt
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+import httpx
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from pydantic import SecretStr
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -28,6 +34,8 @@ API_SECRET = os.getenv("EXCHANGE_API_SECRET", "")
 ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
+PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
+EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
     "ALLOWED_ORIGINS",
     "https://jacksonmariso02-crypto.github.io"
@@ -65,6 +73,258 @@ PAPER_ORDER_GUARD = PaperOrderGuard(
 AUTH_TOKEN_SECRET = os.getenv("AUTH_TOKEN_SECRET", "")
 AUTH_TOKEN_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "900"))
 AUTH_SERVICE = AuthService(PAPER_ENGINE_DB_PATH, AUTH_TOKEN_SECRET, AUTH_TOKEN_TTL_SECONDS)
+
+# Customer exchange credentials are stored separately from platform sessions.
+# The browser submits keys once over HTTPS; only authenticated ciphertext is
+# persisted. The encryption key must be supplied through the hosting secret
+# manager and must never be committed to the repository.
+def _vault_cipher():
+    raw = EXCHANGE_CREDENTIAL_ENCRYPTION_KEY.strip()
+    if not raw:
+        raise HTTPException(503, "Customer credential vault is not configured.")
+    if len(raw) < 32:
+        raise HTTPException(503, "Customer credential vault key must contain at least 32 characters.")
+    # Derive a fixed-size AES-256 key from the host-managed high-entropy secret.
+    key = hashlib.sha256(raw.encode("utf-8")).digest()
+    return AESGCM(key)
+
+
+def _init_customer_credential_store():
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_exchange_connections (
+                user_id TEXT NOT NULL,
+                exchange_id TEXT NOT NULL,
+                encrypted_credentials BLOB NOT NULL,
+                masked_api_key TEXT NOT NULL,
+                permissions_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                connected_at INTEGER NOT NULL,
+                last_verified_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id, exchange_id)
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_customer_exchange_connections_user
+            ON customer_exchange_connections(user_id, status)
+        """)
+
+
+_init_customer_credential_store()
+
+
+async def require_platform_user(authorization: str | None = Header(default=None)):
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    if not token or len(token) > 4096:
+        raise HTTPException(401, "Authentication required.", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            response = await client.get(
+                PLATFORM_API_BASE_URL + "/account/me",
+                headers={"Authorization": "Bearer " + token},
+            )
+        if response.status_code != 200:
+            raise HTTPException(401, "Platform session is invalid or expired.")
+        user = response.json()
+        user_id = user.get("id")
+        if not isinstance(user_id, (int, str)) or not str(user_id):
+            raise HTTPException(401, "Platform session could not be verified.")
+        return {"id": str(user_id), "email": str(user.get("email", "")), "role": str(user.get("role", "user"))}
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, "Unable to verify the platform session. Please retry.") from None
+
+
+def _encrypt_customer_credentials(user_id: str, api_key: str, api_secret: str) -> bytes:
+    cipher = _vault_cipher()
+    nonce = os.urandom(12)
+    aad = (user_id + ":binance:v1").encode("utf-8")
+    payload = json.dumps({"api_key": api_key, "api_secret": api_secret}, separators=(",", ":")).encode("utf-8")
+    return nonce + cipher.encrypt(nonce, payload, aad)
+
+
+def _decrypt_customer_credentials(user_id: str, envelope: bytes) -> dict:
+    cipher = _vault_cipher()
+    nonce, ciphertext = envelope[:12], envelope[12:]
+    aad = (user_id + ":binance:v1").encode("utf-8")
+    try:
+        return json.loads(cipher.decrypt(nonce, ciphertext, aad).decode("utf-8"))
+    except Exception:
+        raise HTTPException(503, "Stored exchange authorization could not be decrypted. Contact support.") from None
+
+
+def _customer_connection(user_id: str):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        row = db.execute(
+            """SELECT exchange_id, masked_api_key, permissions_json, status,
+                      connected_at, last_verified_at
+               FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id='binance'""",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return {"connected": False, "exchange": "binance"}
+    return {
+        "connected": row["status"] == "connected",
+        "exchange": row["exchange_id"],
+        "masked_api_key": row["masked_api_key"],
+        "permissions": json.loads(row["permissions_json"]),
+        "status": row["status"],
+        "connected_at": row["connected_at"],
+        "last_verified_at": row["last_verified_at"],
+        "live_order_routing_enabled": False,
+    }
+
+
+def _verify_binance_customer_credentials(api_key: str, api_secret: str):
+    # This deliberately targets the user's live Binance account only for
+    # credential verification and permission inspection. No order is sent.
+    client = ccxt.binance({
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+        "options": {"defaultType": "spot"},
+    })
+    try:
+        permission_method = getattr(client, "privateGetAccountApiRestrictions", None)
+        if permission_method is None:
+            raise HTTPException(503, "This exchange connector cannot verify Binance API restrictions.")
+        restrictions = permission_method()
+        can_read = bool(restrictions.get("enableReading"))
+        can_spot_trade = bool(restrictions.get("enableSpotAndMarginTrading"))
+        can_withdraw = bool(restrictions.get("enableWithdrawals"))
+        if not can_read:
+            raise HTTPException(422, "The Binance API key must have read permission enabled.")
+        if not can_spot_trade:
+            raise HTTPException(422, "Enable Binance Spot & Margin Trading permission to connect this account.")
+        if can_withdraw:
+            raise HTTPException(422, "For safety, API keys with withdrawal permission are not accepted.")
+        # Fetching balances confirms that the key is valid for account reads.
+        balance = client.fetch_balance()
+        permissions = {
+            "read": can_read,
+            "spot_trading": can_spot_trade,
+            "withdrawals": can_withdraw,
+            "margin_endpoints_used": False,
+            "futures_endpoints_used": False,
+        }
+        return permissions, balance
+    except HTTPException:
+        raise
+    except ccxt.BaseError:
+        # Do not echo exchange exception text; some providers include request
+        # metadata in errors. Never leak credentials into application logs.
+        raise HTTPException(422, "Binance could not verify these API credentials. Check the key, secret, IP restrictions and account status.") from None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+class CustomerExchangeConnectRequest(BaseModel):
+    api_key: SecretStr = Field(min_length=16, max_length=256)
+    api_secret: SecretStr = Field(min_length=16, max_length=256)
+
+
+@app.get("/api/v1/user/exchange-connections")
+async def list_customer_exchange_connections(user=Depends(require_platform_user)):
+    return {"connections": [_customer_connection(user["id"])]}
+
+
+@app.post("/api/v1/user/exchange-connections/binance")
+async def connect_customer_binance(
+    body: CustomerExchangeConnectRequest,
+    request: Request,
+    user=Depends(require_platform_user),
+):
+    try:
+        AUTH_ATTEMPT_GUARD.check(user["id"], "1", "1")
+    except PaperOrderLimitExceeded as exc:
+        raise HTTPException(429, "Too many connection attempts. Please wait before retrying.",
+                            headers={"Retry-After": str(exc.retry_after)}) from exc
+    api_key = body.api_key.get_secret_value().strip()
+    api_secret = body.api_secret.get_secret_value().strip()
+    if not api_key or not api_secret:
+        raise HTTPException(422, "Both Binance API key and secret are required.")
+    permissions, _ = await run_in_threadpool(_verify_binance_customer_credentials, api_key, api_secret)
+    envelope = _encrypt_customer_credentials(user["id"], api_key, api_secret)
+    now = int(time.time())
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.execute(
+            """INSERT INTO customer_exchange_connections
+               (user_id, exchange_id, encrypted_credentials, masked_api_key,
+                permissions_json, status, connected_at, last_verified_at)
+               VALUES (?, 'binance', ?, ?, ?, 'connected', ?, ?)
+               ON CONFLICT(user_id, exchange_id) DO UPDATE SET
+                 encrypted_credentials=excluded.encrypted_credentials,
+                 masked_api_key=excluded.masked_api_key,
+                 permissions_json=excluded.permissions_json,
+                 status='connected',
+                 last_verified_at=excluded.last_verified_at""",
+            (user["id"], envelope, "••••" + api_key[-4:],
+             json.dumps(permissions, separators=(",", ":")), now, now),
+        )
+    return {
+        "connected": True,
+        "exchange": "binance",
+        "masked_api_key": "••••" + api_key[-4:],
+        "permissions": permissions,
+        "live_order_routing_enabled": False,
+        "message": "Binance account verified and encrypted. Customer order routing remains disabled pending production security and compliance approval.",
+    }
+
+
+@app.get("/api/v1/user/exchange-connections/binance/balances")
+async def customer_binance_balances(user=Depends(require_platform_user)):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT encrypted_credentials FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id='binance' AND status='connected'""",
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "No connected Binance account was found.")
+    credentials = _decrypt_customer_credentials(user["id"], row[0])
+    client = ccxt.binance({
+        "apiKey": credentials["api_key"], "secret": credentials["api_secret"],
+        "enableRateLimit": True, "options": {"defaultType": "spot"},
+    })
+    try:
+        balance = await run_in_threadpool(client.fetch_balance)
+        rows = []
+        for currency, amount in (balance.get("total") or {}).items():
+            try:
+                total = Decimal(str(amount or "0"))
+            except Exception:
+                continue
+            if total > 0 and total.is_finite():
+                rows.append({
+                    "asset": str(currency),
+                    "total": format(total, "f"),
+                    "free": format(Decimal(str((balance.get("free") or {}).get(currency) or "0")), "f"),
+                    "used": format(Decimal(str((balance.get("used") or {}).get(currency) or "0")), "f"),
+                })
+        return {"exchange": "binance", "balances": rows, "observed_at": int(time.time()),
+                "source": "customer_authorized_exchange_account"}
+    except ccxt.BaseError:
+        raise HTTPException(502, "Unable to retrieve balances from the connected Binance account.") from None
+    finally:
+        await run_in_threadpool(client.close)
+
+
+@app.delete("/api/v1/user/exchange-connections/binance")
+async def disconnect_customer_binance(user=Depends(require_platform_user)):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        cursor = db.execute(
+            "DELETE FROM customer_exchange_connections WHERE user_id=? AND exchange_id='binance'",
+            (user["id"],),
+        )
+    return {"disconnected": cursor.rowcount > 0, "exchange": "binance",
+            "message": "Stored Binance API authorization has been deleted."}
+
 AUTH_ATTEMPT_GUARD = PaperOrderGuard(
     max_notional="1", max_requests=int(os.getenv("AUTH_ATTEMPT_RATE_LIMIT", "10")),
     window_seconds=int(os.getenv("AUTH_ATTEMPT_RATE_WINDOW_SECONDS", "300")),
@@ -203,6 +463,10 @@ async def market_data_status():
         "execution_environment": "sandbox" if SANDBOX else "live_provider_configured",
         "live_order_placement_enabled": False,
         "customer_order_routing_enabled": False,
+        "customer_account_linking_enabled": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
+        "credential_vault_configured": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
+        "customer_account_verification_environment": "live_exchange_read_only",
+        "order_execution_environment": "sandbox_locked",
     }
 
 
@@ -260,12 +524,14 @@ def _readiness_checks():
     admin_token_ok = len(ADMIN_TOKEN) >= 32
     sandbox_mode = SANDBOX is True
     live_trading_disabled = LIVE_TRADING_ENABLED is False
+    credential_vault_ok = len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32
     return {
         "database": database_ok,
         "user_auth_secret": auth_secret_ok,
         "admin_token": admin_token_ok,
         "sandbox_mode": sandbox_mode,
         "live_trading_disabled": live_trading_disabled,
+        "customer_credential_vault": credential_vault_ok,
     }
 
 

@@ -646,3 +646,39 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-portfolio-empty .zc-btn{margin-top:6px}
 @media(max-width:1050px){.zc-market-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-home-top{grid-template-columns:1fr}.zc-home-health{max-width:none}}
 @media(max-width:750px){.zc-home-top{padding:22px 18px;gap:18px}.zc-home-title{font-size:30px}.zc-home-copy{font-size:12px}.zc-home-actions{width:100%}.zc-home-actions .zc-btn{flex:1}.zc-home-status-grid{grid-template-columns:1fr;gap:8px}.zc-market-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.zc-market-card{padding:12px}.zc-market-price{font-size:16px}.zc-home-section-head{align-items:flex-start;flex-direction:column}.zc-market-search{width:100%;min-width:0}.zc-market-terminal-head{align-items:flex-start;flex-direction:column;padding:18px}.zc-terminal-price{align-items:flex-start}.zc-execution-gate{padding:16px;gap:11px}.zc-gate-facts{gap:9px;flex-direction:column}.zc-portfolio-empty{margin:12px 0;padding:24px 17px}.zc-portfolio-status{font-size:10px;gap:10px}.marketpanel table{min-width:760px}}
+
+/* Customer-owned exchange account connection */
+.zc-account-page{max-width:980px;margin:0 auto}
+.zc-account-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin:8px 0 20px}
+.zc-account-heading h2{font-size:27px;margin:8px 0}
+.zc-account-heading p{max-width:620px;color:#93a4bb;font-size:12px;line-height:1.7;margin:0}
+.zc-account-provider{border:1px solid #3b4b62;background:#18263a;border-radius:8px;padding:9px 12px;color:#d7e4f4;font-size:10px;font-weight:800;letter-spacing:1px;white-space:nowrap}
+.zc-account-panel{background:#141f30;border:1px solid #2a3a50;border-radius:13px;padding:24px}
+.zc-account-panel h3,.zc-connect-form h3{margin:0 0 8px;font-size:17px}
+.zc-account-panel p,.zc-connect-form>p{font-size:12px;line-height:1.65;color:#9aabc1}
+.zc-connection-row{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.zc-connection-row h3{margin:7px 0}
+.zc-connection-row p{margin:0}
+.zc-connection-pill{border-radius:20px;padding:7px 10px;background:#f0b90b18;color:#f0b90b;font-size:9px;font-weight:800;letter-spacing:.8px}
+.zc-connection-pill.connected{background:#27d6a21a;color:#27d6a2}
+.zc-permission-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:22px 0}
+.zc-permission-grid>div{display:flex;flex-direction:column;gap:8px;padding:13px;background:#0f1929;border:1px solid #29384c;border-radius:8px}
+.zc-permission-grid span{font-size:10px;color:#8b9bb2}
+.zc-permission-grid b{font-size:12px;color:#d9e5f3}
+.zc-account-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.zc-btn-danger{background:#3a2029!important;color:#ff8d9d!important;border:1px solid #7a3444!important}
+.zc-connect-form{max-width:650px;display:flex;flex-direction:column;gap:14px}
+.zc-connect-form label{display:flex;flex-direction:column;gap:7px;color:#b9c7d8;font-size:11px;font-weight:700}
+.zc-connect-form input{width:100%;background:#0b1422;border:1px solid #35465d;border-radius:7px;padding:13px;color:#e8eef8}
+.zc-key-safety{background:#0d1a27;border:1px solid #315148;border-radius:9px;padding:15px;color:#a9c4bf;font-size:11px;line-height:1.7}
+.zc-key-safety strong{color:#d8eee7}
+.zc-key-safety ul{padding-left:19px;margin:8px 0 0}
+.zc-key-safety li{margin:3px 0}
+.zc-account-message{margin-top:12px;padding:12px 14px;border-radius:8px;background:#1b2b3d;border:1px solid #3b506a;color:#bfd1e6;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.zc-form-error{color:#ff9cab;font-size:11px;line-height:1.6}
+.zc-account-balances{margin-top:24px}
+.zc-account-balances h3{margin-bottom:12px}
+.zc-live-trading-lock{display:flex;gap:13px;margin-top:16px;padding:17px;background:#2b2519;border:1px solid #6c542a;border-radius:10px;color:#f0c66a}
+.zc-live-trading-lock strong{font-size:12px}
+.zc-live-trading-lock p{margin:6px 0 0;color:#c8b78f;font-size:11px;line-height:1.7}
+@media(max-width:750px){.zc-account-heading{flex-direction:column}.zc-account-heading h2{font-size:23px}.zc-account-panel{padding:17px}.zc-permission-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.zc-connection-row{align-items:flex-start;flex-direction:column}.zc-account-actions{flex-direction:column}.zc-account-actions button{width:100%}}

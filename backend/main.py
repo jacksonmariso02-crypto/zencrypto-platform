@@ -1,4 +1,4 @@
-"""ZenCrypto API. Simulated paper trading only; never transfers real assets."""
+"""ZenCrypto platform API. Legacy paper-trading routes are disabled by default."""
 import os, sqlite3, secrets, hashlib, hmac, time, json, re
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
@@ -6,17 +6,37 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 DB = os.getenv("DATABASE_PATH", "zencrypto.db")
+PAPER_TRADING_ENABLED = os.getenv("PAPER_TRADING_ENABLED", "false").lower() == "true"
 SUPPORTED_PAPER_ASSETS = frozenset({"BTC", "ETH", "SOL", "BNB", "XRP"})
 SECRET = os.getenv("APP_SECRET")
 if not SECRET:
     SECRET = secrets.token_urlsafe(48)
 TOKEN = URLSafeTimedSerializer(SECRET, salt="zencrypto-session-v1")
 bearer = HTTPBearer(auto_error=False)
-app = FastAPI(title="ZenCrypto Paper Trading API", version="1.0.0")
+app = FastAPI(title="ZenCrypto Platform API", version="1.1.0")
+
+@app.middleware("http")
+async def disable_legacy_paper_trading(request, call_next):
+    path = request.url.path
+    paper_only = (
+        path == "/trade" or path.startswith("/trade/")
+        or path in {"/account/balances", "/account/ledger", "/account/ledger/verify"}
+        or path == "/sandbox" or path.startswith("/sandbox/")
+    )
+    if paper_only and not PAPER_TRADING_ENABLED:
+        return JSONResponse(
+            status_code=410,
+            content={
+                "detail": "Legacy simulated trading has been retired from the public application. Connect your own exchange account through the exchange connector."
+            },
+        )
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173,https://jacksonmariso02-crypto.github.io").split(",") if x.strip()],
@@ -186,7 +206,7 @@ class Kyc(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": "PAPER_ONLY", "live_funds_enabled": False,
+    return {"status": "ok", "mode": "ACCOUNT_LINK_ONLY", "legacy_paper_trading_enabled": PAPER_TRADING_ENABLED, "live_funds_enabled": False,
             "real_deposits_enabled": False, "real_withdrawals_enabled": False}
 
 @app.post("/auth/register", status_code=201)
@@ -205,7 +225,7 @@ def register(body: Register):
         except sqlite3.IntegrityError:
             if c.in_transaction: c.execute("ROLLBACK")
             raise HTTPException(409, "Email already registered")
-    return {"message": "Account created. Log in to start paper trading.", "mode": "PAPER_ONLY"}
+    return {"message": "Account created. Log in to connect your own exchange account.", "mode": "ACCOUNT_LINK_ONLY"}
 
 @app.post("/auth/login")
 def login(body: Login):
@@ -229,7 +249,7 @@ def logout(u=Depends(require_user)):
 @app.get("/account/me")
 def me(u=Depends(require_user)):
     return {"id": u["id"], "email": u["email"], "kyc_status": u["kyc_status"],
-            "role": u["role"], "mode": "PAPER_ONLY"}
+            "role": u["role"], "mode": "ACCOUNT_LINK_ONLY"}
 
 @app.get("/trade/assets")
 def trade_assets(u=Depends(require_user)):

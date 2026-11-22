@@ -38,6 +38,10 @@ services:
     envVars:
       - key: EXCHANGE_ID
         value: binance
+      - key: PLATFORM_API_BASE_URL
+        value: https://zencrypto-api.onrender.com
+      - key: EXCHANGE_CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
       - key: EXCHANGE_SANDBOX
         value: "true"
       - key: LIVE_TRADING_ENABLED

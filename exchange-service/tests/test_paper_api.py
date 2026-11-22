@@ -412,6 +412,7 @@ def test_paper_orderbook_websocket_rejects_invalid_symbol(api):
 def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkeypatch):
     monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", TEST_AUTH_SECRET)
     monkeypatch.setattr(main, "ADMIN_TOKEN", TEST_ADMIN_TOKEN)
+    monkeypatch.setattr(main, "EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "test-vault-secret-that-is-at-least-32-characters")
     response = api.get("/ready")
     assert response.status_code == 200
     payload = response.json()
@@ -422,6 +423,7 @@ def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkey
         "admin_token": True,
         "sandbox_mode": True,
         "live_trading_disabled": True,
+        "customer_credential_vault": True,
     }
     assert payload["sandbox"] is True
     assert payload["live_trading_enabled"] is False
