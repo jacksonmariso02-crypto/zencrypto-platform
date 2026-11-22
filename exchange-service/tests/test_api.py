@@ -1,5 +1,7 @@
 import os
 import json
+import hmac
+import hashlib
 import sqlite3
 import sys
 from pathlib import Path
@@ -947,3 +949,26 @@ def test_wallet_journal_rejects_unbalanced_or_non_positive_postings(tmp_path, mo
         pass
     else:
         raise AssertionError("Negative wallet posting was accepted")
+
+
+def test_bitgo_webhook_requires_valid_signature_and_deduplicates(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "bitgo-webhooks.sqlite3")
+    secret = "test-webhook-secret-for-unit-tests"
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    monkeypatch.setattr(main, "BITGO_WEBHOOK_SECRET", secret)
+    main._init_customer_credential_store()
+    raw = json.dumps({"eventId": "evt-123", "type": "transfer", "transfer": {"id": "tx-456"}}).encode()
+    signature = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    rejected = client.post("/api/v1/webhooks/bitgo", content=raw, headers={"x-signature-sha256": "bad"})
+    assert rejected.status_code == 401
+    first = client.post("/api/v1/webhooks/bitgo", content=raw, headers={"x-signature-sha256": signature})
+    second = client.post("/api/v1/webhooks/bitgo", content=raw, headers={"x-signature-sha256": signature})
+    assert first.status_code == 200
+    assert first.json()["accepted"] is True
+    assert first.json()["credited"] is False
+    assert first.json()["status"] == "pending_provider_verification"
+    assert second.status_code == 200
+    assert second.json()["duplicate"] is True
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM custody_webhook_events").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 0
