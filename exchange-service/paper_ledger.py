@@ -499,6 +499,104 @@ class PaperLedger:
             return [dict(row) for row in rows]
 
 
+    def compare_daily_snapshots(self, account_id, from_date, to_date, asset=None):
+        """Compare two immutable paper snapshots for one account using exact decimals."""
+        account_id = self._account_id(account_id)
+        def valid_date(value, field):
+            from datetime import date
+            try:
+                parsed = date.fromisoformat(str(value))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{field} must use YYYY-MM-DD format.") from exc
+            if parsed.isoformat() != str(value):
+                raise ValueError(f"{field} must use YYYY-MM-DD format.")
+            return parsed.isoformat()
+
+        from_date = valid_date(from_date, "from_date")
+        to_date = valid_date(to_date, "to_date")
+        if from_date >= to_date:
+            raise ValueError("from_date must be earlier than to_date.")
+        normalized_asset = self._asset(asset) if asset is not None else None
+
+        with closing(self._connect()) as db:
+            if not db.execute(
+                "SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)
+            ).fetchone():
+                raise KeyError("Paper account not found.")
+
+            query = """
+                SELECT snapshot_date, asset, available, locked
+                FROM daily_asset_snapshots
+                WHERE account_id=? AND snapshot_date IN (?, ?)
+            """
+            params = [account_id, from_date, to_date]
+            if normalized_asset:
+                query += " AND asset=?"
+                params.append(normalized_asset)
+            rows = db.execute(query, params).fetchall()
+
+        snapshots = {from_date: {}, to_date: {}}
+        for row in rows:
+            snapshots[row["snapshot_date"]][row["asset"]] = {
+                "available": Decimal(row["available"]),
+                "locked": Decimal(row["locked"]),
+            }
+
+        changes = []
+        for ticker in sorted(set(snapshots[from_date]) | set(snapshots[to_date])):
+            before = snapshots[from_date].get(ticker)
+            after = snapshots[to_date].get(ticker)
+            if before is None or after is None:
+                changes.append({
+                    "asset": ticker,
+                    "status": "missing_snapshot",
+                    "from": None if before is None else {
+                        "available": str(before["available"]),
+                        "locked": str(before["locked"]),
+                        "total": str(before["available"] + before["locked"]),
+                    },
+                    "to": None if after is None else {
+                        "available": str(after["available"]),
+                        "locked": str(after["locked"]),
+                        "total": str(after["available"] + after["locked"]),
+                    },
+                    "delta": None,
+                })
+                continue
+            before_total = before["available"] + before["locked"]
+            after_total = after["available"] + after["locked"]
+            changes.append({
+                "asset": ticker,
+                "status": "compared",
+                "from": {
+                    "available": str(before["available"]),
+                    "locked": str(before["locked"]),
+                    "total": str(before_total),
+                },
+                "to": {
+                    "available": str(after["available"]),
+                    "locked": str(after["locked"]),
+                    "total": str(after_total),
+                },
+                "delta": {
+                    "available": str(after["available"] - before["available"]),
+                    "locked": str(after["locked"] - before["locked"]),
+                    "total": str(after_total - before_total),
+                },
+            })
+
+        return {
+            "mode": "paper",
+            "account_id": account_id,
+            "from_date": from_date,
+            "to_date": to_date,
+            "assets_compared": sum(1 for item in changes if item["status"] == "compared"),
+            "assets_missing_snapshot": sum(1 for item in changes if item["status"] == "missing_snapshot"),
+            "changes": changes,
+            "source": "immutable_daily_asset_snapshots",
+        }
+
+
     def admin_finance_overview(self):
         """Read-only aggregate view of simulated user liabilities and platform fees."""
         with closing(self._connect()) as db:
