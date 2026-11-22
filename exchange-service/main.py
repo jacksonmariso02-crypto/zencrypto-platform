@@ -38,6 +38,9 @@ LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENA
 WALLET_CUSTODY_PROVIDER = os.getenv("WALLET_CUSTODY_PROVIDER", "").strip().lower()
 WALLET_DEPOSITS_ENABLED = os.getenv("WALLET_DEPOSITS_ENABLED", "false").lower() == "true"
 WALLET_WITHDRAWALS_ENABLED = os.getenv("WALLET_WITHDRAWALS_ENABLED", "false").lower() == "true"
+BITGO_API_ENV = os.getenv("BITGO_API_ENV", "test").strip().lower()
+BITGO_WEBHOOK_SECRET = os.getenv("BITGO_WEBHOOK_SECRET", "")
+BITGO_ENTERPRISE_ID = os.getenv("BITGO_ENTERPRISE_ID", "")
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -161,6 +164,38 @@ def _init_customer_credential_store():
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_wallet_ledger_user_asset
             ON wallet_ledger_entries(user_id, asset, created_at DESC)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_custody_wallets (
+                user_id TEXT NOT NULL, provider TEXT NOT NULL, provider_wallet_id TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, created_at INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                PRIMARY KEY(user_id, provider, provider_wallet_id, asset, network)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_deposit_addresses (
+                user_id TEXT NOT NULL, provider TEXT NOT NULL, provider_wallet_id TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, address TEXT NOT NULL,
+                address_tag TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL,
+                UNIQUE(provider, network, address, address_tag)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS custody_webhook_events (
+                provider TEXT NOT NULL, event_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+                payload_json TEXT NOT NULL, status TEXT NOT NULL, received_at INTEGER NOT NULL,
+                processed_at INTEGER, PRIMARY KEY(provider, event_id)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_withdrawal_requests (
+                request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, amount TEXT NOT NULL,
+                destination_address TEXT NOT NULL, destination_tag TEXT, status TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
+                UNIQUE(user_id, idempotency_key)
+            )
         """)
 
 
