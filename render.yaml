@@ -56,6 +56,10 @@ services:
         generateValue: true
       - key: PAPER_MAX_ORDER_NOTIONAL
         value: "100000"
+      - key: CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT
+        value: "250"
+      - key: CUSTOMER_PREVIEW_FEE_BUFFER_RATE
+        value: "0.001"
       - key: PAPER_ORDER_RATE_LIMIT
         value: "30"
       - key: PAPER_ORDER_RATE_WINDOW_SECONDS

@@ -7,7 +7,7 @@ import time
 import json
 import base64
 import hashlib
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 import ccxt
@@ -36,6 +36,8 @@ SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
+CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
+CUSTOMER_PREVIEW_FEE_BUFFER_RATE = Decimal(os.getenv("CUSTOMER_PREVIEW_FEE_BUFFER_RATE", "0.001"))
 ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
     "ALLOWED_ORIGINS",
     "https://jacksonmariso02-crypto.github.io"
@@ -227,6 +229,144 @@ def _verify_binance_customer_credentials(api_key: str, api_secret: str):
 class CustomerExchangeConnectRequest(BaseModel):
     api_key: SecretStr = Field(min_length=16, max_length=256)
     api_secret: SecretStr = Field(min_length=16, max_length=256)
+
+class CustomerOrderPreviewRequest(BaseModel):
+    symbol: str = Field(min_length=3, max_length=24)
+    side: Literal["buy", "sell"]
+    order_type: Literal["market", "limit"] = "market"
+    amount: Decimal = Field(gt=0, max_digits=24, decimal_places=12)
+    price: Decimal | None = Field(default=None, gt=0, max_digits=24, decimal_places=12)
+
+
+def _calculate_customer_order_preview(exchange, body: CustomerOrderPreviewRequest):
+    """Read-only spot order preflight. This function never submits or persists an order."""
+    try:
+        symbol = normalize_symbol(body.symbol)
+        markets = exchange.load_markets()
+        market = markets.get(symbol)
+        if not market or market.get("active") is False or market.get("spot") is not True:
+            raise HTTPException(422, "This is not an active Binance Spot market.")
+        if market.get("quote") != "USDT":
+            raise HTTPException(422, "Order preview currently supports USDT-quoted Spot pairs only.")
+        if body.order_type == "limit" and body.price is None:
+            raise HTTPException(422, "A limit order requires a limit price.")
+        if body.order_type == "market" and body.price is not None:
+            raise HTTPException(422, "Do not provide a price for a market order.")
+
+        amount_text = exchange.amount_to_precision(symbol, str(body.amount))
+        amount = Decimal(amount_text)
+        if amount <= 0 or amount != body.amount:
+            raise HTTPException(422, "Order amount exceeds the market's supported precision.")
+
+        ticker = exchange.fetch_ticker(symbol)
+        reference_raw = body.price if body.order_type == "limit" else (
+            ticker.get("ask") if body.side == "buy" else ticker.get("bid")
+        )
+        if reference_raw is None:
+            reference_raw = ticker.get("last")
+        if reference_raw is None:
+            raise HTTPException(503, "A current reference price is unavailable.")
+        reference_price = Decimal(str(reference_raw))
+        if not reference_price.is_finite() or reference_price <= 0:
+            raise HTTPException(503, "The exchange returned an invalid reference price.")
+
+        price_text = exchange.price_to_precision(symbol, str(reference_price))
+        reference_price = Decimal(price_text)
+        if body.order_type == "limit" and reference_price != body.price:
+            raise HTTPException(422, "Limit price exceeds the market's supported precision.")
+
+        notional = amount * reference_price
+        limits = market.get("limits") or {}
+        amount_limits = limits.get("amount") or {}
+        cost_limits = limits.get("cost") or {}
+        min_amount = Decimal(str(amount_limits["min"])) if amount_limits.get("min") is not None else None
+        max_amount = Decimal(str(amount_limits["max"])) if amount_limits.get("max") is not None else None
+        min_cost = Decimal(str(cost_limits["min"])) if cost_limits.get("min") is not None else None
+        max_cost = Decimal(str(cost_limits["max"])) if cost_limits.get("max") is not None else None
+        if min_amount is not None and amount < min_amount:
+            raise HTTPException(422, "Order amount is below Binance's minimum.")
+        if max_amount is not None and amount > max_amount:
+            raise HTTPException(422, "Order amount exceeds Binance's maximum.")
+        if min_cost is not None and notional < min_cost:
+            raise HTTPException(422, "Estimated order value is below Binance's minimum notional.")
+        if max_cost is not None and notional > max_cost:
+            raise HTTPException(422, "Estimated order value exceeds Binance's maximum notional.")
+        if (not CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT.is_finite()
+                or CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT <= 0
+                or CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT > Decimal("2500")):
+            raise HTTPException(503, "Customer order preview risk limit is not configured safely.")
+        if (not CUSTOMER_PREVIEW_FEE_BUFFER_RATE.is_finite()
+                or CUSTOMER_PREVIEW_FEE_BUFFER_RATE < 0
+                or CUSTOMER_PREVIEW_FEE_BUFFER_RATE > Decimal("0.05")):
+            raise HTTPException(503, "Customer order preview fee buffer is not configured safely.")
+        if notional > CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT:
+            raise HTTPException(422, "Order exceeds the current per-order preview risk limit of "
+                                + format(CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT, "f") + " USDT.")
+
+        balances = exchange.fetch_balance()
+        free = balances.get("free") or {}
+        base_asset, quote_asset = market["base"], market["quote"]
+        fee_buffer = notional * CUSTOMER_PREVIEW_FEE_BUFFER_RATE
+        required = notional + fee_buffer if body.side == "buy" else amount
+        asset = quote_asset if body.side == "buy" else base_asset
+        available = Decimal(str(free.get(asset) or "0"))
+        if not available.is_finite() or available < required:
+            raise HTTPException(409, "Insufficient available " + asset + " balance for this order and fee buffer.")
+
+        return {
+            "exchange": "binance",
+            "symbol": symbol,
+            "side": body.side,
+            "order_type": body.order_type,
+            "amount": format(amount, "f"),
+            "reference_price": format(reference_price, "f"),
+            "estimated_notional_usdt": format(notional, "f"),
+            "estimated_fee_buffer_usdt": format(fee_buffer, "f"),
+            "estimated_required_balance": format(required, "f"),
+            "required_asset": asset,
+            "available_balance": format(available, "f"),
+            "market_min_notional": format(min_cost, "f") if min_cost is not None else None,
+            "per_order_preview_limit_usdt": format(CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT, "f"),
+            "price_source": "binance_live_ticker",
+            "balance_source": "customer_binance_spot_account",
+            "order_submitted": False,
+            "can_submit": False,
+            "execution_status": "PREVIEW_ONLY",
+        }
+    except HTTPException:
+        raise
+    except ccxt.BaseError:
+        raise HTTPException(502, "Binance could not complete the read-only order preflight. No order was submitted.") from None
+    except (InvalidOperation, ValueError, TypeError, KeyError):
+        raise HTTPException(422, "Order preview inputs or exchange market data are invalid.") from None
+
+
+@app.post("/api/v1/user/orders/preview")
+async def preview_customer_order(
+    body: CustomerOrderPreviewRequest,
+    user=Depends(require_platform_user),
+):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT encrypted_credentials FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id='binance' AND status='connected'""",
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Connect a Binance account before requesting an order preview.")
+    credentials = _decrypt_customer_credentials(user["id"], row[0])
+    exchange = ccxt.binance({
+        "apiKey": credentials["api_key"],
+        "secret": credentials["api_secret"],
+        "enableRateLimit": True,
+        "options": {"defaultType": "spot"},
+    })
+    try:
+        return await run_in_threadpool(_calculate_customer_order_preview, exchange, body)
+    finally:
+        await run_in_threadpool(exchange.close)
+
+
 
 
 @app.get("/api/v1/user/exchange-connections")

@@ -682,3 +682,20 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-live-trading-lock strong{font-size:12px}
 .zc-live-trading-lock p{margin:6px 0 0;color:#c8b78f;font-size:11px;line-height:1.7}
 @media(max-width:750px){.zc-account-heading{flex-direction:column}.zc-account-heading h2{font-size:23px}.zc-account-panel{padding:17px}.zc-permission-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.zc-connection-row{align-items:flex-start;flex-direction:column}.zc-account-actions{flex-direction:column}.zc-account-actions button{width:100%}}
+
+/* Customer-specific read-only order preflight */
+.zc-order-preview-panel{margin:18px 0;padding:20px;background:#141f30;border:1px solid #2a3a50;border-radius:12px}
+.zc-order-preview-panel .panelhead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.zc-preview-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end;margin-top:16px}
+.zc-preview-form label{display:flex;flex-direction:column;gap:7px;color:#b9c7d8;font-size:11px;font-weight:700}
+.zc-preview-form input,.zc-preview-form select{width:100%;min-width:0;background:#0b1422;border:1px solid #35465d;border-radius:7px;padding:12px;color:#e8eef8}
+.zc-preview-form button{min-height:42px}
+.zc-preview-result{margin-top:16px;padding:15px;background:#0d1a27;border:1px solid #315148;border-radius:9px}
+.zc-preview-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;color:#d9e9e5}
+.zc-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.zc-preview-grid>div{display:flex;flex-direction:column;gap:6px;padding:11px;background:#142437;border-radius:7px;min-width:0}
+.zc-preview-grid span{font-size:10px;color:#91a4ba}
+.zc-preview-grid b{font-size:12px;color:#e4edf7;overflow-wrap:anywhere}
+.zc-preview-error{color:#ff9cab;border-color:#7a3444}
+@media(max-width:800px){.zc-preview-form{grid-template-columns:repeat(2,minmax(0,1fr))}.zc-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.zc-order-preview-panel{padding:14px}.zc-preview-form{grid-template-columns:1fr}.zc-preview-form button{width:100%}.zc-preview-grid{grid-template-columns:1fr 1fr}.zc-order-preview-panel .panelhead{flex-direction:column}}

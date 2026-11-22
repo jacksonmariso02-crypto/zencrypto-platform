@@ -99,6 +99,9 @@ class FakeOrderClient:
     def fetch_ticker(self, symbol):
         return {"ask": 50000.0, "bid": 49999.0, "last": 50000.0}
 
+    def fetch_balance(self):
+        return {"free": {"USDT": 1000, "BTC": 0.5}}
+
     def create_order(self, symbol, order_type, side, amount, price):
         order = {"symbol": symbol, "type": order_type, "side": side, "amount": amount, "price": price}
         self.created.append(order)
@@ -441,3 +444,151 @@ def test_binance_credential_verification_requires_spot_trade_permission(monkeypa
         assert "spot" in str(getattr(exc, "detail", "")).lower()
     else:
         raise AssertionError("Read-only key was incorrectly accepted for trading")
+
+
+def test_customer_order_preview_is_read_only_and_checks_balance(monkeypatch):
+    fake = FakeOrderClient()
+    old_limit = main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT
+    try:
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = main.Decimal("250")
+        body = main.CustomerOrderPreviewRequest(
+            symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
+        )
+        result = main._calculate_customer_order_preview(fake, body)
+        assert main.Decimal(result["estimated_notional_usdt"]) == main.Decimal("50")
+        assert main.Decimal(result["estimated_fee_buffer_usdt"]) == main.Decimal("0.05")
+        assert result["required_asset"] == "USDT"
+        assert result["order_submitted"] is False
+        assert result["can_submit"] is False
+        assert result["execution_status"] == "PREVIEW_ONLY"
+        assert fake.created == []
+    finally:
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = old_limit
+
+
+def test_customer_order_preview_rejects_excessive_notional_without_submission():
+    fake = FakeOrderClient()
+    old_limit = main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT
+    try:
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = main.Decimal("25")
+        body = main.CustomerOrderPreviewRequest(
+            symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
+        )
+        try:
+            main._calculate_customer_order_preview(fake, body)
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 422
+            assert "risk limit" in str(getattr(exc, "detail", "")).lower()
+        else:
+            raise AssertionError("Preview above per-order risk limit was accepted")
+        assert fake.created == []
+    finally:
+        main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = old_limit
+
+
+def test_customer_order_preview_rejects_insufficient_quote_balance():
+    fake = FakeOrderClient()
+    fake.fetch_balance = lambda: {"free": {"USDT": 10, "BTC": 0.5}}
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+        assert "insufficient" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Insufficient quote balance was accepted")
+    assert fake.created == []
+
+
+def test_customer_order_preview_rejects_non_usdt_quote_market():
+    fake = FakeOrderClient()
+    markets = fake.load_markets()
+    markets["BTC/USDC"] = {**markets["BTC/USDT"], "quote": "USDC"}
+    fake.load_markets = lambda: markets
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDC", side="buy", order_type="market", amount="0.001"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 422
+        assert "usdt" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Unsupported quote asset was accepted")
+    assert fake.created == []
+
+
+def test_customer_order_preview_requires_limit_price():
+    fake = FakeOrderClient()
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDT", side="buy", order_type="limit", amount="0.001"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 422
+        assert "limit price" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Limit order without price was accepted")
+    assert fake.created == []
+
+
+def test_customer_order_preview_rejects_invalid_precision():
+    fake = FakeOrderClient()
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDT", side="buy", order_type="market", amount="0.00012345"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 422
+        assert "precision" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Amount with unsupported precision was accepted")
+    assert fake.created == []
+
+
+def test_customer_order_preview_requires_authenticated_platform_session():
+    response = client.post(
+        "/api/v1/user/orders/preview",
+        json={"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": "0.001"},
+    )
+    assert response.status_code == 401
+
+
+def test_customer_order_preview_rejects_unsafe_fee_buffer_configuration():
+    fake = FakeOrderClient()
+    old_fee = main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE
+    try:
+        main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE = main.Decimal("-0.01")
+        body = main.CustomerOrderPreviewRequest(
+            symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
+        )
+        try:
+            main._calculate_customer_order_preview(fake, body)
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 503
+            assert "fee buffer" in str(getattr(exc, "detail", "")).lower()
+        else:
+            raise AssertionError("Unsafe negative fee buffer was accepted")
+        assert fake.created == []
+    finally:
+        main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE = old_fee
+
+
+def test_customer_sell_preview_checks_available_base_asset():
+    fake = FakeOrderClient()
+    fake.fetch_balance = lambda: {"free": {"USDT": 1000, "BTC": 0.0005}}
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDT", side="sell", order_type="market", amount="0.001"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+        assert "insufficient" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Sell preview with insufficient base balance was accepted")
+    assert fake.created == []
