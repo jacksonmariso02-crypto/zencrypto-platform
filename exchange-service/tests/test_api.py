@@ -895,3 +895,55 @@ def test_wallet_withdrawal_request_refuses_without_custody_provider(monkeypatch)
         assert "unavailable" in response.json()["detail"].lower()
     finally:
         main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_wallet_journal_posts_balanced_entries_once_and_replays_idempotently(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "wallet-posting.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    main._init_customer_credential_store()
+    postings = [
+        {"account_code": "customer_available", "direction": "credit", "amount": "2.5"},
+        {"account_code": "custody_asset", "direction": "debit", "amount": "2.5"},
+    ]
+    journal_id, created = main._post_wallet_journal(
+        "wallet-user", "USDT", "deposit_confirmed", "provider-event-123", postings, "chain-tx-123"
+    )
+    assert created is True
+    replay_id, replay_created = main._post_wallet_journal(
+        "wallet-user", "USDT", "deposit_confirmed", "provider-event-123", postings, "chain-tx-123"
+    )
+    assert replay_id == journal_id
+    assert replay_created is False
+    assert main._wallet_balances_for_user("wallet-user") == [{"asset": "USDT", "available": "2.5"}]
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 2
+
+
+def test_wallet_journal_rejects_unbalanced_or_non_positive_postings(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "wallet-invalid.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    main._init_customer_credential_store()
+    try:
+        main._post_wallet_journal(
+            "wallet-user", "USDT", "deposit_confirmed", "bad-event",
+            [
+                {"account_code": "customer_available", "direction": "credit", "amount": "1"},
+                {"account_code": "custody_asset", "direction": "debit", "amount": "0.9"},
+            ],
+        )
+    except ValueError as exc:
+        assert "not balanced" in str(exc)
+    else:
+        raise AssertionError("Unbalanced wallet journal was accepted")
+    try:
+        main._post_wallet_journal(
+            "wallet-user", "USDT", "deposit_confirmed", "bad-event-2",
+            [
+                {"account_code": "customer_available", "direction": "credit", "amount": "-1"},
+                {"account_code": "custody_asset", "direction": "debit", "amount": "-1"},
+            ],
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Negative wallet posting was accepted")
