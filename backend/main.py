@@ -1,4 +1,4 @@
-"""ZenCrypto API. Simulated paper trading only; never transfers real assets."""
+"""ZenCrypto platform API. Legacy paper-trading routes are disabled by default."""
 import os, sqlite3, secrets, hashlib, hmac, time, json, re
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from contextlib import contextmanager
@@ -18,7 +18,7 @@ if not SECRET:
     SECRET = secrets.token_urlsafe(48)
 TOKEN = URLSafeTimedSerializer(SECRET, salt="zencrypto-session-v1")
 bearer = HTTPBearer(auto_error=False)
-app = FastAPI(title="ZenCrypto Paper Trading API", version="1.0.0")
+app = FastAPI(title="ZenCrypto Platform API", version="1.1.0")
 
 @app.middleware("http")
 async def disable_legacy_paper_trading(request, call_next):
