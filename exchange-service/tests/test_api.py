@@ -990,6 +990,37 @@ def test_wallet_journal_posts_balanced_entries_once_and_replays_idempotently(tmp
         assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 2
 
 
+def test_wallet_integrity_reports_balanced_customer_journal_and_detects_corruption(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "wallet-integrity.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    main._init_customer_credential_store()
+    postings = [
+        {"account_code": "customer_available", "direction": "credit", "amount": "5"},
+        {"account_code": "custody_asset", "direction": "debit", "amount": "5"},
+    ]
+    journal_id, created = main._post_wallet_journal(
+        "integrity-user", "USDT", "deposit_confirmed", "integrity-event-1", postings, "tx-integrity-1"
+    )
+    assert created is True
+    healthy = main._wallet_integrity_for_user("integrity-user")
+    assert healthy["healthy"] is True
+    assert healthy["checked_journals"] == 1
+    assert healthy["issue_count"] == 0
+
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            """INSERT INTO wallet_ledger_entries
+               (journal_id, user_id, asset, account_code, direction, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (journal_id, "integrity-user", "USDT", "customer_available", "debit", "1", 2),
+        )
+    corrupted = main._wallet_integrity_for_user("integrity-user")
+    assert corrupted["healthy"] is False
+    assert corrupted["status"] == "review_required"
+    assert corrupted["issue_count"] == 1
+    assert corrupted["issues"][0]["reason"] == "unbalanced"
+
+
 def test_wallet_journal_rejects_unbalanced_or_non_positive_postings(tmp_path, monkeypatch):
     db_path = str(tmp_path / "wallet-invalid.sqlite3")
     monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
