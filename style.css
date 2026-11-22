@@ -583,3 +583,66 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-market-card-button .zc-market-extra span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .marketpanel table{min-width:780px}
 @media(max-width:640px){.zc-market-extra{font-size:9px}.marketpanel table{min-width:760px}}
+
+/* ZenCrypto market-first workspace refresh */
+.zc-home-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,320px);align-items:center;gap:28px;padding:34px 32px;margin:0 0 16px;background:radial-gradient(ellipse at 82% 15%,#174b4a55,transparent 38%),linear-gradient(115deg,#151d28,#101720);border:1px solid #2b3b4a;border-radius:14px}
+.zc-home-top>div:first-child{max-width:760px}
+.zc-home-title{font-size:clamp(30px,4vw,48px);letter-spacing:-1.5px;line-height:1.08;margin:8px 0 12px;color:#f4f7fb}
+.zc-home-copy{max-width:650px;color:#aeb9c8;line-height:1.75;font-size:13px;margin:0}
+.zc-home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+.zc-home-actions .zc-btn{padding:12px 18px;border-radius:7px}
+.zc-home-health{display:flex;align-items:flex-start;gap:11px;min-width:0;padding:16px;background:#0c121a;border:1px solid #2b3b4a;border-radius:9px}
+.zc-home-health strong,.zc-home-health small{display:block}
+.zc-home-health strong{font-size:12px;color:#eaecef;margin:0 0 6px}
+.zc-home-health small{font-size:10px;line-height:1.6;color:#8794a5}
+.zc-health-dot{width:8px;height:8px;flex:0 0 8px;margin-top:4px;border-radius:50%;background:#f0b90b;box-shadow:0 0 0 3px #f0b90b20}
+.zc-health-dot.online{background:#0ecb81;box-shadow:0 0 0 3px #0ecb8120}
+.zc-home-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 25px}
+.zc-home-status-card{display:flex;flex-direction:column;gap:7px;min-width:0;padding:16px 18px;background:#141f30;border:1px solid #28364a;border-radius:10px}
+.zc-status-kicker{font-size:9px;letter-spacing:1.1px;color:#8190a8;font-weight:800}
+.zc-home-status-card strong{font-size:14px;color:#e8eef8}
+.zc-home-status-card small{font-size:10px;color:#8190a8;line-height:1.5}
+.zc-status-warning{color:#f0b90b!important}
+.zc-status-good{color:#27d6a2!important}
+.zc-home-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin:20px 0 10px}
+.zc-home-section-head .zc-section-title{margin:0 0 5px}
+.zc-home-section-head .muted{margin:0}
+.zc-market-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;overflow:visible;padding:0;margin:0 0 20px}
+.zc-market-card-button{display:block;width:100%;min-width:0;text-align:left;cursor:pointer;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.zc-market-card-button:hover{border-color:#27d6a2;background:#172a32;transform:translateY(-2px)}
+.zc-market-symbol{display:flex;justify-content:space-between;gap:8px}
+.zc-market-symbol span{color:#848e9c}
+.zc-market-price{font-size:clamp(15px,1.5vw,21px);overflow-wrap:anywhere}
+.zc-market-extra{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding-top:9px;border-top:1px solid #2b3139;color:#848e9c;font-size:10px;line-height:1.45}
+.zc-market-extra span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zc-market-change small{font-size:10px;color:#848e9c;margin-left:3px}
+.zc-market-search{display:flex;align-items:center;gap:8px;min-width:220px;padding:0 10px;background:#0b0e11;border:1px solid #343b45;border-radius:6px;color:#848e9c}
+.zc-market-search input{width:100%;min-width:0;padding:10px 0;background:transparent;border:0;outline:0;color:#eaecef}
+.zc-table-live,.zc-table-stale{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;padding:4px 6px;border-radius:3px}
+.zc-table-live{color:#0ecb81;background:#0ecb8115}
+.zc-table-stale{color:#f0b90b;background:#f0b90b15}
+.zc-home-footnote{margin:12px 2px 0;color:#69727e;font-size:10px;line-height:1.6}
+.zc-market-terminal-head{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 24px;margin-bottom:12px;background:#141f30;border:1px solid #28364a;border-radius:12px}
+.zc-market-terminal-head h2{margin:7px 0;font-size:26px}
+.zc-terminal-price{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.zc-terminal-price strong{font-size:27px;font-variant-numeric:tabular-nums}
+.zc-terminal-price span{font-size:12px}
+.zc-terminal-pairs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.zc-terminal-pairs .pair-chip{cursor:pointer}
+.zc-terminal-chart{margin-bottom:14px}
+.zc-execution-gate{display:flex;gap:16px;padding:22px;margin:14px 0 18px;background:linear-gradient(110deg,#302817,#1b2027);border:1px solid #6b5427;border-radius:12px}
+.zc-gate-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:10px;background:#f0b90b1a;color:#f0b90b}
+.zc-gate-copy{min-width:0}
+.zc-gate-copy h3{font-size:17px;margin:6px 0}
+.zc-gate-copy p{font-size:12px;line-height:1.7;color:#c4b58c;margin:0}
+.zc-gate-facts{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:10px;color:#aeb9c8}
+.zc-gate-facts b{margin-left:4px}
+.zc-portfolio-empty{max-width:720px;margin:36px auto;padding:36px;background:#141f30;border:1px solid #28364a;border-radius:14px;text-align:center}
+.zc-portfolio-icon{display:grid;place-items:center;width:54px;height:54px;margin:0 auto 18px;border-radius:14px;background:#27d6a21a;color:#27d6a2}
+.zc-portfolio-empty h2{font-size:25px;margin:9px 0}
+.zc-portfolio-empty>p{max-width:570px;margin:0 auto;color:#aeb9c8;line-height:1.75;font-size:12px}
+.zc-portfolio-status{display:grid;grid-template-columns:1fr auto;gap:12px 18px;max-width:460px;margin:24px auto;padding:17px;background:#0e1725;border:1px solid #28364a;border-radius:9px;text-align:left;font-size:11px;color:#aeb9c8}
+.zc-portfolio-status b{text-align:right}
+.zc-portfolio-empty .zc-btn{margin-top:6px}
+@media(max-width:1050px){.zc-market-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-home-top{grid-template-columns:1fr}.zc-home-health{max-width:none}}
+@media(max-width:750px){.zc-home-top{padding:22px 18px;gap:18px}.zc-home-title{font-size:30px}.zc-home-copy{font-size:12px}.zc-home-actions{width:100%}.zc-home-actions .zc-btn{flex:1}.zc-home-status-grid{grid-template-columns:1fr;gap:8px}.zc-market-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.zc-market-card{padding:12px}.zc-market-price{font-size:16px}.zc-home-section-head{align-items:flex-start;flex-direction:column}.zc-market-search{width:100%;min-width:0}.zc-market-terminal-head{align-items:flex-start;flex-direction:column;padding:18px}.zc-terminal-price{align-items:flex-start}.zc-execution-gate{padding:16px;gap:11px}.zc-gate-facts{gap:9px;flex-direction:column}.zc-portfolio-empty{margin:12px 0;padding:24px 17px}.zc-portfolio-status{font-size:10px;gap:10px}.marketpanel table{min-width:760px}}
