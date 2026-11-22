@@ -184,3 +184,53 @@ def test_reconciliation_detects_negative_user_bucket(ledger):
     assert result["status"] == "attention_required"
     assert result["checks"]["user_buckets_nonnegative"] is False
     assert result["counts"]["negative_buckets"] == 1
+
+
+def test_daily_asset_snapshot_is_immutable_and_idempotent(ledger):
+    ledger.create_account("snap_001")
+    ledger.credit_paper_funds("snap_001", "USDT", "100.25", "snap-credit-001")
+    first = ledger.capture_daily_snapshots()
+    replay = ledger.capture_daily_snapshots()
+
+    assert first["status"] == "captured"
+    assert first["created"] == 1
+    assert replay["created"] == 0
+    assert replay["snapshot_date"] == first["snapshot_date"]
+
+    ledger.transfer(
+        "snap_001", "USDT", "25", "available", "locked",
+        "snap-lock-0001", "Reserve after initial snapshot",
+    )
+    history = ledger.list_daily_snapshots("snap_001")
+    assert len(history) == 1
+    assert history[0]["available"] == "100.25"
+    assert history[0]["locked"] == "0"
+
+
+def test_daily_snapshot_captures_each_account_asset_separately(ledger):
+    ledger.create_account("snap_002")
+    ledger.create_account("snap_003")
+    ledger.credit_paper_funds("snap_002", "USDT", "50", "snap2-usdt-001")
+    ledger.credit_paper_funds("snap_002", "BTC", "0.5", "snap2-btc-001")
+    ledger.credit_paper_funds("snap_003", "USDT", "75", "snap3-usdt-001")
+
+    result = ledger.capture_daily_snapshots()
+    rows = ledger.list_daily_snapshots(limit=20)
+    assert result["created"] == 3
+    assert {(r["account_id"], r["asset"]) for r in rows} == {
+        ("snap_002", "USDT"), ("snap_002", "BTC"), ("snap_003", "USDT")
+    }
+
+
+def test_daily_snapshot_rejects_backdated_or_future_dates(ledger):
+    with pytest.raises(ValueError, match="current UTC date"):
+        ledger.capture_daily_snapshots("2000-01-01")
+    with pytest.raises(ValueError, match="current UTC date"):
+        ledger.capture_daily_snapshots("2999-01-01")
+
+
+def test_snapshot_history_validates_account_and_limit(ledger):
+    with pytest.raises(KeyError):
+        ledger.list_daily_snapshots("missing_001")
+    with pytest.raises(ValueError):
+        ledger.list_daily_snapshots(limit=0)
