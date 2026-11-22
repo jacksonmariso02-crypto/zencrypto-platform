@@ -200,7 +200,9 @@ async def market_data_status():
         "transport": "websocket",
         "polling_interval_seconds": MARKET_STREAM_INTERVAL_SECONDS,
         "sandbox": SANDBOX,
-        "live_order_placement_enabled": LIVE_TRADING_ENABLED,
+        "execution_environment": "sandbox" if SANDBOX else "live_provider_configured",
+        "live_order_placement_enabled": False,
+        "customer_order_routing_enabled": False,
     }
 
 
@@ -226,7 +228,9 @@ async def health():
         "service": APP_NAME,
         "exchange": EXCHANGE_ID,
         "sandbox": SANDBOX,
-        "live_trading_enabled": LIVE_TRADING_ENABLED,
+        "live_trading_enabled": False,
+        "live_trading_configuration_requested": LIVE_TRADING_ENABLED,
+        "customer_order_routing_enabled": False,
         "credentials_configured": bool(API_KEY and API_SECRET),
     }
 
@@ -412,8 +416,15 @@ async def create_order(body: OrderRequest, authorization: str | None = Header(de
         raise HTTPException(400, "Do not send a price with a market order.")
     if not body.amount.is_finite() or (body.price is not None and not body.price.is_finite()):
         raise HTTPException(422, "Order amount and price must be finite decimal values.")
-    if not SANDBOX and not LIVE_TRADING_ENABLED:
-        raise HTTPException(403, "Live trading is disabled by server configuration.")
+    # This connector currently uses one platform-level API credential and
+    # an administrator-only route. It is not a customer account execution
+    # service. Never allow a deployment flag to turn this route into live
+    # customer-money trading; per-user authorization, custody, compliance,
+    # risk and reconciliation controls must be implemented and reviewed first.
+    if not SANDBOX:
+        raise HTTPException(403, "Live customer order routing is not implemented. The exchange connector must remain in sandbox mode.")
+    if LIVE_TRADING_ENABLED:
+        raise HTTPException(403, "Live customer order routing is not supported by this connector. Keep LIVE_TRADING_ENABLED=false.")
     client = exchange_client(private=True)
     try:
         markets = await run_in_threadpool(client.load_markets)

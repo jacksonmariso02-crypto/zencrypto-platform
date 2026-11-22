@@ -2,6 +2,15 @@
 
 ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository includes a React/Vite trading UI and a separate FastAPI backend with authenticated paper accounts, an append-only double-entry journal, simulated market and limit orders, order history, balance and ledger endpoints, and a limited paper-fund faucet. Supported paper assets are BTC, ETH, SOL, BNB and XRP. Market orders are simulated immediate fills using a client-supplied reference quote; limit orders are matched between ZenCrypto paper accounts by server-side price-time priority, with partial fills and simulated balance reservation. Neither order type is routed to Binance or another external venue. Deposits, withdrawals, custody and real-money trading are disabled. Public market data and historical candles are fetched from Binance public endpoints and remain subject to provider availability; no quote is shown as live until the WebSocket feed passes freshness checks. Never send funds to anyone claiming this prototype accepts deposits.
 
+
+## Current public application state
+
+The public React interface is a market-data and execution-readiness workspace. It does not expose the legacy paper-order forms, simulated faucet, paper balances, or paper funding flows to visitors. Public market cards, historical candles, and external order-book depth are informational data from public market endpoints. The portfolio page clearly reports that no customer exchange account or custody service is connected.
+
+The exchange connector is deployed in sandbox mode for integration validation. Its public status endpoint always reports customer order routing as disabled. The administrator-only connector order endpoint is restricted to sandbox operation; setting `LIVE_TRADING_ENABLED=true` does not authorize live orders. This is intentional: the current connector uses a platform-level credential and does not provide per-customer exchange authorization or a production custody model.
+
+Do not enable real customer trading by changing an environment variable. A production design requires an approved jurisdiction and legal entity, applicable licensing/registration, KYC/AML and sanctions screening, per-user exchange authorization or a qualified custody partner, encrypted credential/key management, MFA, withdrawal controls, server-side order risk limits, idempotency, reconciliation, immutable audit records, incident response, and independent security review. Real-money execution must remain disabled until those controls have been implemented, tested, and approved.
+
 ## Paper trading API additions
 
 - `GET /trade/assets` — authenticated canonical list of supported paper assets.

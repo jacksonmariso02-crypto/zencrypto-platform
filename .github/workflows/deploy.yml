@@ -41,6 +41,7 @@ jobs:
       - name: Build website
         env:
           VITE_API_BASE_URL: https://zencrypto-api.onrender.com
+          VITE_EXCHANGE_API_BASE_URL: https://zencrypto-exchange.onrender.com
         run: npm run build
 
       - name: Verify production API URL in built assets
@@ -77,6 +78,12 @@ jobs:
         run: |
           curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://zencrypto-api.onrender.com/health -o /tmp/zencrypto-health.json
           python -c "import json; d=json.load(open('/tmp/zencrypto-health.json')); assert d.get('status') == 'ok'; assert d.get('mode') == 'PAPER_ONLY'; assert d.get('live_funds_enabled') is False; assert d.get('real_deposits_enabled') is False; assert d.get('real_withdrawals_enabled') is False"
+      - name: Verify exchange connector sandbox readiness and live-order lock
+        run: |
+          curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://zencrypto-exchange.onrender.com/ready -o /tmp/zencrypto-exchange-ready.json
+          python -c "import json; d=json.load(open('/tmp/zencrypto-exchange-ready.json')); assert d.get('status') == 'ready'; assert d.get('sandbox') is True; assert d.get('live_trading_enabled') is False"
+          curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 10 https://zencrypto-exchange.onrender.com/api/v1/market-data/status -o /tmp/zencrypto-market-status.json
+          python -c "import json; d=json.load(open('/tmp/zencrypto-market-status.json')); assert d.get('sandbox') is True; assert d.get('live_order_placement_enabled') is False; assert d.get('customer_order_routing_enabled') is False"
       - name: Verify browser CORS preflight from production frontend
         run: |
           status=$(curl --silent --show-error --output /tmp/zencrypto-preflight.txt --write-out '%{http_code}' --request OPTIONS https://zencrypto-api.onrender.com/auth/login --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
