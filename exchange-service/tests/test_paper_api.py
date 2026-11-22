@@ -6,21 +6,27 @@ import main
 from paper_engine import PaperMatchingEngine
 from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
+from auth_service import AuthService
+from paper_ledger import PaperLedger
+
+
+TEST_ADMIN_TOKEN = "a" * 48
+TEST_AUTH_SECRET = "s" * 48
 
 
 @pytest.fixture
 def api(monkeypatch, tmp_path):
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
-    monkeypatch.setattr(
-        main,
-        "PAPER_ENGINE",
-        PaperMatchingEngine(str(tmp_path / "api-paper.sqlite3")),
-    )
+    db_path = str(tmp_path / "api-paper.sqlite3")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", TEST_ADMIN_TOKEN)
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", TEST_AUTH_SECRET)
+    monkeypatch.setattr(main, "PAPER_ENGINE", PaperMatchingEngine(db_path))
+    monkeypatch.setattr(main, "PAPER_LEDGER", PaperLedger(db_path))
+    monkeypatch.setattr(main, "AUTH_SERVICE", AuthService(db_path, TEST_AUTH_SECRET))
     return TestClient(main.app)
 
 
 def auth():
-    return {"Authorization": "Bearer paper-test-token"}
+    return {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 
 def test_paper_api_requires_admin_token():
@@ -404,8 +410,8 @@ def test_paper_orderbook_websocket_rejects_invalid_symbol(api):
 
 
 def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkeypatch):
-    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", TEST_AUTH_SECRET)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", TEST_ADMIN_TOKEN)
     response = api.get("/ready")
     assert response.status_code == 200
     payload = response.json()
@@ -414,6 +420,8 @@ def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkey
         "database": True,
         "user_auth_secret": True,
         "admin_token": True,
+        "sandbox_mode": True,
+        "live_trading_disabled": True,
     }
     assert payload["sandbox"] is True
     assert payload["live_trading_enabled"] is False
@@ -421,9 +429,39 @@ def test_exchange_readiness_requires_database_and_deployment_secrets(api, monkey
 
 def test_exchange_readiness_fails_closed_when_auth_secret_missing(api, monkeypatch):
     monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "")
-    monkeypatch.setattr(main, "ADMIN_TOKEN", "paper-test-token")
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
     response = api.get("/ready")
     assert response.status_code == 503
     assert response.json()["detail"]["status"] == "not_ready"
     assert response.json()["detail"]["checks"]["database"] is True
     assert response.json()["detail"]["checks"]["user_auth_secret"] is False
+
+
+@pytest.mark.parametrize(
+    "sandbox,live_enabled,failed_check",
+    [
+        (False, False, "sandbox_mode"),
+        (True, True, "live_trading_disabled"),
+    ],
+)
+def test_exchange_readiness_fails_closed_outside_sandbox(
+    api, monkeypatch, sandbox, live_enabled, failed_check
+):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
+    monkeypatch.setattr(main, "SANDBOX", sandbox)
+    monkeypatch.setattr(main, "LIVE_TRADING_ENABLED", live_enabled)
+    response = api.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"][failed_check] is False
+
+
+def test_exchange_readiness_checks_required_paper_schema(api, monkeypatch):
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "s" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "a" * 48)
+    monkeypatch.setattr(main, "PAPER_ENGINE", type("BrokenEngine", (), {
+        "db_path": "/nonexistent/invalid/location/zencrypto.sqlite3"
+    })())
+    response = api.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"]["database"] is False

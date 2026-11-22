@@ -159,3 +159,10 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - `/ready` verifies the mounted SQLite database with `PRAGMA quick_check`, confirms a non-placeholder user-token signing secret is configured, and confirms the administrator token exists.
 - The response reports boolean checks only and never returns secret values or the database path. It returns HTTP 503 until all required checks pass.
 - The Render Blueprint must declare `AUTH_TOKEN_SECRET` exactly once with `generateValue: true`; keep this generated value stable across deploys so existing signed user tokens remain verifiable.
+
+
+### Sandbox-only readiness gates
+- The readiness probe also verifies that the required paper matching, user, account, and ledger tables exist in the SQLite database.
+- The exchange service is considered ready only when Binance sandbox mode is enabled and live trading is explicitly disabled.
+- The administrator token must be at least 32 characters, as must the user-token signing secret. The readiness response exposes only pass/fail booleans.
+- A deployment with sandbox disabled, live trading enabled, missing schema, or missing/short secrets fails readiness with HTTP 503. Do not weaken these checks to force a deployment green.

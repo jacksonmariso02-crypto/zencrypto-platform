@@ -233,9 +233,18 @@ async def health():
 def _readiness_checks():
     database_ok = False
     try:
+        required_tables = {
+            "paper_orders", "paper_trades", "paper_accounts",
+            "paper_users", "ledger_transactions", "ledger_entries",
+        }
         with sqlite3.connect(PAPER_ENGINE.db_path, timeout=2) as db:
             result = db.execute("PRAGMA quick_check").fetchone()
-            database_ok = bool(result and result[0] == "ok")
+            present_tables = {
+                row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            database_ok = bool(result and result[0] == "ok") and required_tables.issubset(present_tables)
     except sqlite3.Error:
         database_ok = False
 
@@ -243,11 +252,15 @@ def _readiness_checks():
         len(AUTH_TOKEN_SECRET) >= 32
         and not AUTH_TOKEN_SECRET.startswith("REPLACE_WITH_")
     )
-    admin_token_ok = bool(ADMIN_TOKEN)
+    admin_token_ok = len(ADMIN_TOKEN) >= 32
+    sandbox_mode = SANDBOX is True
+    live_trading_disabled = LIVE_TRADING_ENABLED is False
     return {
         "database": database_ok,
         "user_auth_secret": auth_secret_ok,
         "admin_token": admin_token_ok,
+        "sandbox_mode": sandbox_mode,
+        "live_trading_disabled": live_trading_disabled,
     }
 
 
