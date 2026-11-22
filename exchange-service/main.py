@@ -236,6 +236,7 @@ def _readiness_checks():
         required_tables = {
             "paper_orders", "paper_trades", "paper_accounts",
             "paper_users", "ledger_transactions", "ledger_entries",
+            "daily_asset_snapshots",
         }
         with sqlite3.connect(PAPER_ENGINE.db_path, timeout=2) as db:
             result = db.execute("PRAGMA quick_check").fetchone()
@@ -895,6 +896,39 @@ async def paper_account_balances(
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/v1/paper/admin/ledger/daily-snapshots")
+async def capture_daily_paper_snapshots(
+    as_of_date: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Capture today's immutable UTC paper-asset snapshot; admin only."""
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_LEDGER.capture_daily_snapshots, as_of_date
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/v1/paper/admin/ledger/daily-snapshots")
+async def list_daily_paper_snapshots(
+    account_id: str | None = None,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    """List immutable daily paper-asset snapshots; admin only."""
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_LEDGER.list_daily_snapshots, account_id, limit
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/v1/paper/admin/ledger/reconciliation")

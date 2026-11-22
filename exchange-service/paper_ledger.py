@@ -55,6 +55,17 @@ class PaperLedger:
                     debit TEXT NOT NULL,
                     credit TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS daily_asset_snapshots (
+                    snapshot_date TEXT NOT NULL,
+                    account_id TEXT NOT NULL REFERENCES paper_accounts(account_id),
+                    asset TEXT NOT NULL,
+                    available TEXT NOT NULL,
+                    locked TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (snapshot_date, account_id, asset)
+                );
+                CREATE INDEX IF NOT EXISTS idx_daily_snapshots_account_date
+                    ON daily_asset_snapshots(account_id, snapshot_date DESC);
                 CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_asset
                     ON ledger_entries(account_code, asset, id);
                 CREATE INDEX IF NOT EXISTS idx_ledger_entries_transaction
@@ -378,3 +389,111 @@ class PaperLedger:
                     "negative_buckets": negative_buckets[:50],
                 },
             }
+
+
+    @staticmethod
+    def _snapshot_date(value=None):
+        from datetime import date, datetime, timezone
+        if value is None:
+            return datetime.now(timezone.utc).date().isoformat()
+        try:
+            parsed = date.fromisoformat(str(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("as_of_date must use YYYY-MM-DD format.") from exc
+        if parsed.isoformat() != str(value):
+            raise ValueError("as_of_date must use YYYY-MM-DD format.")
+        if parsed != datetime.now(timezone.utc).date():
+            raise ValueError("Snapshots can only be captured for the current UTC date; historical dates cannot be backfilled.")
+        return parsed.isoformat()
+
+    def capture_daily_snapshots(self, as_of_date=None):
+        """Create immutable, idempotent end-of-day paper asset snapshots for all accounts."""
+        snapshot_date = self._snapshot_date(as_of_date)
+        with closing(self._connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                rows = db.execute(
+                    """
+                    SELECT DISTINCT a.account_id, e.asset
+                    FROM paper_accounts a
+                    JOIN ledger_entries e
+                      ON e.account_code IN (
+                         'user:' || a.account_id || ':available',
+                         'user:' || a.account_id || ':locked'
+                      )
+                    GROUP BY a.account_id, e.asset
+                    ORDER BY a.account_id, e.asset
+                    """
+                ).fetchall()
+                balances = {}
+                for row in rows:
+                    balances.setdefault(row["account_id"], {})[row["asset"]] = {
+                        "available": Decimal("0"), "locked": Decimal("0")
+                    }
+                entries = db.execute(
+                    """
+                    SELECT a.account_id, e.asset, e.account_code, e.debit, e.credit
+                    FROM paper_accounts a
+                    JOIN ledger_entries e
+                      ON e.account_code IN (
+                         'user:' || a.account_id || ':available',
+                         'user:' || a.account_id || ':locked'
+                      )
+                    ORDER BY a.account_id, e.asset, e.id
+                    """
+                ).fetchall()
+                for row in entries:
+                    bucket = "available" if row["account_code"].endswith(":available") else "locked"
+                    balances[row["account_id"]][row["asset"]][bucket] += (
+                        Decimal(row["credit"]) - Decimal(row["debit"])
+                    )
+                created_at = time.time_ns()
+                inserted = 0
+                for account_id, assets in balances.items():
+                    for asset, amounts in assets.items():
+                        cursor = db.execute(
+                            """
+                            INSERT OR IGNORE INTO daily_asset_snapshots
+                            (snapshot_date,account_id,asset,available,locked,created_at)
+                            VALUES(?,?,?,?,?,?)
+                            """,
+                            (snapshot_date, account_id, asset,
+                             str(amounts["available"]), str(amounts["locked"]), created_at),
+                        )
+                        inserted += cursor.rowcount
+                db.commit()
+                return {
+                    "snapshot_date": snapshot_date,
+                    "created": inserted,
+                    "already_existed_or_empty": sum(len(x) for x in balances.values()) - inserted,
+                    "status": "captured",
+                }
+            except Exception:
+                db.rollback()
+                raise
+
+    def list_daily_snapshots(self, account_id=None, limit=100):
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500.")
+        if account_id is not None:
+            account_id = self._account_id(account_id)
+        with closing(self._connect()) as db:
+            if account_id is not None and not db.execute(
+                "SELECT 1 FROM paper_accounts WHERE account_id=?", (account_id,)
+            ).fetchone():
+                raise KeyError("Paper account not found.")
+            if account_id is None:
+                rows = db.execute(
+                    """SELECT snapshot_date,account_id,asset,available,locked,created_at
+                       FROM daily_asset_snapshots
+                       ORDER BY snapshot_date DESC,account_id,asset LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT snapshot_date,account_id,asset,available,locked,created_at
+                       FROM daily_asset_snapshots WHERE account_id=?
+                       ORDER BY snapshot_date DESC,asset LIMIT ?""",
+                    (account_id, limit),
+                ).fetchall()
+            return [dict(row) for row in rows]

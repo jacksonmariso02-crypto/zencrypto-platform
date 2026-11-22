@@ -480,3 +480,33 @@ def test_admin_ledger_reconciliation_endpoint_is_protected_and_read_only(api):
     assert payload["status"] == "ok"
     assert payload["checks"]["transactions_balanced"] is True
     assert payload["checks"]["user_buckets_nonnegative"] is True
+
+
+def test_daily_snapshot_endpoints_require_admin_and_capture_once(api, monkeypatch):
+    denied = api.post("/api/v1/paper/admin/ledger/daily-snapshots")
+    assert denied.status_code == 401
+
+    main.PAPER_LEDGER.create_account("api_snap_001")
+    main.PAPER_LEDGER.credit_paper_funds(
+        "api_snap_001", "USDT", "42.5", "api-snap-credit-001"
+    )
+
+    headers = auth()
+    first = api.post(
+        "/api/v1/paper/admin/ledger/daily-snapshots", headers=headers
+    )
+    replay = api.post(
+        "/api/v1/paper/admin/ledger/daily-snapshots", headers=headers
+    )
+    assert first.status_code == 200
+    assert first.json()["created"] == 1
+    assert replay.status_code == 200
+    assert replay.json()["created"] == 0
+
+    history = api.get(
+        "/api/v1/paper/admin/ledger/daily-snapshots",
+        headers=headers,
+        params={"account_id": "api_snap_001"},
+    )
+    assert history.status_code == 200
+    assert history.json()[0]["available"] == "42.5"
