@@ -465,3 +465,18 @@ def test_exchange_readiness_checks_required_paper_schema(api, monkeypatch):
     response = api.get("/ready")
     assert response.status_code == 503
     assert response.json()["detail"]["checks"]["database"] is False
+
+
+def test_admin_ledger_reconciliation_endpoint_is_protected_and_read_only(api):
+    denied = api.get("/api/v1/paper/admin/ledger/reconciliation")
+    assert denied.status_code == 401
+
+    response = api.get(
+        "/api/v1/paper/admin/ledger/reconciliation",
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["checks"]["transactions_balanced"] is True
+    assert payload["checks"]["user_buckets_nonnegative"] is True
