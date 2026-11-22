@@ -576,3 +576,10 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-home-footnote{margin:12px 2px 0;color:#69727e;font-size:10px;line-height:1.6}
 @media(max-width:1000px){.zc-market-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-home-top{align-items:flex-start;flex-direction:column}.zc-home-health{width:100%}}
 @media(max-width:640px){.zc-home-top{padding:19px 16px;gap:16px}.zc-home-title{font-size:27px}.zc-home-copy{font-size:12px}.zc-home-actions{width:100%}.zc-home-actions .zc-btn{flex:1}.zc-market-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.zc-market-card{padding:12px}.zc-market-price{font-size:16px}.zc-home-section-head{align-items:flex-start;flex-direction:column}.zc-market-search{width:100%;min-width:0}.zc-home-section-head>.tablebtn{align-self:flex-end}}
+
+/* Additional verified market statistics on homepage cards */
+.zc-market-extra{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding-top:9px;border-top:1px solid #2b3139;color:#848e9c;font-size:10px;line-height:1.45}
+.zc-market-card-button .zc-market-price{min-height:24px}
+.zc-market-card-button .zc-market-extra span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.marketpanel table{min-width:780px}
+@media(max-width:640px){.zc-market-extra{font-size:9px}.marketpanel table{min-width:760px}}
