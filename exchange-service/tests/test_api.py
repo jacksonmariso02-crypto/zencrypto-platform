@@ -455,8 +455,8 @@ def test_customer_order_preview_is_read_only_and_checks_balance(monkeypatch):
             symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
         )
         result = main._calculate_customer_order_preview(fake, body)
-        assert result["estimated_notional_usdt"] == "50.0000"
-        assert result["estimated_fee_buffer_usdt"] == "0.0500000"
+        assert main.Decimal(result["estimated_notional_usdt"]) == main.Decimal("50")
+        assert main.Decimal(result["estimated_fee_buffer_usdt"]) == main.Decimal("0.05")
         assert result["required_asset"] == "USDT"
         assert result["order_submitted"] is False
         assert result["can_submit"] is False
