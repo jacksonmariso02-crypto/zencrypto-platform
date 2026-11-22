@@ -42,6 +42,7 @@ BITGO_API_ENV = os.getenv("BITGO_API_ENV", "test").strip().lower()
 BITGO_WEBHOOK_SECRET = os.getenv("BITGO_WEBHOOK_SECRET", "")
 BITGO_ENTERPRISE_ID = os.getenv("BITGO_ENTERPRISE_ID", "")
 BITGO_ACCESS_TOKEN = os.getenv("BITGO_ACCESS_TOKEN", "")
+BITGO_TRANSFER_ADAPTER_READY = False  # Enable only after provider API and transfer verification tests pass.
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -758,10 +759,21 @@ def _post_wallet_journal(user_id: str, asset: str, event_type: str, idempotency_
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15, isolation_level=None) as db:
         db.execute("BEGIN IMMEDIATE")
         existing = db.execute(
-            "SELECT journal_id FROM wallet_journals WHERE user_id=? AND idempotency_key=?",
+            "SELECT journal_id, asset, event_type, provider_reference FROM wallet_journals WHERE user_id=? AND idempotency_key=?",
             (user_id, idempotency_key),
         ).fetchone()
         if existing:
+            existing_rows = db.execute(
+                """SELECT account_code, direction, amount FROM wallet_ledger_entries
+                   WHERE journal_id=? ORDER BY account_code, direction, amount""",
+                (existing[0],),
+            ).fetchall()
+            existing_postings = sorted((row[0], row[1], format(Decimal(row[2]), "f")) for row in existing_rows)
+            requested_postings = sorted(normalized)
+            if (existing[1] != asset or existing[2] != event_type or
+                    existing[3] != provider_reference or existing_postings != requested_postings):
+                db.execute("ROLLBACK")
+                raise ValueError("Wallet idempotency key was reused with different transaction details.")
             db.execute("COMMIT")
             return existing[0], False
         db.execute(
@@ -782,15 +794,17 @@ def _post_wallet_journal(user_id: str, asset: str, event_type: str, idempotency_
 
 
 def _wallet_provider_status():
-    configured = bool(WALLET_CUSTODY_PROVIDER == "bitgo" and BITGO_ENTERPRISE_ID and BITGO_ACCESS_TOKEN and BITGO_WEBHOOK_SECRET)
+    credentials_configured = bool(WALLET_CUSTODY_PROVIDER == "bitgo" and BITGO_ENTERPRISE_ID and BITGO_ACCESS_TOKEN and BITGO_WEBHOOK_SECRET)
+    configured = bool(credentials_configured and BITGO_TRANSFER_ADAPTER_READY)
     return {
         "custody_provider": "bitgo" if WALLET_CUSTODY_PROVIDER == "bitgo" else None,
-        "provider_configured": configured,
+        "provider_configured": credentials_configured,
+        "provider_adapter_ready": BITGO_TRANSFER_ADAPTER_READY,
         "wallet_enabled": configured,
         "deposits_enabled": bool(configured and WALLET_DEPOSITS_ENABLED),
         "withdrawals_enabled": bool(configured and WALLET_WITHDRAWALS_ENABLED),
         "custody_model": "third_party_custodian",
-        "message": "A qualified custody provider must be configured and verified before wallet funding can be enabled." if not configured else "Provider configured; funding still requires a completed adapter and operational approval.",
+        "message": "Configure an approved BitGo enterprise, API token and webhook secret; provider onboarding is not complete." if not credentials_configured else ("BitGo credentials are present, but the transfer adapter and provider verification workflow are not production-ready." if not BITGO_TRANSFER_ADAPTER_READY else "BitGo adapter is ready; funding remains subject to operational and compliance approval."),
     }
 
 
