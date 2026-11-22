@@ -1182,10 +1182,12 @@ async def health():
         "status": "ok",
         "service": APP_NAME,
         "exchange": EXCHANGE_ID,
+        "build_revision": os.getenv("RENDER_GIT_COMMIT", "source"),
         "sandbox": SANDBOX,
         "live_trading_enabled": False,
         "live_trading_configuration_requested": LIVE_TRADING_ENABLED,
         "customer_order_routing_enabled": False,
+        "customer_credential_vault_configured": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
         "credentials_configured": bool(API_KEY and API_SECRET),
     }
 
