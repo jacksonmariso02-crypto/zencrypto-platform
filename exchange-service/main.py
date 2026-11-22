@@ -910,6 +910,15 @@ async def receive_bitgo_webhook(request: Request):
             (event_id, digest, raw.decode("utf-8"), now),
         )
         inserted = cursor.rowcount == 1
+        if not inserted:
+            existing = db.execute(
+                "SELECT payload_hash FROM custody_webhook_events WHERE provider=? AND event_id=?",
+                ("bitgo", event_id),
+            ).fetchone()
+            if existing is None:
+                raise HTTPException(503, "Webhook deduplication state could not be verified.")
+            if not hmac.compare_digest(str(existing["payload_hash"]), digest):
+                raise HTTPException(409, "This BitGo event ID was already received with different payload contents. The event is quarantined for manual review.")
     return {
         "accepted": True,
         "duplicate": not inserted,
