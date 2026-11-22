@@ -486,7 +486,6 @@ def test_daily_snapshot_endpoints_require_admin_and_capture_once(api, monkeypatc
     denied = api.post("/api/v1/paper/admin/ledger/daily-snapshots")
     assert denied.status_code == 401
 
-    monkeypatch.setattr(main.PAPER_LEDGER, "create_account", main.PAPER_LEDGER.create_account)
     main.PAPER_LEDGER.create_account("api_snap_001")
     main.PAPER_LEDGER.credit_paper_funds(
         "api_snap_001", "USDT", "42.5", "api-snap-credit-001"
