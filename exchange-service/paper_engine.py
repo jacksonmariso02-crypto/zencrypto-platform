@@ -603,8 +603,14 @@ class PaperMatchingEngine:
                     postings.append(("platform:fees", base_asset, "credit", buyer_fee))
                 if refund > 0:
                     postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
-                if ledger_postings(f"paper-trade-settlement:{trade['id']}") != encoded(postings):
-                    issues["missing_or_mismatched_settlements"].append(trade["id"])
+                actual_postings = ledger_postings(f"paper-trade-settlement:{trade['id']}")
+                expected_postings = encoded(postings)
+                if actual_postings != expected_postings:
+                    issues["missing_or_mismatched_settlements"].append({
+                        "trade_id": trade["id"],
+                        "expected": expected_postings,
+                        "actual": actual_postings,
+                    })
 
         issue_counts = {key: len(value) for key, value in issues.items()}
         clean = not any(issue_counts.values())
