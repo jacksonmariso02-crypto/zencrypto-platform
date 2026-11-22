@@ -952,6 +952,15 @@ async def compare_paper_asset_snapshots(
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.get("/api/v1/paper/admin/orders/funds-reconciliation")
+async def paper_order_funds_reconciliation(
+    authorization: str | None = Header(default=None),
+):
+    """Admin-only audit linking account order reserves, fills and ledger postings."""
+    require_admin(authorization)
+    return await run_in_threadpool(PAPER_ENGINE.audit_order_funds_integrity)
+
+
 @app.get("/api/v1/paper/admin/orders/reconciliation")
 async def paper_order_trade_reconciliation(
     authorization: str | None = Header(default=None),
