@@ -153,3 +153,19 @@ The GitHub Pages frontend and the Render API services are separate deployments. 
 
 ### Safe launch boundary
 The current Render Blueprint intentionally keeps `EXCHANGE_SANDBOX=true`, `LIVE_TRADING_ENABLED=false`, `LIVE_CUSTOMER_ORDER_ROUTING_ENABLED=false`, `WALLET_DEPOSITS_ENABLED=false` and `WALLET_WITHDRAWALS_ENABLED=false`. Do not change these flags until live exchange order lifecycle tests, custody provider verification, reconciliation, operational controls, security review and jurisdiction-specific legal/compliance approval are complete.
+
+
+### Deployment status and exchange-service troubleshooting
+
+GitHub Pages deployment and exchange production verification are intentionally separate workflows:
+- `.github/workflows/deploy.yml` verifies the website build, published homepage and primary platform API. A missing exchange service must not prevent an otherwise healthy homepage from being published.
+- `.github/workflows/exchange-production-check.yml` verifies the Render exchange service health, readiness, credential-vault configuration, sandbox/live-order safety locks and browser CORS preflight. It runs on exchange-service/Blueprint changes and can be started manually from GitHub Actions.
+
+If the exchange verification reports HTTP 404 from `https://zencrypto-exchange.onrender.com/health`:
+1. Open the Render Dashboard and select the Blueprint connected to this repository.
+2. Sync the Blueprint from branch `main` and confirm a service named `zencrypto-exchange` is created.
+3. Confirm the service root directory is exactly `exchange-service`, build command is `pip install -r requirements.txt`, start command is `uvicorn main:app --host 0.0.0.0 --port $PORT`, and health-check path is `/health`.
+4. Wait for the Render deploy to finish, then confirm the service's assigned public URL. If it differs from the hostname above, update both the frontend build variable and the exchange verification workflow to that exact URL.
+5. Run the **Verify ZenCrypto Exchange Production** workflow manually. It must pass all checks before customer order execution or wallet funding can be considered for release.
+
+A green Pages workflow means the website is published; it does not mean the exchange connector is deployed. The exchange verification workflow is the authoritative production gate for that service.
