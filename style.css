@@ -699,3 +699,15 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-preview-error{color:#ff9cab;border-color:#7a3444}
 @media(max-width:800px){.zc-preview-form{grid-template-columns:repeat(2,minmax(0,1fr))}.zc-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.zc-order-preview-panel{padding:14px}.zc-preview-form{grid-template-columns:1fr}.zc-preview-form button{width:100%}.zc-preview-grid{grid-template-columns:1fr 1fr}.zc-order-preview-panel .panelhead{flex-direction:column}}
+
+
+.zc-customer-order-history{margin-top:16px}
+.zc-order-history-list{display:grid;gap:10px}
+.zc-order-history-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-top:1px solid var(--border,rgba(148,163,184,.18))}
+.zc-order-history-main{display:grid;gap:5px;min-width:0}
+.zc-order-history-main strong{font-size:13px}
+.zc-order-history-main span,.zc-order-history-main small{font-size:12px;color:var(--muted,#8b96a8);overflow-wrap:anywhere}
+.zc-order-history-actions{display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.zc-order-history-actions .zc-btn{min-height:34px;padding:7px 11px;font-size:12px}
+.zc-order-history-actions .zc-btn-danger{border:1px solid rgba(239,68,68,.35);color:#ef7777;background:rgba(239,68,68,.08)}
+@media(max-width:640px){.zc-order-history-row{align-items:flex-start;flex-direction:column}.zc-order-history-actions{width:100%}.zc-order-history-actions .zc-btn{flex:1}}
