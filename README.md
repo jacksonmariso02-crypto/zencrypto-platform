@@ -83,3 +83,17 @@ The static site output is in `dist/`.
 ## Important
 
 The admin page is a visual mockup, not an authenticated admin panel. The chart timeframe selectors load historical OHLCV candles from Binance's public Spot REST API and receive live candle updates through its public WebSocket stream. The homepage ticker displays Binance 24-hour last price, percentage change, quote volume, high and low only when the public ticker feed is fresh. These are informational public-market statistics, not executable ZenCrypto prices.
+
+
+## Hybrid customer asset architecture
+
+ZenCrypto separates customer-owned exchange balances from an independent custody-wallet ledger.
+
+- Customer exchange balances continue to be read directly from the customer's own authorized exchange connection. Those assets remain at the exchange.
+- The independent wallet foundation uses customer-scoped journal and ledger tables. Wallet balances are derived from posted ledger entries; the application does not invent or seed balances.
+- The wallet API exposes authenticated summary and activity endpoints: `GET /api/v1/user/wallet` and `GET /api/v1/user/wallet/activity`.
+- Deposit-intent and withdrawal-request endpoints fail closed until an approved custody provider adapter is implemented: `POST /api/v1/user/wallet/deposit-intents` and `POST /api/v1/user/wallet/withdrawal-requests`.
+- Render explicitly keeps `WALLET_CUSTODY_PROVIDER` empty and both wallet funding flags false. No deposit addresses are issued and no withdrawals are sent.
+- The frontend displays exchange assets separately from the custody wallet, and clearly marks the custody wallet as not activated while no provider is configured.
+
+Before enabling custody operations, integrate a selected regulated custody provider's authenticated API and signed webhooks, idempotent deposit/withdrawal state machines, chain/network confirmation rules, address allowlisting, MFA and dual approval for withdrawals, transaction monitoring, sanctions screening, reconciliation, key management, incident response and applicable licensing/compliance controls. Never enable funding flags merely to make UI buttons active.
