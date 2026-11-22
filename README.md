@@ -97,3 +97,38 @@ ZenCrypto separates customer-owned exchange balances from an independent custody
 - The frontend displays exchange assets separately from the custody wallet, and clearly marks the custody wallet as not activated while no provider is configured.
 
 Before enabling custody operations, integrate a selected regulated custody provider's authenticated API and signed webhooks, idempotent deposit/withdrawal state machines, chain/network confirmation rules, address allowlisting, MFA and dual approval for withdrawals, transaction monitoring, sanctions screening, reconciliation, key management, incident response and applicable licensing/compliance controls. Never enable funding flags merely to make UI buttons active.
+
+
+## BitGo custody integration plan (provider selected, adapter not yet production-connected)
+
+BitGo is the preferred provider candidate for ZenCrypto's independent custody wallet. The integration must be activated only after BitGo approves the business, provides the applicable enterprise/API credentials, and legal/compliance review is complete.
+
+### Deposit lifecycle
+1. Create or assign a customer-specific BitGo wallet and asset/network address through the authenticated provider API; persist the provider wallet ID and address mapping to the authenticated ZenCrypto customer.
+2. Display only addresses fetched from the provider and stored in the authenticated customer's address mapping. Never generate or guess deposit addresses locally.
+3. Receive BitGo webhooks at `POST /api/v1/webhooks/bitgo`; validate the HMAC SHA-256 signature using the configured webhook secret.
+4. Store each event once using provider + event ID as the idempotency key. The current webhook receiver records events as `pending_provider_verification` and explicitly does not credit funds.
+5. A production worker must fetch the referenced transfer directly from BitGo, validate wallet ownership, asset, network, destination address, amount, transaction hash and provider status, and independently verify required on-chain confirmations.
+6. Only after provider verification and the configured confirmation threshold should the worker post a balanced, idempotent journal through `_post_wallet_journal`. Replayed webhook events must never create duplicate credits.
+7. Run continuous provider-vs-ledger reconciliation and quarantine discrepancies for manual review; never silently adjust customer balances.
+
+### Withdrawal lifecycle
+1. Authenticate the customer and require fresh MFA/step-up authentication.
+2. Validate supported asset/network, amount, available ledger balance, destination format and network-specific minimum/fee.
+3. Require destination allowlisting, risk/sanctions screening, velocity limits, and risk-based dual approval. New or changed destinations should have a cooling-off period.
+4. Reserve funds in the internal ledger atomically before provider submission. Use an idempotency key and persist the provider request/transaction ID.
+5. Submit the transfer through BitGo's policy-controlled withdrawal workflow; never expose signing keys or provider access tokens to the browser.
+6. Track submitted, pending approval, broadcast, confirming, confirmed, rejected and failed states from provider-verified transfer data and webhooks.
+7. Release the reserve only on a verified terminal failure; settle it to the withdrawal clearing account on confirmed completion. Reconcile every step to provider records and on-chain transaction data.
+
+### Security and operations
+- Keep BitGo access tokens and webhook secrets in the hosting secret manager only; rotate them and restrict access by environment.
+- Separate production and test workspaces, API credentials, webhook secrets and databases.
+- Apply least-privilege provider roles, allowlisted IPs where supported, transaction policy rules, hot-wallet limits, velocity controls, and dual-control approvals.
+- Do not store customer private keys or signing shares in the ZenCrypto application.
+- Use a durable database (managed PostgreSQL recommended before customer funding), encrypted backups, immutable audit logs, alerting, incident response and disaster-recovery exercises.
+- Reconcile internal customer liabilities against BitGo wallet balances and on-chain records at least daily and after material events.
+- Obtain jurisdiction-specific legal advice on custody, money transmission, AML/KYC/KYB, sanctions, consumer disclosures, cybersecurity and licensing before onboarding customers or accepting funds.
+
+### Current implementation boundary
+The repository now has the BitGo configuration placeholders, customer wallet/address mapping tables, a signed webhook intake endpoint with event deduplication, customer address listing, and an idempotent balanced ledger posting helper. The webhook intake deliberately leaves events pending provider verification and never credits balances. The actual BitGo wallet/address creation, transfer lookup, confirmation worker, withdrawal submission, MFA/dual approval, production reconciliation and provider credentials are not connected yet. Deposit and withdrawal feature flags remain false; no customer funds should be sent to the platform.
