@@ -858,6 +858,54 @@ async def create_customer_wallet_withdrawal_request(user=Depends(require_platfor
     raise HTTPException(503, "The custody provider withdrawal adapter, MFA approval and transaction monitoring are not implemented. No withdrawal has been submitted.")
 
 
+@app.get("/api/v1/user/wallet/deposit-addresses")
+async def customer_wallet_deposit_addresses(user=Depends(require_platform_user)):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """SELECT provider, asset, network, address, address_tag, created_at, status
+               FROM customer_deposit_addresses WHERE user_id=? AND status="active" ORDER BY created_at DESC""",
+            (user["id"],),
+        ).fetchall()
+    return {"addresses": [dict(row) for row in rows]}
+
+
+@app.post("/api/v1/webhooks/bitgo")
+async def receive_bitgo_webhook(request: Request):
+    if not BITGO_WEBHOOK_SECRET:
+        raise HTTPException(503, "BitGo webhook verification is not configured.")
+    raw = await request.body()
+    supplied = request.headers.get("x-signature-sha256", "").strip().lower()
+    expected = hmac.new(BITGO_WEBHOOK_SECRET.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(401, "Invalid BitGo webhook signature.")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(400, "Webhook body must be valid JSON.") from None
+    event_id = payload.get("eventId") or payload.get("event_id") or payload.get("id")
+    if not isinstance(event_id, str) or not event_id.strip() or len(event_id) > 200:
+        raise HTTPException(400, "Webhook event identifier is missing or invalid.")
+    digest = hashlib.sha256(raw).hexdigest()
+    now = int(time.time())
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        cursor = db.execute(
+            """INSERT OR IGNORE INTO custody_webhook_events
+               (provider, event_id, payload_hash, payload_json, status, received_at)
+               VALUES ("bitgo", ?, ?, ?, "pending_provider_verification", ?)""",
+            (event_id, digest, raw.decode("utf-8"), now),
+        )
+        inserted = cursor.rowcount == 1
+    return {
+        "accepted": True,
+        "duplicate": not inserted,
+        "event_id": event_id,
+        "status": "pending_provider_verification" if inserted else "already_received",
+        "credited": False,
+        "message": "Webhook signature accepted. Verify the transfer directly with BitGo and confirm on-chain status before posting any customer ledger credit.",
+    }
+
+
 @app.get("/api/v1/user/exchange-connections")
 async def list_customer_exchange_connections(user=Depends(require_platform_user)):
     return {"connections": [_customer_connection(user["id"])]}
