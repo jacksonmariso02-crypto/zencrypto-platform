@@ -1,6 +1,6 @@
-# ZenCrypto — paper-trading exchange prototype
+# ZenCrypto — customer-owned exchange account connector
 
-ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository includes a React/Vite trading UI and a separate FastAPI backend with authenticated paper accounts, an append-only double-entry journal, simulated market and limit orders, order history, balance and ledger endpoints, and a limited paper-fund faucet. Supported paper assets are BTC, ETH, SOL, BNB and XRP. Market orders are simulated immediate fills using a client-supplied reference quote; limit orders are matched between ZenCrypto paper accounts by server-side price-time priority, with partial fills and simulated balance reservation. Neither order type is routed to Binance or another external venue. Deposits, withdrawals, custody and real-money trading are disabled. Public market data and historical candles are fetched from Binance public endpoints and remain subject to provider availability; no quote is shown as live until the WebSocket feed passes freshness checks. Never send funds to anyone claiming this prototype accepts deposits.
+ZenCrypto is moving to a **customer-owned exchange account model**. Customers keep their assets in their own exchange accounts and authorize ZenCrypto to read account data and, after a separate production approval, submit spot orders. ZenCrypto does not custody customer assets or request withdrawal permission. Public market data is currently sourced from Binance. Customer order routing remains disabled; this repository currently implements account authorization verification, encrypted credential storage, and read-only balance retrieval only.
 
 
 ## Current public application state
@@ -10,6 +10,22 @@ The public React interface is a market-data and execution-readiness workspace. I
 The exchange connector is deployed in sandbox mode for integration validation. Its public status endpoint always reports customer order routing as disabled. The administrator-only connector order endpoint is restricted to sandbox operation; setting `LIVE_TRADING_ENABLED=true` does not authorize live orders. This is intentional: the current connector uses a platform-level credential and does not provide per-customer exchange authorization or a production custody model.
 
 Do not enable real customer trading by changing an environment variable. A production design requires an approved jurisdiction and legal entity, applicable licensing/registration, KYC/AML and sanctions screening, per-user exchange authorization or a qualified custody partner, encrypted credential/key management, MFA, withdrawal controls, server-side order risk limits, idempotency, reconciliation, immutable audit records, incident response, and independent security review. Real-money execution must remain disabled until those controls have been implemented, tested, and approved.
+
+
+## Customer-owned Binance account connection (A model)
+
+The public account page supports a customer-owned Binance connection:
+
+- `GET /api/v1/user/exchange-connections` — returns the signed-in customer's connection status and masked API-key suffix.
+- `POST /api/v1/user/exchange-connections/binance` — verifies a customer's Binance API key using the Binance account API-restrictions endpoint and a read-only balance request. It requires account reading and Spot & Margin Trading permission, and rejects any key with withdrawals enabled.
+- `GET /api/v1/user/exchange-connections/binance/balances` — reads non-zero balances from the connected customer's Binance Spot account.
+- `DELETE /api/v1/user/exchange-connections/binance` — deletes the stored encrypted API authorization.
+
+The exchange connector validates the platform session by calling the platform API's authenticated `/account/me` endpoint. Connection records are scoped to the platform user ID. API key and secret are encrypted together using AES-256-GCM with a per-record random nonce and user-specific associated data. The raw credentials are never returned by the API; only a masked key suffix is returned. The encryption key is generated and stored by Render as `EXCHANGE_CREDENTIAL_ENCRYPTION_KEY`. Do not rotate or replace this secret without first performing a controlled credential re-encryption migration, or existing connected keys will become undecryptable.
+
+Create a dedicated Binance API key. Enable reading and the combined Spot & Margin Trading permission only if Binance requires it for Spot orders; ZenCrypto currently uses Spot endpoints only. Keep withdrawals, Futures and any unnecessary permissions disabled. Enable IP restrictions and whitelist the service's confirmed outbound IP address/range when the deployment network is finalized. Never submit a Binance password, 2FA code, seed phrase or withdrawal-enabled API key.
+
+**Important:** this increment does not place customer orders. Live order routing remains hard-disabled until customer-specific order validation, risk limits, idempotency, order reconciliation, audit trails, key-rotation procedures, incident response, security review and applicable legal/compliance approvals are complete. The legacy public paper-trading endpoints in the platform API return HTTP 410 by default; they can only be re-enabled explicitly for isolated development/test environments with `PAPER_TRADING_ENABLED=true`.
 
 ## Paper trading API additions
 
