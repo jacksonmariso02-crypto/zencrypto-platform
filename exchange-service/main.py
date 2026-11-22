@@ -463,6 +463,8 @@ async def market_data_status():
         "execution_environment": "sandbox" if SANDBOX else "live_provider_configured",
         "live_order_placement_enabled": False,
         "customer_order_routing_enabled": False,
+        "customer_account_linking_enabled": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
+        "credential_vault_configured": len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32,
     }
 
 
@@ -520,12 +522,14 @@ def _readiness_checks():
     admin_token_ok = len(ADMIN_TOKEN) >= 32
     sandbox_mode = SANDBOX is True
     live_trading_disabled = LIVE_TRADING_ENABLED is False
+    credential_vault_ok = len(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY) >= 32
     return {
         "database": database_ok,
         "user_auth_secret": auth_secret_ok,
         "admin_token": admin_token_ok,
         "sandbox_mode": sandbox_mode,
         "live_trading_disabled": live_trading_disabled,
+        "customer_credential_vault": credential_vault_ok,
     }
 
 
