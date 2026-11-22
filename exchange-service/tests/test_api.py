@@ -1041,6 +1041,10 @@ def test_bitgo_webhook_requires_valid_signature_and_deduplicates(tmp_path, monke
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM custody_webhook_events").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 0
+        security_event = db.execute(
+            "SELECT event_id, status FROM custody_webhook_security_events"
+        ).fetchone()
+        assert security_event == ("evt-collision", "manual_review_required")
 
 def test_bitgo_webhook_rejects_same_event_id_with_different_payload(tmp_path, monkeypatch):
     db_path = str(tmp_path / "bitgo-webhook-collision.sqlite3")
