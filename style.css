@@ -870,3 +870,5 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
  .app:not(.trade-app) .headeractions{gap:7px}
  .app:not(.trade-app) .content{padding:12px 10px 22px}
 }
+
+.app:not(.trade-app) .hamburger,.trade-app .hamburger{display:none!important}
