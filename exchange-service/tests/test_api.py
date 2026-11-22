@@ -111,6 +111,16 @@ class FakeOrderClient:
         self.created.append(order)
         return order
 
+    def fetch_order(self, order_id, symbol):
+        return {"id": str(order_id), "symbol": symbol, "side": "buy", "type": "limit",
+                "amount": 0.001, "price": 50000, "status": "closed",
+                "filled": 0.001, "remaining": 0, "cost": 50, "fee": {"cost": 0.05, "currency": "USDT"}}
+
+    def cancel_order(self, order_id, symbol):
+        return {"id": str(order_id), "symbol": symbol, "side": "buy", "type": "limit",
+                "amount": 0.001, "price": 50000, "status": "canceled",
+                "filled": 0, "remaining": 0.001, "cost": 0}
+
     def close(self):
         pass
 
@@ -719,4 +729,107 @@ def test_customer_order_submission_uses_customer_credentials_and_idempotent_repl
         main.LIVE_TRADING_ENABLED = old_live
         main.SANDBOX = old_sandbox
         main.CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = old_limit
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def _seed_customer_order_record(db_path, user_id="history-user", exchange_order_id="order-42"):
+    monkeypatch_path = db_path
+    main.PAPER_ENGINE_DB_PATH = monkeypatch_path
+    main._init_customer_credential_store()
+    key = "history-request-key-0001"
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            """INSERT INTO customer_order_requests
+               (user_id, idempotency_key, request_hash, exchange_client_order_id,
+                status, response_json, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'SUBMITTED', ?, ?, ?)""",
+            (user_id, key, "a" * 64, "client-42",
+             json.dumps({"exchange": "binance", "exchange_order_id": exchange_order_id,
+                         "client_order_id": "client-42", "symbol": "BTC/USDT",
+                         "side": "buy", "order_type": "limit", "amount": "0.001",
+                         "price": "50000", "status": "open", "filled": "0",
+                         "remaining": "0.001", "cost": "0", "execution_status": "SUBMITTED"}),
+             1, 1),
+        )
+        db.execute(
+            """INSERT INTO customer_exchange_connections
+               (user_id, exchange_id, encrypted_credentials, masked_api_key,
+                permissions_json, status, connected_at, last_verified_at)
+               VALUES (?, 'binance', ?, ?, ?, 'connected', ?, ?)""",
+            (user_id, b"test-envelope", "••••1234",
+             json.dumps({"read": True, "spot_trading": True, "withdrawals": False}), 1, 1),
+        )
+
+
+def test_customer_order_history_is_scoped_to_authenticated_user(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "history.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    _seed_customer_order_record(db_path, "history-user", "order-42")
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            """INSERT INTO customer_order_requests
+               (user_id, idempotency_key, request_hash, exchange_client_order_id,
+                status, response_json, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'SUBMITTED', ?, ?, ?)""",
+            ("other-user", "other-request-key-0001", "b" * 64, "client-other",
+             json.dumps({"exchange_order_id": "other-order", "symbol": "BTC/USDT"}), 1, 1),
+        )
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "history-user", "email": "x@example.com", "role": "user"}
+    try:
+        response = client.get("/api/v1/user/orders")
+        assert response.status_code == 200
+        records = response.json()["orders"]
+        assert len(records) == 1
+        assert records[0]["order"]["exchange_order_id"] == "order-42"
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_order_refresh_updates_fills_and_fee(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "refresh.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    _seed_customer_order_record(db_path)
+    fake = FakeOrderClient()
+    monkeypatch.setattr(main, "_decrypt_customer_credentials", lambda user_id, envelope: {"api_key": "k", "api_secret": "s"})
+    monkeypatch.setattr(main.ccxt, "binance", lambda config: fake)
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "history-user", "email": "x@example.com", "role": "user"}
+    try:
+        response = client.post("/api/v1/user/orders/order-42/refresh")
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "closed"
+        assert response.json()["filled"] == "0.001"
+        assert response.json()["fee"]["currency"] == "USDT"
+        history = client.get("/api/v1/user/orders").json()["orders"]
+        assert history[0]["order"]["status"] == "closed"
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_order_cancel_calls_exchange_and_persists_terminal_status(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "cancel.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    _seed_customer_order_record(db_path)
+    fake = FakeOrderClient()
+    monkeypatch.setattr(main, "_decrypt_customer_credentials", lambda user_id, envelope: {"api_key": "k", "api_secret": "s"})
+    monkeypatch.setattr(main.ccxt, "binance", lambda config: fake)
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "history-user", "email": "x@example.com", "role": "user"}
+    try:
+        response = client.delete("/api/v1/user/orders/order-42")
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "canceled"
+        history = client.get("/api/v1/user/orders").json()["orders"]
+        assert history[0]["order"]["status"] == "canceled"
+    finally:
+        main.app.dependency_overrides.pop(main.require_platform_user, None)
+
+
+def test_customer_order_refresh_cannot_read_another_users_order(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "isolation.sqlite3")
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    _seed_customer_order_record(db_path, "actual-owner", "private-order")
+    main.app.dependency_overrides[main.require_platform_user] = lambda: {"id": "different-user", "email": "x@example.com", "role": "user"}
+    try:
+        response = client.post("/api/v1/user/orders/private-order/refresh")
+        assert response.status_code == 404
+    finally:
         main.app.dependency_overrides.pop(main.require_platform_user, None)
