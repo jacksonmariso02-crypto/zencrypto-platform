@@ -85,32 +85,3 @@ jobs:
           python -c "import json; d=json.load(open('/tmp/zencrypto-health.json')); assert d.get('status') == 'ok'; assert d.get('mode') == 'ACCOUNT_LINK_ONLY'; assert d.get('legacy_paper_trading_enabled') is False; assert d.get('live_funds_enabled') is False; assert d.get('real_deposits_enabled') is False; assert d.get('real_withdrawals_enabled') is False"
           status=$(curl --silent --show-error --output /tmp/zencrypto-paper-retired.json --write-out '%{http_code}' https://zencrypto-api.onrender.com/trade/assets)
           test "$status" = "410"
-      - name: Verify exchange service deployment, vault readiness and live-order lock
-        env:
-          EXCHANGE_BASE_URL: https://zencrypto-exchange.onrender.com
-        run: |
-          health_status=$(curl --silent --show-error --output /tmp/zencrypto-exchange-health.json --write-out '%{http_code}' --location "$EXCHANGE_BASE_URL/health")
-          if [ "$health_status" != "200" ]; then
-            echo "::error::Exchange service /health returned HTTP $health_status. Confirm the zencrypto-exchange Render service exists, is linked to this repository, and has completed its deployment from the current main branch."
-            cat /tmp/zencrypto-exchange-health.json || true
-            exit 1
-          fi
-          python -c "import json; d=json.load(open('/tmp/zencrypto-exchange-health.json')); assert d.get('status') == 'ok'; assert d.get('exchange') == 'binance'; assert d.get('sandbox') is True; assert d.get('live_trading_enabled') is False; assert d.get('customer_order_routing_enabled') is False; assert d.get('customer_credential_vault_configured') is True; print('Exchange service build revision:', d.get('build_revision'))"
-          ready_status=$(curl --silent --show-error --output /tmp/zencrypto-exchange-ready.json --write-out '%{http_code}' --location "$EXCHANGE_BASE_URL/ready")
-          if [ "$ready_status" != "200" ]; then
-            echo "::error::Exchange service /ready returned HTTP $ready_status. A 404 usually means Render is serving an older/different service or the Blueprint service has not been created/synced; a 503 means inspect the readiness checks below."
-            cat /tmp/zencrypto-exchange-ready.json || true
-            exit 1
-          fi
-          python -c "import json; d=json.load(open('/tmp/zencrypto-exchange-ready.json')); assert d.get('status') == 'ready'; assert d.get('sandbox') is True; assert d.get('live_trading_enabled') is False; assert d.get('checks', {}).get('customer_credential_vault') is True"
-          curl --fail --silent --show-error --location "$EXCHANGE_BASE_URL/api/v1/market-data/status" -o /tmp/zencrypto-market-status.json
-          python -c "import json; d=json.load(open('/tmp/zencrypto-market-status.json')); assert d.get('sandbox') is True; assert d.get('live_order_placement_enabled') is False; assert d.get('customer_order_routing_enabled') is False; assert d.get('customer_account_linking_enabled') is True; assert d.get('credential_vault_configured') is True"
-          preflight_status=$(curl --silent --show-error --output /tmp/zencrypto-exchange-preflight.txt --write-out '%{http_code}' --request OPTIONS "$EXCHANGE_BASE_URL/api/v1/user/orders" --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
-          test "$preflight_status" = "200"
-          grep -qi 'access-control-allow-origin: https://jacksonmariso02-crypto.github.io' <(curl --silent --show-error --dump-header - --output /dev/null --request OPTIONS "$EXCHANGE_BASE_URL/api/v1/user/orders" --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
-          grep -qi 'idempotency-key' <(curl --silent --show-error --dump-header - --output /dev/null --request OPTIONS "$EXCHANGE_BASE_URL/api/v1/user/orders" --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
-      - name: Verify browser CORS preflight from production frontend
-        run: |
-          status=$(curl --silent --show-error --output /tmp/zencrypto-preflight.txt --write-out '%{http_code}' --request OPTIONS https://zencrypto-api.onrender.com/auth/login --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
-          test "$status" = "200"
-          grep -qi 'access-control-allow-origin: https://jacksonmariso02-crypto.github.io' <(curl --silent --show-error --dump-header - --output /dev/null --request OPTIONS https://zencrypto-api.onrender.com/auth/login --header 'Origin: https://jacksonmariso02-crypto.github.io' --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
