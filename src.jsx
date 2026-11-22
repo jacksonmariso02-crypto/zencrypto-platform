@@ -117,20 +117,35 @@ function StrategyBacktest({candles,symbol,timeframe}){
 function App(){
  const[lang,setLang]=useState("en"),[tab,setTab]=useState("dashboard"),[mobile,setMobile]=useState(false),[token,setToken]=useState(localStorage.getItem("zencrypto_token")||""),[user,setUser]=useState(null),[exchangeConnection,setExchangeConnection]=useState(null),[exchangeConnectionLoading,setExchangeConnectionLoading]=useState(false),[exchangeApiKey,setExchangeApiKey]=useState(""),[exchangeApiSecret,setExchangeApiSecret]=useState(""),[exchangeConnectBusy,setExchangeConnectBusy]=useState(false),[exchangeConnectMessage,setExchangeConnectMessage]=useState(""),[exchangeBalances,setExchangeBalances]=useState([]),[exchangeBalancesLoading,setExchangeBalancesLoading]=useState(false),[walletSummary,setWalletSummary]=useState(null),[walletLoading,setWalletLoading]=useState(false),[walletMessage,setWalletMessage]=useState(""),[authOpen,setAuthOpen]=useState(false),[authMode,setAuthMode]=useState("login"),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[authMessage,setAuthMessage]=useState(""),[authBusy,setAuthBusy]=useState(false),[authChecking,setAuthChecking]=useState(Boolean(localStorage.getItem("zencrypto_token"))),[markets,setMarkets]=useState(SEED),[tickerStatus,setTickerStatus]=useState("connecting"),[tickerUpdatedAt,setTickerUpdatedAt]=useState(null),[exchangeStatus,setExchangeStatus]=useState(null),[exchangeStatusLoading,setExchangeStatusLoading]=useState(true),[exchangeStatusError,setExchangeStatusError]=useState(""),[symbol,setSymbol]=useState("BTC"),[marketInfo,setMarketInfo]=useState(null),[marketInfoStatus,setMarketInfoStatus]=useState("unconfigured"),[timeframe,setTimeframe]=useState("1h"),[candles,setCandles]=useState([]),[chartRefresh,setChartRefresh]=useState(0),[chartLoading,setChartLoading]=useState(false),[chartError,setChartError]=useState(""),[side,setSide]=useState("buy"),[amount,setAmount]=useState("100"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[balances,setBalances]=useState([]),[orders,setOrders]=useState([]),[limitOrders,setLimitOrders]=useState([]),[limitTrades,setLimitTrades]=useState([]),[paperBook,setPaperBook]=useState({bids:[],asks:[]}),[paperBookUpdatedAt,setPaperBookUpdatedAt]=useState(null),[limitQty,setLimitQty]=useState("0.001"),[limitPrice,setLimitPrice]=useState(""),[limitBusy,setLimitBusy]=useState(false),[limitError,setLimitError]=useState(""),[tradeSummary,setTradeSummary]=useState(null),[orderOffset,setOrderOffset]=useState(0),[orderTotal,setOrderTotal]=useState(0),[orderSideFilter,setOrderSideFilter]=useState(""),[orderSymbolFilter,setOrderSymbolFilter]=useState(""),[orderStatusFilter,setOrderStatusFilter]=useState(""),[orderLoading,setOrderLoading]=useState(false),[orderExporting,setOrderExporting]=useState(false),[ledger,setLedger]=useState([]),[ledgerTotal,setLedgerTotal]=useState(0),[ledgerOffset,setLedgerOffset]=useState(0),[ledgerCurrency,setLedgerCurrency]=useState(""),[ledgerLoading,setLedgerLoading]=useState(false),[ledgerError,setLedgerError]=useState(""),[search,setSearch]=useState(""),[orderBook,setOrderBook]=useState(null),[recentTrades,setRecentTrades]=useState([]),[depthError,setDepthError]=useState(""),[depthUpdated,setDepthUpdated]=useState(null),[riskPercent,setRiskPercent]=useState("1"),[stopPrice,setStopPrice]=useState(""),[targetPrice,setTargetPrice]=useState(""),[customerOrderSide,setPreviewSide]=useState("buy"),[customerOrderType,setPreviewType]=useState("market"),[orderPreviewQty,setOrderPreviewQty]=useState("0.001"),[customerOrderPrice,setPreviewPrice]=useState(""),[customerOrderBusy,setPreviewBusy]=useState(false),[customerOrderResult,setPreviewResult]=useState(null),[customerOrderError,setPreviewError]=useState(""),[customerOrders,setCustomerOrders]=useState([]),[customerOrdersLoading,setCustomerOrdersLoading]=useState(false),[customerOrderActionId,setCustomerOrderActionId]=useState(""),[customerOrderSubmitBusy,setCustomerOrderSubmitBusy]=useState(false),[customerOrderSubmitResult,setCustomerOrderSubmitResult]=useState(null);
  const t=lang==="en"?{overview:"Overview",trade:"Trade",assets:"Assets",deposit:"Deposit",withdraw:"Withdraw",admin:"Admin",buy:"Buy",sell:"Sell",amount:"Order value (USD)",history:"Trade history",empty:"No trades yet",paper:"PAPER TRADING — Simulated funds only",disclaimer:"All balances and trades are simulated. Real deposits, withdrawals, custody and live execution are disabled."}:{overview:"总览",trade:"交易",assets:"资产",deposit:"充值",withdraw:"提现",admin:"管理",buy:"买入",sell:"卖出",amount:"订单金额（USD）",history:"成交记录",empty:"暂无成交记录",paper:"模拟交易模式 — 仅使用模拟资金",disclaimer:"所有余额和交易均为模拟数据。真实充值、提现、托管及实盘交易均已关闭。"};
- async function api(path,opts){const r=await fetch(API+path,{...(opts||{}),headers:{...((opts&&opts.headers)||{}),...(token?{Authorization:"Bearer "+token}:{})}});const d=await r.json().catch(()=>({detail:"Invalid API response"}));if(!r.ok)throw Error(d.detail||"Request failed");return d;}
+ async function requestJson(url,opts,timeoutMs,errorLabel){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+   return await fetch(url,{...(opts||{}),signal:controller.signal,cache:"no-store",credentials:"omit"});
+  }catch(error){
+   if(error?.name==="AbortError")throw Error(errorLabel+" timed out. Check the account or order history before repeating any write request.");
+   throw error;
+  }finally{clearTimeout(timeout);}
+ }
+ async function api(path,opts){
+  const r=await requestJson(API+path,{...(opts||{}),headers:{...((opts&&opts.headers)||{}),...(token?{Authorization:"Bearer "+token}:{})}},15000,"Platform API request");
+  const d=await r.json().catch(()=>({detail:"Invalid API response"}));
+  if(!r.ok)throw Error(d.detail||"Request failed");
+  return d;
+ }
 
  async function exchangeApi(path,opts){
   if(!EXCHANGE_API)throw Error("The exchange connector is not configured.");
-  const response=await fetch(EXCHANGE_API+path,{...(opts||{}),headers:{...((opts&&opts.headers)||{}),...(token?{Authorization:"Bearer "+token}:{})}});
+  const response=await requestJson(EXCHANGE_API+path,{...(opts||{}),headers:{...((opts&&opts.headers)||{}),...(token?{Authorization:"Bearer "+token}:{})}},20000,"Exchange connector request");
   const data=await response.json().catch(()=>({detail:"Invalid exchange connector response"}));
   if(!response.ok)throw Error(data.detail||"Exchange connector request failed.");
   return data;
  }
  async function loadExchangeConnection(){
   if(!token||!EXCHANGE_API){setExchangeConnection(null);return;}
-  setExchangeConnectionLoading(true);setExchangeConnectMessage("");
+  setExchangeConnectionLoading(true);setExchangeConnectMessage("");setExchangeConnection(null);setExchangeBalances([]);
   try{const data=await exchangeApi("/api/v1/user/exchange-connections");setExchangeConnection(data.connections?.find(x=>x.exchange==="binance")||null);}
-  catch(e){setExchangeConnectMessage(e.message);}
+  catch(e){setExchangeConnection(null);setExchangeBalances([]);setExchangeConnectMessage(e.message);}
   finally{setExchangeConnectionLoading(false);}
  }
  async function connectBinance(e){
@@ -208,9 +223,9 @@ function App(){
   finally{setWalletLoading(false);}
  }
  async function loadExchangeBalances(){
-  setExchangeBalancesLoading(true);setExchangeConnectMessage("");
+  setExchangeBalancesLoading(true);setExchangeConnectMessage("");setExchangeBalances([]);
   try{const data=await exchangeApi("/api/v1/user/exchange-connections/binance/balances");setExchangeBalances(data.balances||[]);setNotice("Retrieved "+(data.balances||[]).length+" non-zero asset balances from Binance.");}
-  catch(e){setExchangeConnectMessage(e.message);}
+  catch(e){setExchangeBalances([]);setExchangeConnectMessage(e.message);}
   finally{setExchangeBalancesLoading(false);}
  }
  useEffect(()=>{if(token&&!authChecking){loadExchangeConnection();}else{setExchangeConnection(null);setExchangeBalances([]);}},[token,authChecking]);
