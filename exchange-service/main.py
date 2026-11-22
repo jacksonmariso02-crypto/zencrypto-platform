@@ -386,6 +386,23 @@ async def preview_customer_order(
         await run_in_threadpool(exchange.close)
 
 
+def _lookup_customer_order_request(user_id: str, idempotency_key: str, request_hash: str):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT request_hash, status, response_json FROM customer_order_requests
+               WHERE user_id=? AND idempotency_key=?""",
+            (user_id, idempotency_key),
+        ).fetchone()
+    if not row:
+        return None
+    if not hmac.compare_digest(row[0], request_hash):
+        raise HTTPException(409, "This idempotency key was already used for a different order request.")
+    if row[1] == "SUBMITTED" and row[2]:
+        response = json.loads(row[2])
+        response["idempotent_replay"] = True
+        return response
+    raise HTTPException(409, "An order with this idempotency key is already processing or requires exchange reconciliation. Do not retry with a new key.")
+
 def _claim_customer_order_request(user_id: str, idempotency_key: str, request_hash: str):
     """Atomically reserve an idempotency key before any exchange write."""
     client_order_id = "zc" + hashlib.sha256((user_id + ":" + idempotency_key).encode()).hexdigest()[:32]
@@ -437,7 +454,7 @@ async def submit_customer_order(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user=Depends(require_platform_user),
 ):
-    if not LIVE_CUSTOMER_ORDER_ROUTING_ENABLED or SANDBOX:
+    if not LIVE_CUSTOMER_ORDER_ROUTING_ENABLED or not LIVE_TRADING_ENABLED or SANDBOX:
         raise HTTPException(403, "Customer live order routing is disabled. Read-only order previews remain available.")
     if not idempotency_key or not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
         raise HTTPException(400, "A unique Idempotency-Key header (16-128 safe characters) is required.")
@@ -462,15 +479,18 @@ async def submit_customer_order(
         "options": {"defaultType": "spot"},
     })
     try:
-        preview = await run_in_threadpool(_calculate_customer_order_preview, exchange, body)
         normalized_request = {
-            "symbol": preview["symbol"], "side": body.side, "type": body.order_type,
-            "amount": preview["amount"],
-            "price": preview["reference_price"] if body.order_type == "limit" else None,
+            "symbol": normalize_symbol(body.symbol), "side": body.side, "type": body.order_type,
+            "amount": format(body.amount.normalize(), "f"),
+            "price": format(body.price.normalize(), "f") if body.price is not None else None,
         }
         request_hash = hashlib.sha256(
             json.dumps(normalized_request, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        replay = _lookup_customer_order_request(user["id"], idempotency_key, request_hash)
+        if replay is not None:
+            return replay
+        preview = await run_in_threadpool(_calculate_customer_order_preview, exchange, body)
         client_order_id, replay = _claim_customer_order_request(user["id"], idempotency_key, request_hash)
         if replay is not None:
             return replay
