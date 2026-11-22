@@ -931,6 +931,27 @@ async def list_daily_paper_snapshots(
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.get("/api/v1/paper/admin/ledger/snapshot-comparison")
+async def compare_paper_asset_snapshots(
+    account_id: str,
+    from_date: str,
+    to_date: str,
+    asset: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Admin-only exact-decimal comparison of two daily paper asset snapshots."""
+    require_admin(authorization)
+    try:
+        return await run_in_threadpool(
+            PAPER_LEDGER.compare_daily_snapshots,
+            account_id, from_date, to_date, asset,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.get("/api/v1/paper/admin/finance-overview")
 async def paper_admin_finance_overview(
     authorization: str | None = Header(default=None),

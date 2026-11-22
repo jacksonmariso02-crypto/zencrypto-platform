@@ -266,3 +266,74 @@ def test_admin_finance_overview_aggregates_user_balances_fees_and_snapshots(ledg
     assert summary["snapshots"]["count"] == 1
     assert summary["snapshots"]["latest_utc_date"] == snapshot["snapshot_date"]
     assert summary["source"] == "paper_double_entry_ledger"
+
+
+def test_snapshot_comparison_uses_exact_decimal_deltas(ledger):
+    import sqlite3
+    ledger.create_account("variance_001")
+    with sqlite3.connect(ledger.db_path) as db:
+        db.executemany(
+            """INSERT INTO daily_asset_snapshots
+               (snapshot_date,account_id,asset,available,locked,created_at)
+               VALUES(?,?,?,?,?,?)""",
+            [
+                ("2026-11-19", "variance_001", "USDT", "100.10", "5", 1),
+                ("2026-11-20", "variance_001", "USDT", "110.35", "2.5", 2),
+                ("2026-11-19", "variance_001", "BTC", "0.5", "0", 1),
+                ("2026-11-20", "variance_001", "BTC", "0.4", "0.1", 2),
+            ],
+        )
+
+    result = ledger.compare_daily_snapshots(
+        "variance_001", "2026-11-19", "2026-11-20"
+    )
+    assert result["mode"] == "paper"
+    assert result["assets_compared"] == 2
+    usdt = next(item for item in result["changes"] if item["asset"] == "USDT")
+    assert usdt["delta"] == {
+        "available": "10.25",
+        "locked": "-2.5",
+        "total": "7.75",
+    }
+    btc = next(item for item in result["changes"] if item["asset"] == "BTC")
+    assert btc["delta"]["total"] == "0.0"
+
+
+def test_snapshot_comparison_flags_missing_asset_snapshot(ledger):
+    import sqlite3
+    ledger.create_account("variance_002")
+    with sqlite3.connect(ledger.db_path) as db:
+        db.execute(
+            """INSERT INTO daily_asset_snapshots
+               (snapshot_date,account_id,asset,available,locked,created_at)
+               VALUES(?,?,?,?,?,?)""",
+            ("2026-11-20", "variance_002", "USDT", "25", "0", 1),
+        )
+
+    result = ledger.compare_daily_snapshots(
+        "variance_002", "2026-11-19", "2026-11-20"
+    )
+    assert result["assets_compared"] == 0
+    assert result["assets_missing_snapshot"] == 1
+    assert result["changes"][0]["status"] == "missing_snapshot"
+    assert result["changes"][0]["from"] is None
+
+
+def test_snapshot_comparison_validates_account_dates_and_asset(ledger):
+    ledger.create_account("variance_003")
+    with pytest.raises(ValueError, match="earlier"):
+        ledger.compare_daily_snapshots(
+            "variance_003", "2026-11-20", "2026-11-19"
+        )
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        ledger.compare_daily_snapshots(
+            "variance_003", "19-11-2026", "2026-11-20"
+        )
+    with pytest.raises(ValueError, match="supported ticker"):
+        ledger.compare_daily_snapshots(
+            "variance_003", "2026-11-19", "2026-11-20", "USDT!"
+        )
+    with pytest.raises(KeyError):
+        ledger.compare_daily_snapshots(
+            "missing_003", "2026-11-19", "2026-11-20"
+        )

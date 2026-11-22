@@ -527,3 +527,27 @@ def test_admin_finance_overview_requires_admin_and_returns_paper_summary(api):
     assert payload["ledger"]["transactions"] == 0
     assert payload["user_balances"] == []
     assert payload["source"] == "paper_double_entry_ledger"
+
+
+def test_snapshot_comparison_endpoint_is_admin_only_and_validates_dates(api):
+    denied = api.get(
+        "/api/v1/paper/admin/ledger/snapshot-comparison",
+        params={
+            "account_id": "acct_001",
+            "from_date": "2026-11-19",
+            "to_date": "2026-11-20",
+        },
+    )
+    assert denied.status_code == 401
+
+    main.PAPER_LEDGER.create_account("acct_001")
+    invalid = api.get(
+        "/api/v1/paper/admin/ledger/snapshot-comparison",
+        headers=auth(),
+        params={
+            "account_id": "acct_001",
+            "from_date": "2026-11-20",
+            "to_date": "2026-11-19",
+        },
+    )
+    assert invalid.status_code == 422
