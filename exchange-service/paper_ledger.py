@@ -497,3 +497,86 @@ class PaperLedger:
                     (account_id, limit),
                 ).fetchall()
             return [dict(row) for row in rows]
+
+
+    def admin_finance_overview(self):
+        """Read-only aggregate view of simulated user liabilities and platform fees."""
+        with closing(self._connect()) as db:
+            account_count = db.execute(
+                "SELECT COUNT(*) FROM paper_accounts"
+            ).fetchone()[0]
+            transaction_count = db.execute(
+                "SELECT COUNT(*) FROM ledger_transactions"
+            ).fetchone()[0]
+            entry_count = db.execute(
+                "SELECT COUNT(*) FROM ledger_entries"
+            ).fetchone()[0]
+            snapshot_count = db.execute(
+                "SELECT COUNT(*) FROM daily_asset_snapshots"
+            ).fetchone()[0]
+            latest_snapshot = db.execute(
+                "SELECT MAX(snapshot_date) FROM daily_asset_snapshots"
+            ).fetchone()[0]
+
+            rows = db.execute(
+                """
+                SELECT asset, account_code, debit, credit
+                FROM ledger_entries
+                WHERE account_code LIKE 'user:%:available'
+                   OR account_code LIKE 'user:%:locked'
+                ORDER BY asset, account_code, id
+                """
+            ).fetchall()
+            assets = {}
+            for row in rows:
+                item = assets.setdefault(row["asset"], {
+                    "available": Decimal("0"), "locked": Decimal("0")
+                })
+                bucket = "available" if row["account_code"].endswith(":available") else "locked"
+                item[bucket] += Decimal(row["credit"]) - Decimal(row["debit"])
+
+            fee_rows = db.execute(
+                """SELECT asset,debit,credit FROM ledger_entries
+                   WHERE account_code='platform:fees' ORDER BY asset,id"""
+            ).fetchall()
+            fees = {}
+            for row in fee_rows:
+                fees[row["asset"]] = fees.get(row["asset"], Decimal("0")) + (
+                    Decimal(row["credit"]) - Decimal(row["debit"])
+                )
+
+            by_kind = db.execute(
+                """SELECT kind,COUNT(*) AS count FROM ledger_transactions
+                   GROUP BY kind ORDER BY kind"""
+            ).fetchall()
+
+            return {
+                "mode": "paper",
+                "accounts": account_count,
+                "ledger": {
+                    "transactions": transaction_count,
+                    "entries": entry_count,
+                    "transactions_by_kind": {
+                        row["kind"]: row["count"] for row in by_kind
+                    },
+                },
+                "user_balances": [
+                    {
+                        "asset": asset,
+                        "available": str(values["available"]),
+                        "locked": str(values["locked"]),
+                        "total": str(values["available"] + values["locked"]),
+                    }
+                    for asset, values in sorted(assets.items())
+                ],
+                "platform_fee_balances": [
+                    {"asset": asset, "amount": str(amount)}
+                    for asset, amount in sorted(fees.items()) if amount
+                ],
+                "snapshots": {
+                    "count": snapshot_count,
+                    "latest_utc_date": latest_snapshot,
+                },
+                "as_of_utc_ns": time.time_ns(),
+                "source": "paper_double_entry_ledger",
+            }
