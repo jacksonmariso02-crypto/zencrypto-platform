@@ -551,3 +551,25 @@ def test_snapshot_comparison_endpoint_is_admin_only_and_validates_dates(api):
         },
     )
     assert invalid.status_code == 422
+
+
+def test_order_trade_reconciliation_endpoint_is_admin_only_and_read_only(api):
+    denied = api.get("/api/v1/paper/admin/orders/reconciliation")
+    assert denied.status_code == 401
+
+    main.PAPER_ENGINE.place_limit_order(
+        "BTC/USDT", "sell", "1", "100", "api-audit-ask-001"
+    )
+    main.PAPER_ENGINE.place_limit_order(
+        "BTC/USDT", "buy", "0.5", "105", "api-audit-bid-001"
+    )
+    response = api.get(
+        "/api/v1/paper/admin/orders/reconciliation",
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "paper"
+    assert payload["status"] == "ok"
+    assert payload["counts"]["orders"] == 2
+    assert payload["counts"]["trades"] == 1
