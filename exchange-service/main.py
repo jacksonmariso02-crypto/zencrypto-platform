@@ -1233,6 +1233,7 @@ async def readiness():
     payload = {
         "status": "ready" if ready else "not_ready",
         "service": APP_NAME,
+        "build_revision": os.getenv("RENDER_GIT_COMMIT", "source"),
         "checks": checks,
         "sandbox": SANDBOX,
         "live_trading_enabled": LIVE_TRADING_ENABLED,
