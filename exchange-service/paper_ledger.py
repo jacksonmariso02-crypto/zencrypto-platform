@@ -402,8 +402,8 @@ class PaperLedger:
             raise ValueError("as_of_date must use YYYY-MM-DD format.") from exc
         if parsed.isoformat() != str(value):
             raise ValueError("as_of_date must use YYYY-MM-DD format.")
-        if parsed > datetime.now(timezone.utc).date():
-            raise ValueError("as_of_date cannot be in the future.")
+        if parsed != datetime.now(timezone.utc).date():
+            raise ValueError("Snapshots can only be captured for the current UTC date; historical dates cannot be backfilled.")
         return parsed.isoformat()
 
     def capture_daily_snapshots(self, as_of_date=None):
@@ -414,8 +414,7 @@ class PaperLedger:
             try:
                 rows = db.execute(
                     """
-                    SELECT a.account_id, e.asset,
-                           SUM(CAST(e.credit AS NUMERIC) - CAST(e.debit AS NUMERIC)) AS net
+                    SELECT DISTINCT a.account_id, e.asset
                     FROM paper_accounts a
                     JOIN ledger_entries e
                       ON e.account_code IN (
