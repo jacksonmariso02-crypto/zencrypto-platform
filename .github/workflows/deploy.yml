@@ -12,6 +12,9 @@ on:
       - 'package-lock.json'
       - 'vite.config.*'
       - 'public/**'
+      - 'render.yaml'
+      - 'backend/**'
+      - 'exchange-service/**'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/paper-trading-tests.yml'
   workflow_dispatch:
