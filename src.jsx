@@ -168,8 +168,8 @@ function App(){
  async function submitCustomerOrder(){
   if(!customerOrderResult||!exchangeConnection?.connected)return;
   if(!exchangeConnection?.live_order_routing_enabled){setPreviewError("Live customer order routing is disabled by the server. No order was submitted.");return;}
-  const details=customerOrderResult.side.toUpperCase()+" "+customerOrderResult.symbol+"\\nAmount: "+customerOrderResult.amount+"\\nEstimated notional: "+customerOrderResult.estimated_notional_usdt+" USDT\\nReference price: "+customerOrderResult.reference_price+" USDT";
-  if(!window.confirm("You are about to submit a REAL order using your connected Binance account.\\n\\n"+details+"\\n\\nMarket prices can change. Continue?"))return;
+  const details=customerOrderResult.side.toUpperCase()+" "+customerOrderResult.symbol+"\nAmount: "+customerOrderResult.amount+"\nEstimated notional: "+customerOrderResult.estimated_notional_usdt+" USDT\nReference price: "+customerOrderResult.reference_price+" USDT";
+  if(!window.confirm("You are about to submit a REAL order using your connected Binance account.\n\n"+details+"\n\nMarket prices can change. Continue?"))return;
   setCustomerOrderSubmitBusy(true);setPreviewError("");setCustomerOrderSubmitResult(null);
   try{
    const key="zc-"+crypto.randomUUID();
