@@ -872,3 +872,17 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 }
 
 .app:not(.trade-app) .hamburger,.trade-app .hamburger{display:none!important}
+
+
+/* Navigation usability: preserve every destination on narrow screens and keyboard focus. */
+.app:not(.trade-app) .sidebar nav{flex:1;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:#3b424b transparent}
+.app:not(.trade-app) .sidebar nav .nav{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.app:not(.trade-app) .nav:focus-visible,.app:not(.trade-app) button:focus-visible,.trade-app .nav:focus-visible,.trade-app button:focus-visible{outline:2px solid #f0b90b;outline-offset:2px}
+@media(max-width:760px){
+ .app:not(.trade-app) .sidebar{align-items:flex-start;flex-wrap:wrap;overflow:visible}
+ .app:not(.trade-app) .sidebar nav{width:100%;flex:1 1 100%;padding-bottom:2px}
+ .app:not(.trade-app) .nav{flex:0 0 auto}
+ .app:not(.trade-app) .nav span{white-space:nowrap}
+ .app:not(.trade-app) .headerleft{min-width:0}
+ .app:not(.trade-app) .headeractions{flex-wrap:wrap;justify-content:flex-end}
+}
