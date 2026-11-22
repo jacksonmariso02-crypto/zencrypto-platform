@@ -199,3 +199,13 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - Flags assets that exist in only one of the selected snapshots instead of treating a missing record as a zero balance.
 - Requires an existing paper account, strict ISO dates, and `from_date` earlier than `to_date`.
 - This is a historical comparison of recorded paper snapshots, not a valuation of real assets or a live balance feed.
+
+
+## Paper order and trade reconciliation
+- Admin-only read endpoint: `GET /api/v1/paper/admin/orders/reconciliation`.
+- Validates that every recorded trade references existing maker and taker orders, uses the same market symbol, pairs opposite sides, and has positive finite price and quantity.
+- Detects self-trades between orders assigned to the same paper account.
+- Reconciles each order's original quantity against the sum of its recorded fills plus remaining quantity.
+- Checks that open, partially filled, filled and cancelled order states agree with their remaining quantity and fill history.
+- Returns issue counts and capped order/trade references; it never modifies orders, fills, balances or ledger entries.
+- This endpoint is an operational consistency check for the simulated matching engine, not a financial statement or proof of funds.
