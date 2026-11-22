@@ -1,0 +1,58 @@
+name: Verify ZenCrypto Exchange Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'exchange-service/**'
+      - 'render.yaml'
+      - '.github/workflows/exchange-production-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exchange-production-check
+  cancel-in-progress: true
+
+jobs:
+  verify-exchange:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXCHANGE_BASE_URL: https://zencrypto-exchange.onrender.com
+      FRONTEND_ORIGIN: https://jacksonmariso02-crypto.github.io
+    steps:
+      - name: Check exchange service health and deployment revision
+        run: |
+          status=$(curl --silent --show-error --output /tmp/health.json --write-out '%{http_code}' --location "$EXCHANGE_BASE_URL/health")
+          if [ "$status" != "200" ]; then
+            echo "::error::Exchange service /health returned HTTP $status. Sync the Render Blueprint and confirm the zencrypto-exchange service is deployed from main with root directory exchange-service."
+            cat /tmp/health.json || true
+            exit 1
+          fi
+          python -c "import json; d=json.load(open('/tmp/health.json')); assert d.get('status') == 'ok'; assert d.get('exchange') == 'binance'; assert d.get('sandbox') is True; assert d.get('live_trading_enabled') is False; assert d.get('customer_order_routing_enabled') is False; assert d.get('customer_credential_vault_configured') is True; print('Exchange build revision:', d.get('build_revision'))"
+
+      - name: Verify readiness and encrypted customer credential vault
+        run: |
+          status=$(curl --silent --show-error --output /tmp/ready.json --write-out '%{http_code}' --location "$EXCHANGE_BASE_URL/ready")
+          if [ "$status" != "200" ]; then
+            echo "::error::Exchange service /ready returned HTTP $status. Inspect Render deployment logs and the readiness checks; do not bypass the health gate."
+            cat /tmp/ready.json || true
+            exit 1
+          fi
+          python -c "import json; d=json.load(open('/tmp/ready.json')); assert d.get('status') == 'ready'; assert d.get('sandbox') is True; assert d.get('live_trading_enabled') is False; assert d.get('checks', {}).get('customer_credential_vault') is True"
+
+      - name: Verify market data account-linking status and locked order routing
+        run: |
+          curl --fail --silent --show-error --location "$EXCHANGE_BASE_URL/api/v1/market-data/status" -o /tmp/market-status.json
+          python -c "import json; d=json.load(open('/tmp/market-status.json')); assert d.get('sandbox') is True; assert d.get('live_order_placement_enabled') is False; assert d.get('customer_order_routing_enabled') is False; assert d.get('customer_account_linking_enabled') is True; assert d.get('credential_vault_configured') is True"
+
+      - name: Verify browser CORS preflight for authenticated idempotent order requests
+        run: |
+          status=$(curl --silent --show-error --output /tmp/preflight.txt --write-out '%{http_code}' --request OPTIONS "$EXCHANGE_BASE_URL/api/v1/user/orders" --header "Origin: $FRONTEND_ORIGIN" --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
+          test "$status" = "200"
+          headers=$(curl --silent --show-error --dump-header - --output /dev/null --request OPTIONS "$EXCHANGE_BASE_URL/api/v1/user/orders" --header "Origin: $FRONTEND_ORIGIN" --header 'Access-Control-Request-Method: POST' --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key')
+          grep -qi "access-control-allow-origin: $FRONTEND_ORIGIN" <<< "$headers"
+          grep -qi 'idempotency-key' <<< "$headers"
