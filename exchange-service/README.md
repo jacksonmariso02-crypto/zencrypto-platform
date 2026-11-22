@@ -182,3 +182,11 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - Capture only accepts the current UTC date. It rejects backdated requests rather than labelling today's balances as historical data.
 - Snapshot rows preserve exact decimal strings for available and locked balances. They are immutable audit evidence and do not replace the live ledger as the source of truth.
 - Capture is currently an admin-triggered operation, not an automatic scheduled job. Schedule it only after the production Render service is running and its UTC operating schedule/monitoring is configured.
+
+
+## Admin finance overview
+- Admin-only read endpoint: `GET /api/v1/paper/admin/finance-overview`.
+- Returns aggregate paper account count, ledger transaction/entry counts, transaction counts by kind, per-asset available and locked user balances, platform fee balances, and daily snapshot coverage.
+- Monetary values are returned as exact decimal strings and are aggregated directly from the double-entry ledger; no floating-point conversion is used.
+- The endpoint is read-only and explicitly labels the result as `mode: paper`. It is not a bank balance, custody statement, proof of reserves, or real-money financial report.
+- Access requires the configured administrator bearer token. Never expose this endpoint to unauthenticated public clients.
