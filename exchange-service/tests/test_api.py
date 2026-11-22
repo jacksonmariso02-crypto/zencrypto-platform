@@ -104,8 +104,10 @@ class FakeOrderClient:
     def fetch_balance(self):
         return {"free": {"USDT": 1000, "BTC": 0.5}}
 
-    def create_order(self, symbol, order_type, side, amount, price):
-        order = {"symbol": symbol, "type": order_type, "side": side, "amount": amount, "price": price}
+    def create_order(self, symbol, order_type, side, amount, price, params=None):
+        order = {"id": "fake-order-123", "symbol": symbol, "type": order_type, "side": side,
+                 "amount": amount, "price": price, "status": "open", "filled": 0,
+                 "remaining": amount, "cost": 0, "params": params or {}}
         self.created.append(order)
         return order
 
