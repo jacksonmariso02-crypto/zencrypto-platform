@@ -711,3 +711,22 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-order-history-actions .zc-btn{min-height:34px;padding:7px 11px;font-size:12px}
 .zc-order-history-actions .zc-btn-danger{border:1px solid rgba(239,68,68,.35);color:#ef7777;background:rgba(239,68,68,.08)}
 @media(max-width:640px){.zc-order-history-row{align-items:flex-start;flex-direction:column}.zc-order-history-actions{width:100%}.zc-order-history-actions .zc-btn{flex:1}}
+
+
+.zc-wallet-page{display:grid;gap:18px;max-width:1120px;margin:0 auto;padding:8px 0 28px}
+.zc-wallet-page>h2{margin:0;font-size:clamp(24px,3vw,34px)}
+.zc-wallet-page>p{max-width:760px;line-height:1.65}
+.zc-wallet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.zc-wallet-card,.zc-wallet-funding{border:1px solid var(--border,rgba(148,163,184,.18));border-radius:16px;padding:18px;background:var(--panel,rgba(15,23,42,.32));min-width:0}
+.zc-wallet-card-head,.zc-wallet-status{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.zc-wallet-card-head strong{font-size:15px}
+.zc-wallet-card>p,.zc-wallet-funding>p{font-size:13px;line-height:1.6;color:var(--muted,#8b96a8)}
+.zc-wallet-status{padding:10px 0;border-top:1px solid var(--border,rgba(148,163,184,.14));font-size:12px}
+.zc-wallet-status span{color:var(--muted,#8b96a8)}
+.zc-wallet-assets{display:grid;gap:8px;margin-top:12px}
+.zc-wallet-assets>div{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border,rgba(148,163,184,.14));font-size:12px}
+.zc-wallet-assets span,.zc-wallet-assets small{color:var(--muted,#8b96a8)}
+.zc-wallet-funding h3{margin:0;font-size:16px}
+.zc-wallet-actions{display:flex;gap:9px;flex-wrap:wrap}
+.zc-wallet-actions button:disabled{opacity:.48;cursor:not-allowed}
+@media(max-width:720px){.zc-wallet-grid{grid-template-columns:1fr}.zc-wallet-card,.zc-wallet-funding{padding:14px}.zc-wallet-assets>div{grid-template-columns:1fr auto}.zc-wallet-assets small{grid-column:1/-1}}
