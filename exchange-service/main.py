@@ -837,6 +837,60 @@ def _wallet_balances_for_user(user_id: str):
     ]
 
 
+def _wallet_integrity_for_user(user_id: str):
+    """Read-only integrity check for customer journals; never repairs or credits funds."""
+    issues = []
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        journals = db.execute(
+            "SELECT journal_id, asset FROM wallet_journals WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        for journal in journals:
+            entries = db.execute(
+                """SELECT user_id, asset, account_code, direction, amount
+                   FROM wallet_ledger_entries WHERE journal_id=?""",
+                (journal["journal_id"],),
+            ).fetchall()
+            if len(entries) < 2:
+                issues.append({"journal_id": journal["journal_id"], "reason": "insufficient_postings"})
+                continue
+            debit_total = Decimal("0")
+            credit_total = Decimal("0")
+            invalid = False
+            for entry in entries:
+                if entry["user_id"] != user_id or entry["asset"] != journal["asset"]:
+                    invalid = True
+                    break
+                amount = Decimal(str(entry["amount"]))
+                if not amount.is_finite() or amount <= 0:
+                    invalid = True
+                    break
+                if entry["direction"] == "debit":
+                    debit_total += amount
+                elif entry["direction"] == "credit":
+                    credit_total += amount
+                else:
+                    invalid = True
+                    break
+            if invalid:
+                issues.append({"journal_id": journal["journal_id"], "reason": "invalid_or_cross_account_posting"})
+            elif debit_total != credit_total:
+                issues.append({"journal_id": journal["journal_id"], "reason": "unbalanced"})
+    balances = _wallet_balances_for_user(user_id)
+    for balance in balances:
+        if Decimal(balance["available"]) < 0:
+            issues.append({"asset": balance["asset"], "reason": "negative_customer_available_balance"})
+    return {
+        "status": "healthy" if not issues else "review_required",
+        "healthy": not issues,
+        "checked_journals": len(journals),
+        "issue_count": len(issues),
+        "issues": issues[:50],
+        "checked_at": int(time.time()),
+    }
+
+
 def _wallet_activity_for_user(user_id: str, limit: int = 100):
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
         db.row_factory = sqlite3.Row
@@ -855,6 +909,7 @@ async def customer_wallet_summary(user=Depends(require_platform_user)):
         "balances": _wallet_balances_for_user(user["id"]),
         "activity": _wallet_activity_for_user(user["id"], 50),
         "ledger_model": "double_entry",
+        "ledger_integrity": _wallet_integrity_for_user(user["id"]),
         "source": "zencrypto_internal_wallet_ledger",
     }
 
