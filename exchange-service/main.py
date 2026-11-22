@@ -846,6 +846,7 @@ def _wallet_integrity_for_user(user_id: str):
             "SELECT journal_id, asset FROM wallet_journals WHERE user_id=?",
             (user_id,),
         ).fetchall()
+        known_journal_ids = {row["journal_id"] for row in journals}
         for journal in journals:
             entries = db.execute(
                 """SELECT user_id, asset, account_code, direction, amount
@@ -862,7 +863,11 @@ def _wallet_integrity_for_user(user_id: str):
                 if entry["user_id"] != user_id or entry["asset"] != journal["asset"]:
                     invalid = True
                     break
-                amount = Decimal(str(entry["amount"]))
+                try:
+                    amount = Decimal(str(entry["amount"]))
+                except Exception:
+                    invalid = True
+                    break
                 if not amount.is_finite() or amount <= 0:
                     invalid = True
                     break
@@ -877,10 +882,20 @@ def _wallet_integrity_for_user(user_id: str):
                 issues.append({"journal_id": journal["journal_id"], "reason": "invalid_or_cross_account_posting"})
             elif debit_total != credit_total:
                 issues.append({"journal_id": journal["journal_id"], "reason": "unbalanced"})
-    balances = _wallet_balances_for_user(user_id)
-    for balance in balances:
-        if Decimal(balance["available"]) < 0:
-            issues.append({"asset": balance["asset"], "reason": "negative_customer_available_balance"})
+        all_entries = db.execute(
+            "SELECT DISTINCT journal_id FROM wallet_ledger_entries WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        for entry in all_entries:
+            if entry["journal_id"] not in known_journal_ids:
+                issues.append({"journal_id": entry["journal_id"], "reason": "orphaned_ledger_entry"})
+    try:
+        balances = _wallet_balances_for_user(user_id)
+        for balance in balances:
+            if Decimal(balance["available"]) < 0:
+                issues.append({"asset": balance["asset"], "reason": "negative_customer_available_balance"})
+    except Exception:
+        issues.append({"reason": "invalid_customer_balance_amount"})
     return {
         "status": "healthy" if not issues else "review_required",
         "healthy": not issues,
@@ -889,7 +904,6 @@ def _wallet_integrity_for_user(user_id: str):
         "issues": issues[:50],
         "checked_at": int(time.time()),
     }
-
 
 def _wallet_activity_for_user(user_id: str, limit: int = 100):
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
