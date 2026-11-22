@@ -54,6 +54,14 @@ services:
         value: "false"
       - key: WALLET_WITHDRAWALS_ENABLED
         value: "false"
+      - key: BITGO_API_ENV
+        value: "test"
+      - key: BITGO_ENTERPRISE_ID
+        value: ""
+      - key: BITGO_ACCESS_TOKEN
+        sync: false
+      - key: BITGO_WEBHOOK_SECRET
+        sync: false
       - key: ALLOWED_ORIGINS
         value: https://jacksonmariso02-crypto.github.io
       - key: PAPER_ENGINE_DB_PATH
