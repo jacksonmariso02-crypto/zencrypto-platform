@@ -6,6 +6,7 @@ import sqlite3
 import time
 import json
 import base64
+import hashlib
 from decimal import Decimal
 from typing import Literal
 
@@ -81,12 +82,10 @@ def _vault_cipher():
     raw = EXCHANGE_CREDENTIAL_ENCRYPTION_KEY.strip()
     if not raw:
         raise HTTPException(503, "Customer credential vault is not configured.")
-    try:
-        key = base64.urlsafe_b64decode(raw.encode("ascii"))
-    except Exception as exc:
-        raise HTTPException(503, "Customer credential vault key is invalid.") from exc
-    if len(key) != 32:
-        raise HTTPException(503, "Customer credential vault key must decode to exactly 32 bytes.")
+    if len(raw) < 32:
+        raise HTTPException(503, "Customer credential vault key must contain at least 32 characters.")
+    # Derive a fixed-size AES-256 key from the host-managed high-entropy secret.
+    key = hashlib.sha256(raw.encode("utf-8")).digest()
     return AESGCM(key)
 
 
