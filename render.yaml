@@ -46,6 +46,8 @@ services:
         value: "true"
       - key: LIVE_TRADING_ENABLED
         value: "false"
+      - key: LIVE_CUSTOMER_ORDER_ROUTING_ENABLED
+        value: "false"
       - key: ALLOWED_ORIGINS
         value: https://jacksonmariso02-crypto.github.io
       - key: PAPER_ENGINE_DB_PATH
