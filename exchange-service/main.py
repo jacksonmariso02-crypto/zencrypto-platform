@@ -691,6 +691,83 @@ async def cancel_customer_order(exchange_order_id: str, user=Depends(require_pla
     finally:
         await run_in_threadpool(exchange.close)
 
+def _wallet_provider_status():
+    configured = bool(WALLET_CUSTODY_PROVIDER)
+    return {
+        "custody_provider": WALLET_CUSTODY_PROVIDER or None,
+        "provider_configured": configured,
+        "wallet_enabled": configured,
+        "deposits_enabled": bool(configured and WALLET_DEPOSITS_ENABLED),
+        "withdrawals_enabled": bool(configured and WALLET_WITHDRAWALS_ENABLED),
+        "custody_model": "third_party_custodian",
+        "message": "A qualified custody provider must be configured and verified before wallet funding can be enabled." if not configured else "Provider configured; funding still requires a completed adapter and operational approval.",
+    }
+
+
+def _wallet_balances_for_user(user_id: str):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            "SELECT asset, account_code, direction, amount FROM wallet_ledger_entries WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+    totals = {}
+    for row in rows:
+        if row["account_code"] != "customer_available":
+            continue
+        value = Decimal(row["amount"])
+        totals[row["asset"]] = totals.get(row["asset"], Decimal("0")) + (
+            value if row["direction"] == "credit" else -value
+        )
+    return [
+        {"asset": asset, "available": format(amount, "f")}
+        for asset, amount in sorted(totals.items()) if amount != 0
+    ]
+
+
+def _wallet_activity_for_user(user_id: str, limit: int = 100):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """SELECT journal_id, asset, event_type, status, provider_reference, created_at
+               FROM wallet_journals WHERE user_id=? ORDER BY created_at DESC LIMIT ?""",
+            (user_id, max(1, min(int(limit), 100))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/v1/user/wallet")
+async def customer_wallet_summary(user=Depends(require_platform_user)):
+    return {
+        **_wallet_provider_status(),
+        "balances": _wallet_balances_for_user(user["id"]),
+        "activity": _wallet_activity_for_user(user["id"], 50),
+        "ledger_model": "double_entry",
+        "source": "zencrypto_internal_wallet_ledger",
+    }
+
+
+@app.get("/api/v1/user/wallet/activity")
+async def customer_wallet_activity(user=Depends(require_platform_user)):
+    return {"activity": _wallet_activity_for_user(user["id"], 100)}
+
+
+@app.post("/api/v1/user/wallet/deposit-intents")
+async def create_customer_wallet_deposit_intent(user=Depends(require_platform_user)):
+    status = _wallet_provider_status()
+    if not status["provider_configured"] or not status["deposits_enabled"]:
+        raise HTTPException(503, "Wallet deposits are unavailable: no approved custody provider and deposit integration are enabled. Do not send funds to any address.")
+    raise HTTPException(503, "The custody provider deposit-address adapter is not implemented. No deposit address has been created.")
+
+
+@app.post("/api/v1/user/wallet/withdrawal-requests")
+async def create_customer_wallet_withdrawal_request(user=Depends(require_platform_user)):
+    status = _wallet_provider_status()
+    if not status["provider_configured"] or not status["withdrawals_enabled"]:
+        raise HTTPException(503, "Wallet withdrawals are unavailable: no approved custody provider and withdrawal integration are enabled.")
+    raise HTTPException(503, "The custody provider withdrawal adapter, MFA approval and transaction monitoring are not implemented. No withdrawal has been submitted.")
+
+
 @app.get("/api/v1/user/exchange-connections")
 async def list_customer_exchange_connections(user=Depends(require_platform_user)):
     return {"connections": [_customer_connection(user["id"])]}
