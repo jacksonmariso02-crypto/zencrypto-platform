@@ -27,22 +27,9 @@ Create a dedicated Binance API key. Enable reading and the combined Spot & Margi
 
 **Important:** this increment does not place customer orders. Live order routing remains hard-disabled until customer-specific order validation, risk limits, idempotency, order reconciliation, audit trails, key-rotation procedures, incident response, security review and applicable legal/compliance approvals are complete. The legacy public paper-trading endpoints in the platform API return HTTP 410 by default; they can only be re-enabled explicitly for isolated development/test environments with `PAPER_TRADING_ENABLED=true`.
 
-## Paper trading API additions
+## Legacy simulated trading internals
 
-- `GET /trade/assets` — authenticated canonical list of supported paper assets.
-- `POST /trade/preview` — authenticated, read-only server-side estimate of paper order quantity, fee and available balance; uses a client-supplied reference price and does not execute or reserve funds.
-- `POST /trade/limit-orders` — creates a resting paper limit order and reserves simulated quote funds for buys or base assets for sells; requires `Idempotency-Key`. Orders remain open and are not matched yet.
-- `GET /trade/limit-orders` — lists the authenticated user's resting paper limit orders.
-- `GET /trade/limit-order-book/{symbol}` — returns aggregated ZenCrypto user paper limit bids/asks by price level, without exposing user identities or order IDs. This is separate from external Binance market depth; crossing paper orders are matched by the server-side paper engine.
-- `GET /trade/limit-trades` — returns the authenticated user's paper limit-order fills, including side, quantity, execution price, quote amount and fee.
-
-Limit orders use server-side price-time priority matching between different paper users. Crossing orders execute at the resting maker order's limit price. Partial fills are supported; buyer USD and seller base-asset escrow are settled through balanced immutable ledger journals. Remaining reserves are recalculated and excess reserves released. This paper matching engine is separate from Binance external market depth and does not route real orders.
-- `POST /trade/limit-orders/{order_id}/cancel` — cancels an open paper limit order and releases its reserved simulated balance through a balanced ledger journal.
-- `GET /account/ledger/verify` — authenticated, read-only per-user double-entry integrity check for paper ledger journals.
-- `GET /trade/orders` — authenticated, filtered and paginated paper order history; currently only `filled` status is supported because orders execute immediately.
-- `POST /trade/orders` — simulated immediate-fill order endpoint; requires an `Idempotency-Key` header and returns `execution_model=IMMEDIATE_FILL_AT_CLIENT_REFERENCE_PRICE` plus `price_source=CLIENT_SUPPLIED_REFERENCE`.
-
-All trading endpoints operate in `PAPER_ONLY` mode. Do not treat simulated fills, balances or summaries as real exchange activity.
+The former paper matching engine and ledger remain in the repository for historical development and isolated regression tests. Their public platform API routes are disabled by default and return HTTP 410. They are not part of the current customer-facing product. The `PAPER_TRADING_ENABLED=true` flag exists only for isolated development/test environments and must remain unset/false in production.
 
 ## Run locally
 
