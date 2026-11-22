@@ -17,6 +17,40 @@ import main
 client = TestClient(main.app)
 
 
+def test_readiness_reports_build_revision_and_requires_safe_sandbox(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "readiness.sqlite3")
+    main.PaperMatchingEngine(db_path)
+    main.PaperLedger(db_path)
+    monkeypatch.setattr(main, "PAPER_ENGINE_DB_PATH", db_path)
+    monkeypatch.setattr(main, "AUTH_TOKEN_SECRET", "a" * 48)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "b" * 48)
+    monkeypatch.setattr(main, "SANDBOX", True)
+    monkeypatch.setattr(main, "LIVE_TRADING_ENABLED", False)
+    monkeypatch.setattr(main, "EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "c" * 48)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "test-revision-123")
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["sandbox"] is True
+    assert body["live_trading_enabled"] is False
+    assert body["build_revision"] == "test-revision-123"
+    assert all(body["checks"].values())
+
+
+def test_market_data_status_never_claims_live_order_routing_by_default(monkeypatch):
+    monkeypatch.setattr(main, "SANDBOX", True)
+    monkeypatch.setattr(main, "LIVE_TRADING_ENABLED", False)
+    monkeypatch.setattr(main, "LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", False)
+    response = client.get("/api/v1/market-data/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sandbox"] is True
+    assert body["live_order_placement_enabled"] is False
+    assert body["customer_order_routing_enabled"] is False
+    assert body["order_execution_environment"] == "sandbox_locked"
+
+
 def test_health_reports_sandbox_defaults():
     response = client.get("/health")
     assert response.status_code == 200
