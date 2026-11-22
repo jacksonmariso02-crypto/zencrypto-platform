@@ -548,3 +548,47 @@ def test_customer_order_preview_rejects_invalid_precision():
     else:
         raise AssertionError("Amount with unsupported precision was accepted")
     assert fake.created == []
+
+
+def test_customer_order_preview_requires_authenticated_platform_session():
+    response = client.post(
+        "/api/v1/user/orders/preview",
+        json={"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": "0.001"},
+    )
+    assert response.status_code == 401
+
+
+def test_customer_order_preview_rejects_unsafe_fee_buffer_configuration():
+    fake = FakeOrderClient()
+    old_fee = main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE
+    try:
+        main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE = main.Decimal("-0.01")
+        body = main.CustomerOrderPreviewRequest(
+            symbol="BTC/USDT", side="buy", order_type="market", amount="0.001"
+        )
+        try:
+            main._calculate_customer_order_preview(fake, body)
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 503
+            assert "fee buffer" in str(getattr(exc, "detail", "")).lower()
+        else:
+            raise AssertionError("Unsafe negative fee buffer was accepted")
+        assert fake.created == []
+    finally:
+        main.CUSTOMER_PREVIEW_FEE_BUFFER_RATE = old_fee
+
+
+def test_customer_sell_preview_checks_available_base_asset():
+    fake = FakeOrderClient()
+    fake.fetch_balance = lambda: {"free": {"USDT": 1000, "BTC": 0.0005}}
+    body = main.CustomerOrderPreviewRequest(
+        symbol="BTC/USDT", side="sell", order_type="market", amount="0.001"
+    )
+    try:
+        main._calculate_customer_order_preview(fake, body)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+        assert "insufficient" in str(getattr(exc, "detail", "")).lower()
+    else:
+        raise AssertionError("Sell preview with insufficient base balance was accepted")
+    assert fake.created == []
