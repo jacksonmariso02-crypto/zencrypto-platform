@@ -291,8 +291,14 @@ def _calculate_customer_order_preview(exchange, body: CustomerOrderPreviewReques
             raise HTTPException(422, "Estimated order value is below Binance's minimum notional.")
         if max_cost is not None and notional > max_cost:
             raise HTTPException(422, "Estimated order value exceeds Binance's maximum notional.")
-        if not CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT.is_finite() or CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT <= 0:
+        if (not CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT.is_finite()
+                or CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT <= 0
+                or CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT > Decimal("2500")):
             raise HTTPException(503, "Customer order preview risk limit is not configured safely.")
+        if (not CUSTOMER_PREVIEW_FEE_BUFFER_RATE.is_finite()
+                or CUSTOMER_PREVIEW_FEE_BUFFER_RATE < 0
+                or CUSTOMER_PREVIEW_FEE_BUFFER_RATE > Decimal("0.05")):
+            raise HTTPException(503, "Customer order preview fee buffer is not configured safely.")
         if notional > CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT:
             raise HTTPException(422, "Order exceeds the current per-order preview risk limit of "
                                 + format(CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT, "f") + " USDT.")
