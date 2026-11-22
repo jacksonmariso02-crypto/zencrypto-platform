@@ -190,3 +190,12 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - Monetary values are returned as exact decimal strings and are aggregated directly from the double-entry ledger; no floating-point conversion is used.
 - The endpoint is read-only and explicitly labels the result as `mode: paper`. It is not a bank balance, custody statement, proof of reserves, or real-money financial report.
 - Access requires the configured administrator bearer token. Never expose this endpoint to unauthenticated public clients.
+
+
+## Daily snapshot variance report
+- Admin-only read endpoint: `GET /api/v1/paper/admin/ledger/snapshot-comparison?account_id=...&from_date=YYYY-MM-DD&to_date=YYYY-MM-DD`.
+- Optionally pass `asset=USDT` to compare a single asset.
+- Reports exact-decimal changes in available, locked and total paper balances between two immutable snapshot dates.
+- Flags assets that exist in only one of the selected snapshots instead of treating a missing record as a zero balance.
+- Requires an existing paper account, strict ISO dates, and `from_date` earlier than `to_date`.
+- This is a historical comparison of recorded paper snapshots, not a valuation of real assets or a live balance feed.
