@@ -510,3 +510,20 @@ def test_daily_snapshot_endpoints_require_admin_and_capture_once(api, monkeypatc
     )
     assert history.status_code == 200
     assert history.json()[0]["available"] == "42.5"
+
+
+def test_admin_finance_overview_requires_admin_and_returns_paper_summary(api):
+    denied = api.get("/api/v1/paper/admin/finance-overview")
+    assert denied.status_code == 401
+
+    response = api.get(
+        "/api/v1/paper/admin/finance-overview",
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "paper"
+    assert payload["accounts"] == 0
+    assert payload["ledger"]["transactions"] == 0
+    assert payload["user_balances"] == []
+    assert payload["source"] == "paper_double_entry_ledger"
