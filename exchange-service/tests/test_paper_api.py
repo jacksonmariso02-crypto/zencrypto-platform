@@ -540,6 +540,7 @@ def test_snapshot_comparison_endpoint_is_admin_only_and_validates_dates(api):
     )
     assert denied.status_code == 401
 
+    main.PAPER_LEDGER.create_account("acct_001")
     invalid = api.get(
         "/api/v1/paper/admin/ledger/snapshot-comparison",
         headers=auth(),
@@ -549,4 +550,4 @@ def test_snapshot_comparison_endpoint_is_admin_only_and_validates_dates(api):
             "to_date": "2026-11-19",
         },
     )
-    assert invalid.status_code == 404 or invalid.status_code == 422
+    assert invalid.status_code == 422
