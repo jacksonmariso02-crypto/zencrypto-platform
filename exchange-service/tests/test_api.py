@@ -916,6 +916,19 @@ def test_wallet_journal_posts_balanced_entries_once_and_replays_idempotently(tmp
     )
     assert replay_id == journal_id
     assert replay_created is False
+    try:
+        main._post_wallet_journal(
+            "wallet-user", "USDT", "deposit_confirmed", "provider-event-123",
+            [
+                {"account_code": "customer_available", "direction": "credit", "amount": "2.6"},
+                {"account_code": "custody_asset", "direction": "debit", "amount": "2.6"},
+            ],
+            "chain-tx-123",
+        )
+    except ValueError as exc:
+        assert "reused with different transaction details" in str(exc)
+    else:
+        raise AssertionError("Wallet idempotency key accepted different posting details")
     assert main._wallet_balances_for_user("wallet-user") == [{"asset": "USDT", "available": "2.5"}]
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM wallet_ledger_entries").fetchone()[0] == 2
