@@ -35,6 +35,14 @@ ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
 LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", "false").lower() == "true"
+WALLET_CUSTODY_PROVIDER = os.getenv("WALLET_CUSTODY_PROVIDER", "").strip().lower()
+WALLET_DEPOSITS_ENABLED = os.getenv("WALLET_DEPOSITS_ENABLED", "false").lower() == "true"
+WALLET_WITHDRAWALS_ENABLED = os.getenv("WALLET_WITHDRAWALS_ENABLED", "false").lower() == "true"
+BITGO_API_ENV = os.getenv("BITGO_API_ENV", "test").strip().lower()
+BITGO_WEBHOOK_SECRET = os.getenv("BITGO_WEBHOOK_SECRET", "")
+BITGO_ENTERPRISE_ID = os.getenv("BITGO_ENTERPRISE_ID", "")
+BITGO_ACCESS_TOKEN = os.getenv("BITGO_ACCESS_TOKEN", "")
+BITGO_TRANSFER_ADAPTER_READY = False  # Enable only after provider API and transfer verification tests pass.
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -128,6 +136,68 @@ def _init_customer_credential_store():
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_customer_order_requests_user_time
             ON customer_order_requests(user_id, created_at DESC)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_journals (
+                journal_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                provider_reference TEXT,
+                created_at INTEGER NOT NULL,
+                UNIQUE(user_id, idempotency_key)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_ledger_entries (
+                entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                journal_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                account_code TEXT NOT NULL,
+                direction TEXT NOT NULL CHECK(direction IN ('debit', 'credit')),
+                amount TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(journal_id) REFERENCES wallet_journals(journal_id)
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_wallet_ledger_user_asset
+            ON wallet_ledger_entries(user_id, asset, created_at DESC)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_custody_wallets (
+                user_id TEXT NOT NULL, provider TEXT NOT NULL, provider_wallet_id TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, created_at INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                PRIMARY KEY(user_id, provider, provider_wallet_id, asset, network)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_deposit_addresses (
+                user_id TEXT NOT NULL, provider TEXT NOT NULL, provider_wallet_id TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, address TEXT NOT NULL,
+                address_tag TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL,
+                UNIQUE(provider, network, address, address_tag)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS custody_webhook_events (
+                provider TEXT NOT NULL, event_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+                payload_json TEXT NOT NULL, status TEXT NOT NULL, received_at INTEGER NOT NULL,
+                processed_at INTEGER, PRIMARY KEY(provider, event_id)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_withdrawal_requests (
+                request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL,
+                asset TEXT NOT NULL, network TEXT NOT NULL, amount TEXT NOT NULL,
+                destination_address TEXT NOT NULL, destination_tag TEXT, status TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
+                UNIQUE(user_id, idempotency_key)
+            )
         """)
 
 
@@ -657,6 +727,198 @@ async def cancel_customer_order(exchange_order_id: str, user=Depends(require_pla
         raise HTTPException(502, "Binance could not confirm cancellation. Synchronize the order before attempting another action.") from None
     finally:
         await run_in_threadpool(exchange.close)
+
+def _post_wallet_journal(user_id: str, asset: str, event_type: str, idempotency_key: str,
+                        postings: list[dict], provider_reference: str | None = None):
+    """Post a balanced, idempotent ledger journal after a trusted provider event is verified."""
+    asset = str(asset).upper().strip()
+    if not re.fullmatch(r"[A-Z0-9]{2,16}", asset):
+        raise ValueError("Invalid wallet asset.")
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise ValueError("A bounded idempotency key is required.")
+    if len(postings) < 2:
+        raise ValueError("A journal requires at least two postings.")
+    debit_total = Decimal("0")
+    credit_total = Decimal("0")
+    normalized = []
+    for posting in postings:
+        direction = str(posting.get("direction", "")).lower()
+        account_code = str(posting.get("account_code", "")).strip()
+        amount = Decimal(str(posting.get("amount", "0")))
+        if direction not in {"debit", "credit"} or not account_code or not amount.is_finite() or amount <= 0:
+            raise ValueError("Wallet postings must have valid accounts, directions and positive finite amounts.")
+        if direction == "debit":
+            debit_total += amount
+        else:
+            credit_total += amount
+        normalized.append((account_code, direction, format(amount, "f")))
+    if debit_total != credit_total:
+        raise ValueError("Wallet journal is not balanced.")
+    now = int(time.time())
+    journal_id = "wlt_" + hashlib.sha256((user_id + ":" + idempotency_key).encode()).hexdigest()[:32]
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15, isolation_level=None) as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT journal_id, asset, event_type, provider_reference FROM wallet_journals WHERE user_id=? AND idempotency_key=?",
+            (user_id, idempotency_key),
+        ).fetchone()
+        if existing:
+            existing_rows = db.execute(
+                """SELECT account_code, direction, amount FROM wallet_ledger_entries
+                   WHERE journal_id=? ORDER BY account_code, direction, amount""",
+                (existing[0],),
+            ).fetchall()
+            existing_postings = sorted((row[0], row[1], format(Decimal(row[2]), "f")) for row in existing_rows)
+            requested_postings = sorted(normalized)
+            if (existing[1] != asset or existing[2] != event_type or
+                    existing[3] != provider_reference or existing_postings != requested_postings):
+                db.execute("ROLLBACK")
+                raise ValueError("Wallet idempotency key was reused with different transaction details.")
+            db.execute("COMMIT")
+            return existing[0], False
+        db.execute(
+            """INSERT INTO wallet_journals
+               (journal_id, user_id, asset, event_type, status, idempotency_key, provider_reference, created_at)
+               VALUES (?, ?, ?, ?, 'posted', ?, ?, ?)""",
+            (journal_id, user_id, asset, event_type, idempotency_key, provider_reference, now),
+        )
+        db.executemany(
+            """INSERT INTO wallet_ledger_entries
+               (journal_id, user_id, asset, account_code, direction, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [(journal_id, user_id, asset, account, direction, amount, now)
+             for account, direction, amount in normalized],
+        )
+        db.execute("COMMIT")
+    return journal_id, True
+
+
+def _wallet_provider_status():
+    credentials_configured = bool(WALLET_CUSTODY_PROVIDER == "bitgo" and BITGO_ENTERPRISE_ID and BITGO_ACCESS_TOKEN and BITGO_WEBHOOK_SECRET)
+    configured = bool(credentials_configured and BITGO_TRANSFER_ADAPTER_READY)
+    return {
+        "custody_provider": "bitgo" if WALLET_CUSTODY_PROVIDER == "bitgo" else None,
+        "provider_configured": credentials_configured,
+        "provider_adapter_ready": BITGO_TRANSFER_ADAPTER_READY,
+        "wallet_enabled": configured,
+        "deposits_enabled": bool(configured and WALLET_DEPOSITS_ENABLED),
+        "withdrawals_enabled": bool(configured and WALLET_WITHDRAWALS_ENABLED),
+        "custody_model": "third_party_custodian",
+        "message": "Configure an approved BitGo enterprise, API token and webhook secret; provider onboarding is not complete." if not credentials_configured else ("BitGo credentials are present, but the transfer adapter and provider verification workflow are not production-ready." if not BITGO_TRANSFER_ADAPTER_READY else "BitGo adapter is ready; funding remains subject to operational and compliance approval."),
+    }
+
+
+def _wallet_balances_for_user(user_id: str):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            "SELECT asset, account_code, direction, amount FROM wallet_ledger_entries WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+    totals = {}
+    for row in rows:
+        if row["account_code"] != "customer_available":
+            continue
+        value = Decimal(row["amount"])
+        totals[row["asset"]] = totals.get(row["asset"], Decimal("0")) + (
+            value if row["direction"] == "credit" else -value
+        )
+    return [
+        {"asset": asset, "available": format(amount, "f")}
+        for asset, amount in sorted(totals.items()) if amount != 0
+    ]
+
+
+def _wallet_activity_for_user(user_id: str, limit: int = 100):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """SELECT journal_id, asset, event_type, status, provider_reference, created_at
+               FROM wallet_journals WHERE user_id=? ORDER BY created_at DESC LIMIT ?""",
+            (user_id, max(1, min(int(limit), 100))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/v1/user/wallet")
+async def customer_wallet_summary(user=Depends(require_platform_user)):
+    return {
+        **_wallet_provider_status(),
+        "balances": _wallet_balances_for_user(user["id"]),
+        "activity": _wallet_activity_for_user(user["id"], 50),
+        "ledger_model": "double_entry",
+        "source": "zencrypto_internal_wallet_ledger",
+    }
+
+
+@app.get("/api/v1/user/wallet/activity")
+async def customer_wallet_activity(user=Depends(require_platform_user)):
+    return {"activity": _wallet_activity_for_user(user["id"], 100)}
+
+
+@app.post("/api/v1/user/wallet/deposit-intents")
+async def create_customer_wallet_deposit_intent(user=Depends(require_platform_user)):
+    status = _wallet_provider_status()
+    if not status["provider_configured"] or not status["deposits_enabled"]:
+        raise HTTPException(503, "Wallet deposits are unavailable: no approved custody provider and deposit integration are enabled. Do not send funds to any address.")
+    raise HTTPException(503, "The custody provider deposit-address adapter is not implemented. No deposit address has been created.")
+
+
+@app.post("/api/v1/user/wallet/withdrawal-requests")
+async def create_customer_wallet_withdrawal_request(user=Depends(require_platform_user)):
+    status = _wallet_provider_status()
+    if not status["provider_configured"] or not status["withdrawals_enabled"]:
+        raise HTTPException(503, "Wallet withdrawals are unavailable: no approved custody provider and withdrawal integration are enabled.")
+    raise HTTPException(503, "The custody provider withdrawal adapter, MFA approval and transaction monitoring are not implemented. No withdrawal has been submitted.")
+
+
+@app.get("/api/v1/user/wallet/deposit-addresses")
+async def customer_wallet_deposit_addresses(user=Depends(require_platform_user)):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """SELECT provider, asset, network, address, address_tag, created_at, status
+               FROM customer_deposit_addresses WHERE user_id=? AND status="active" ORDER BY created_at DESC""",
+            (user["id"],),
+        ).fetchall()
+    return {"addresses": [dict(row) for row in rows]}
+
+
+@app.post("/api/v1/webhooks/bitgo")
+async def receive_bitgo_webhook(request: Request):
+    if not BITGO_WEBHOOK_SECRET:
+        raise HTTPException(503, "BitGo webhook verification is not configured.")
+    raw = await request.body()
+    supplied = request.headers.get("x-signature-sha256", "").strip().lower()
+    expected = hmac.new(BITGO_WEBHOOK_SECRET.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(401, "Invalid BitGo webhook signature.")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(400, "Webhook body must be valid JSON.") from None
+    event_id = payload.get("eventId") or payload.get("event_id") or payload.get("id")
+    if not isinstance(event_id, str) or not event_id.strip() or len(event_id) > 200:
+        raise HTTPException(400, "Webhook event identifier is missing or invalid.")
+    digest = hashlib.sha256(raw).hexdigest()
+    now = int(time.time())
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        cursor = db.execute(
+            """INSERT OR IGNORE INTO custody_webhook_events
+               (provider, event_id, payload_hash, payload_json, status, received_at)
+               VALUES ("bitgo", ?, ?, ?, "pending_provider_verification", ?)""",
+            (event_id, digest, raw.decode("utf-8"), now),
+        )
+        inserted = cursor.rowcount == 1
+    return {
+        "accepted": True,
+        "duplicate": not inserted,
+        "event_id": event_id,
+        "status": "pending_provider_verification" if inserted else "already_received",
+        "credited": False,
+        "message": "Webhook signature accepted. Verify the transfer directly with BitGo and confirm on-chain status before posting any customer ledger credit.",
+    }
+
 
 @app.get("/api/v1/user/exchange-connections")
 async def list_customer_exchange_connections(user=Depends(require_platform_user)):
