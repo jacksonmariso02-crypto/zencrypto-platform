@@ -148,7 +148,49 @@ function App(){
  },[token,authChecking,tab,symbol]);
  useEffect(()=>{if(token&&!authChecking&&tab==="trade")loadTradeSummary();},[token,authChecking,tab,orders.length]);
  useEffect(()=>{if(token&&!authChecking&&tab==="wallet")loadLedger(0,ledgerCurrency);},[token,authChecking,tab,ledgerCurrency]);
- useEffect(()=>{let ws,timer,stopped=false;function connect(){setTickerStatus("connecting");ws=new WebSocket("wss://stream.binance.com:443/ws/!ticker_1d@arr");ws.onopen=()=>{if(!stopped)setTickerStatus("connecting");};ws.onmessage=e=>{try{const rows=JSON.parse(e.data);if(Array.isArray(rows)){const bySymbol=new Map(rows.filter(x=>x&&typeof x.s==="string").map(x=>[x.s,x]));const required=["BTC","ETH","SOL","BNB","XRP"];const valid=required.every(base=>{const q=bySymbol.get(base+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P));});setMarkets(prev=>prev.map(m=>{const q=bySymbol.get(m.symbol+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P))?{...m,price:Number(q.c),change:Number(q.P)}:m;}));if(valid){setTickerUpdatedAt(Date.now());setTickerStatus("live");}else{setTickerStatus(current=>current==="reconnecting"?"reconnecting":"stale");}}}catch{setTickerStatus("stale");}};ws.onclose=()=>{if(!stopped){setTickerStatus("reconnecting");timer=setTimeout(connect,5000);}};ws.onerror=()=>ws.close();}connect();return()=>{stopped=true;clearTimeout(timer);if(ws)ws.close();};},[]);
+ useEffect(()=>{
+  let ws=null,retryTimer=null,connectionTimer=null,stopped=false;
+  function connect(){
+   if(stopped)return;
+   setTickerStatus("connecting");
+   ws=new WebSocket("wss://stream.binance.com:443/ws/!ticker_1d@arr");
+   connectionTimer=setTimeout(()=>{
+    if(!stopped&&ws&&ws.readyState===WebSocket.CONNECTING){
+     setTickerStatus("reconnecting");
+     try{ws.close();}catch{}
+    }
+   },10000);
+   ws.onopen=()=>{
+    if(connectionTimer){clearTimeout(connectionTimer);connectionTimer=null;}
+    if(!stopped)setTickerStatus("connecting");
+   };
+   ws.onmessage=e=>{
+    try{
+     const rows=JSON.parse(e.data);
+     if(Array.isArray(rows)){
+      const bySymbol=new Map(rows.filter(x=>x&&typeof x.s==="string").map(x=>[x.s,x]));
+      const required=["BTC","ETH","SOL","BNB","XRP"];
+      const valid=required.every(base=>{const q=bySymbol.get(base+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P));});
+      setMarkets(prev=>prev.map(m=>{const q=bySymbol.get(m.symbol+"USDT");return q&&Number.isFinite(Number(q.c))&&Number(q.c)>0&&Number.isFinite(Number(q.P))?{...m,price:Number(q.c),change:Number(q.P)}:m;}));
+      if(valid){setTickerUpdatedAt(Date.now());setTickerStatus("live");}
+      else{setTickerStatus(current=>current==="reconnecting"?"reconnecting":"stale");}
+     }
+    }catch{setTickerStatus("stale");}
+   };
+   ws.onclose=()=>{
+    if(connectionTimer){clearTimeout(connectionTimer);connectionTimer=null;}
+    if(!stopped){setTickerStatus("reconnecting");retryTimer=setTimeout(connect,5000);}
+   };
+   ws.onerror=()=>{if(ws)ws.close();};
+  }
+  connect();
+  return()=>{
+   stopped=true;
+   if(retryTimer)clearTimeout(retryTimer);
+   if(connectionTimer)clearTimeout(connectionTimer);
+   if(ws){ws.onopen=null;ws.onmessage=null;ws.onerror=null;ws.onclose=null;try{ws.close();}catch{}}
+  };
+ },[]);
  useEffect(()=>{const watchdog=setInterval(()=>{if(!tickerUpdatedAt||Date.now()-tickerUpdatedAt>=15000){setTickerStatus(current=>current==="reconnecting"?"reconnecting":"stale");}},1000);return()=>clearInterval(watchdog);},[tickerUpdatedAt]);
  useEffect(()=>{
   let active=true,ws=null,retry=null,buffer=[],lastUpdateId=0,lastDepthMessageAt=0,synced=false,awaitingBridge=true,snapshotBusy=false;
