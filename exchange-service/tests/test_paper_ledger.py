@@ -234,3 +234,35 @@ def test_snapshot_history_validates_account_and_limit(ledger):
         ledger.list_daily_snapshots("missing_001")
     with pytest.raises(ValueError):
         ledger.list_daily_snapshots(limit=0)
+
+
+def test_admin_finance_overview_aggregates_user_balances_fees_and_snapshots(ledger):
+    ledger.create_account("finance_001")
+    ledger.credit_paper_funds(
+        "finance_001", "USDT", "125.75", "finance-credit-001"
+    )
+    ledger.transfer(
+        "finance_001", "USDT", "25", "available", "locked",
+        "finance-lock-0001", "Reserve open order",
+    )
+    snapshot = ledger.capture_daily_snapshots()
+    summary = ledger.admin_finance_overview()
+
+    assert summary["mode"] == "paper"
+    assert summary["accounts"] == 1
+    assert summary["ledger"]["transactions"] == 2
+    assert summary["ledger"]["entries"] == 4
+    assert summary["ledger"]["transactions_by_kind"] == {
+        "bucket_transfer": 1,
+        "paper_credit": 1,
+    }
+    assert summary["user_balances"] == [{
+        "asset": "USDT",
+        "available": "100.75",
+        "locked": "25",
+        "total": "125.75",
+    }]
+    assert summary["platform_fee_balances"] == []
+    assert summary["snapshots"]["count"] == 1
+    assert summary["snapshots"]["latest_utc_date"] == snapshot["snapshot_date"]
+    assert summary["source"] == "paper_double_entry_ledger"
