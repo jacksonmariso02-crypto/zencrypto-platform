@@ -140,7 +140,7 @@ function App(){
   setExchangeConnectBusy(true);
   try{
    const data=await exchangeApi("/api/v1/user/exchange-connections/binance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({api_key:exchangeApiKey.trim(),api_secret:exchangeApiSecret.trim()})});
-   setExchangeConnection(data);setExchangeBalances([]);setNotice("Binance account verified. API credentials were encrypted on the server.");setExchangeConnectMessage(data.message||"Account connected.");await loadExchangeBalances();
+   setExchangeConnection(data);setExchangeBalances([]);setNotice("Binance account verified. API credentials were encrypted on the server.");setExchangeConnectMessage(data.message||"Account connected.");
   }catch(e){setExchangeConnectMessage(e.message||"Unable to connect Binance account.");}
   finally{setExchangeApiKey("");setExchangeApiSecret("");setExchangeConnectBusy(false);}
  }
