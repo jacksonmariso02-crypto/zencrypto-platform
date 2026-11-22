@@ -51,13 +51,17 @@ def test_market_data_status_never_claims_live_order_routing_by_default(monkeypat
     assert body["order_execution_environment"] == "sandbox_locked"
 
 
-def test_health_reports_sandbox_defaults():
+def test_health_reports_sandbox_defaults(monkeypatch):
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "health-revision-456")
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
     assert body["sandbox"] is True
     assert body["live_trading_enabled"] is False
+    assert body["customer_order_routing_enabled"] is False
+    assert body["customer_credential_vault_configured"] is True
+    assert body["build_revision"] == "health-revision-456"
 
 
 def test_invalid_symbol_is_rejected_before_exchange_call():
