@@ -691,6 +691,60 @@ async def cancel_customer_order(exchange_order_id: str, user=Depends(require_pla
     finally:
         await run_in_threadpool(exchange.close)
 
+def _post_wallet_journal(user_id: str, asset: str, event_type: str, idempotency_key: str,
+                        postings: list[dict], provider_reference: str | None = None):
+    """Post a balanced, idempotent ledger journal after a trusted provider event is verified."""
+    asset = str(asset).upper().strip()
+    if not re.fullmatch(r"[A-Z0-9]{2,16}", asset):
+        raise ValueError("Invalid wallet asset.")
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise ValueError("A bounded idempotency key is required.")
+    if len(postings) < 2:
+        raise ValueError("A journal requires at least two postings.")
+    debit_total = Decimal("0")
+    credit_total = Decimal("0")
+    normalized = []
+    for posting in postings:
+        direction = str(posting.get("direction", "")).lower()
+        account_code = str(posting.get("account_code", "")).strip()
+        amount = Decimal(str(posting.get("amount", "0")))
+        if direction not in {"debit", "credit"} or not account_code or not amount.is_finite() or amount <= 0:
+            raise ValueError("Wallet postings must have valid accounts, directions and positive finite amounts.")
+        if direction == "debit":
+            debit_total += amount
+        else:
+            credit_total += amount
+        normalized.append((account_code, direction, format(amount, "f")))
+    if debit_total != credit_total:
+        raise ValueError("Wallet journal is not balanced.")
+    now = int(time.time())
+    journal_id = "wlt_" + hashlib.sha256((user_id + ":" + idempotency_key).encode()).hexdigest()[:32]
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15, isolation_level=None) as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT journal_id FROM wallet_journals WHERE user_id=? AND idempotency_key=?",
+            (user_id, idempotency_key),
+        ).fetchone()
+        if existing:
+            db.execute("COMMIT")
+            return existing[0], False
+        db.execute(
+            """INSERT INTO wallet_journals
+               (journal_id, user_id, asset, event_type, status, idempotency_key, provider_reference, created_at)
+               VALUES (?, ?, ?, ?, 'posted', ?, ?, ?)""",
+            (journal_id, user_id, asset, event_type, idempotency_key, provider_reference, now),
+        )
+        db.executemany(
+            """INSERT INTO wallet_ledger_entries
+               (journal_id, user_id, asset, account_code, direction, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [(journal_id, user_id, asset, account, direction, amount, now)
+             for account, direction, amount in normalized],
+        )
+        db.execute("COMMIT")
+    return journal_id, True
+
+
 def _wallet_provider_status():
     configured = bool(WALLET_CUSTODY_PROVIDER)
     return {
