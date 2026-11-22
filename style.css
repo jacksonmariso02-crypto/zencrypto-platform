@@ -844,3 +844,29 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .trade-app .zc-side-switch button.buy-active{background:#0ecb81;color:#071a13;border-color:#0ecb81}
 .trade-app .zc-side-switch button.sell-active{background:#f6465d;color:#fff;border-color:#f6465d}
 .trade-app .zc-order-type-tabs button.active{background:#2b3139;border-color:#f0b90b;color:#f0b90b}
+
+
+/* Global exchange navigation: horizontal, compact and consistent across all ZenCrypto pages. */
+.app:not(.trade-app){display:block;min-height:100vh;background:#0b0e11}
+.app:not(.trade-app) .sidebar{width:100%;height:64px;min-height:64px;padding:0 26px;display:flex;flex-direction:row;align-items:center;gap:28px;border-right:0;border-bottom:1px solid #252a31;background:#0b0e11}
+.app:not(.trade-app) .brand{padding:0;gap:9px;font-size:20px;white-space:nowrap}
+.app:not(.trade-app) .brandmark{width:30px;height:30px;border-radius:8px}
+.app:not(.trade-app) .brand-subtitle,.app:not(.trade-app) .navlabel,.app:not(.trade-app) .sidebarfoot{display:none}
+.app:not(.trade-app) .sidebar nav{display:flex;align-items:center;gap:4px;min-width:0}
+.app:not(.trade-app) .nav{width:auto;margin:0;padding:10px 13px;border-radius:6px;color:#b7bdc6;font-size:13px;white-space:nowrap}
+.app:not(.trade-app) .nav:hover,.app:not(.trade-app) .nav.active{background:#1e2329;color:#f0b90b}
+.app:not(.trade-app) main{width:100%;min-width:0}
+.app:not(.trade-app) header{height:62px;padding:10px 26px;border-bottom:1px solid #252a31;background:#0b0e11}
+.app:not(.trade-app) header h1{font-size:17px;margin:3px 0 0;color:#eaecef}
+.app:not(.trade-app) .content{width:100%;max-width:1600px;margin:0 auto;padding:22px 26px 30px}
+@media(max-width:760px){
+ .app:not(.trade-app) .sidebar{height:auto;min-height:58px;padding:9px 12px;gap:10px;overflow-x:auto}
+ .app:not(.trade-app) .brand{font-size:16px}
+ .app:not(.trade-app) .brandmark{width:26px;height:26px}
+ .app:not(.trade-app) .sidebar nav{gap:2px}
+ .app:not(.trade-app) .nav{padding:8px 9px;font-size:11px}
+ .app:not(.trade-app) header{height:auto;min-height:56px;padding:8px 12px}
+ .app:not(.trade-app) .headerleft h1{font-size:14px}
+ .app:not(.trade-app) .headeractions{gap:7px}
+ .app:not(.trade-app) .content{padding:12px 10px 22px}
+}
