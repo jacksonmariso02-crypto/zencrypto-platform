@@ -1,6 +1,6 @@
 # ZenCrypto — paper-trading exchange prototype
 
-ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository includes a React/Vite trading UI and a separate FastAPI backend with authenticated paper accounts, an append-only double-entry journal, simulated orders, order history, balance and ledger endpoints, and a limited paper-fund faucet. Supported paper assets are BTC, ETH, SOL, BNB and XRP. Orders currently execute immediately at a client-supplied reference price; there is **not yet an independent limit-order book or matching engine**. Deposits, withdrawals, custody and real-money trading are disabled. Public market data and some chart values may be illustrative or subject to provider availability. Never send funds to anyone claiming this prototype accepts deposits.
+ZenCrypto is a **paper-trading prototype, not a live exchange**. The repository includes a React/Vite trading UI and a separate FastAPI backend with authenticated paper accounts, an append-only double-entry journal, simulated market and limit orders, order history, balance and ledger endpoints, and a limited paper-fund faucet. Supported paper assets are BTC, ETH, SOL, BNB and XRP. Market orders are simulated immediate fills using a client-supplied reference quote; limit orders are matched between ZenCrypto paper accounts by server-side price-time priority, with partial fills and simulated balance reservation. Neither order type is routed to Binance or another external venue. Deposits, withdrawals, custody and real-money trading are disabled. Public market data and historical candles are fetched from Binance public endpoints and remain subject to provider availability; no quote is shown as live until the WebSocket feed passes freshness checks. Never send funds to anyone claiming this prototype accepts deposits.
 
 ## Paper trading API additions
 
@@ -63,4 +63,4 @@ The static site output is in `dist/`.
 
 ## Important
 
-The admin page is a visual mockup, not an authenticated admin panel. The chart's timeframe selectors do not load historical candles; integrate an authorized OHLCV feed for real charts. The 24-hour volume display is illustrative, not live.
+The admin page is a visual mockup, not an authenticated admin panel. The chart timeframe selectors load historical OHLCV candles from Binance's public Spot REST API and receive live candle updates through its public WebSocket stream. The homepage ticker displays Binance 24-hour last price, percentage change, quote volume, high and low only when the public ticker feed is fresh. These are informational public-market statistics, not executable ZenCrypto prices.
