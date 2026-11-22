@@ -730,3 +730,11 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-wallet-actions{display:flex;gap:9px;flex-wrap:wrap}
 .zc-wallet-actions button:disabled{opacity:.48;cursor:not-allowed}
 @media(max-width:720px){.zc-wallet-grid{grid-template-columns:1fr}.zc-wallet-card,.zc-wallet-funding{padding:14px}.zc-wallet-assets>div{grid-template-columns:1fr auto}.zc-wallet-assets small{grid-column:1/-1}}
+
+
+.zc-wallet-activity{display:grid;gap:8px;margin-top:16px}
+.zc-wallet-activity>strong{font-size:13px}
+.zc-wallet-activity>div{display:grid;grid-template-columns:1fr auto;gap:5px 10px;padding:9px 0;border-top:1px solid var(--border,rgba(148,163,184,.14));font-size:12px}
+.zc-wallet-activity>div span{ text-transform:capitalize}
+.zc-wallet-activity>div b{font-size:11px;color:var(--muted,#8b96a8)}
+.zc-wallet-activity>div small{grid-column:1/-1;color:var(--muted,#8b96a8)}
