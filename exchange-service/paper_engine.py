@@ -605,7 +605,15 @@ class PaperMatchingEngine:
                     postings.append((f"user:{buyer_id}:available", quote_asset, "credit", refund))
                 actual_postings = ledger_postings(f"paper-trade-settlement:{trade['id']}")
                 expected_postings = encoded(postings)
-                if actual_postings is None or sorted(actual_postings) != sorted(expected_postings):
+                def canonical_postings(lines):
+                    if lines is None:
+                        return None
+                    return sorted(
+                        (account, asset, Decimal(debit), Decimal(credit))
+                        for account, asset, debit, credit in lines
+                    )
+
+                if canonical_postings(actual_postings) != canonical_postings(expected_postings):
                     issues["missing_or_mismatched_settlements"].append({
                         "trade_id": trade["id"],
                         "expected": expected_postings,
