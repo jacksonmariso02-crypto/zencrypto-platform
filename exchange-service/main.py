@@ -236,6 +236,7 @@ def _readiness_checks():
         required_tables = {
             "paper_orders", "paper_trades", "paper_accounts",
             "paper_users", "ledger_transactions", "ledger_entries",
+            "daily_asset_snapshots",
         }
         with sqlite3.connect(PAPER_ENGINE.db_path, timeout=2) as db:
             result = db.execute("PRAGMA quick_check").fetchone()
