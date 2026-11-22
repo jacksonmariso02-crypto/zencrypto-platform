@@ -534,6 +534,130 @@ async def submit_customer_order(
 
 
 
+def _customer_order_records(user_id: str, limit: int = 100):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        rows = db.execute(
+            """SELECT idempotency_key, status, response_json, created_at, updated_at
+               FROM customer_order_requests WHERE user_id=?
+               ORDER BY created_at DESC LIMIT ?""",
+            (user_id, max(1, min(int(limit), 100))),
+        ).fetchall()
+    records = []
+    for key, status, response_json, created_at, updated_at in rows:
+        payload = json.loads(response_json) if response_json else None
+        records.append({
+            "idempotency_key": key, "request_status": status,
+            "order": payload, "created_at": created_at, "updated_at": updated_at,
+        })
+    return records
+
+
+def _find_customer_order(user_id: str, exchange_order_id: str):
+    for record in _customer_order_records(user_id, 100):
+        order = record.get("order") or {}
+        if hmac.compare_digest(str(order.get("exchange_order_id", "")), str(exchange_order_id)):
+            return record
+    raise HTTPException(404, "Order was not found for this customer.")
+
+
+def _persist_customer_order_update(user_id: str, idempotency_key: str, status: str, order: dict):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.execute(
+            """UPDATE customer_order_requests SET status=?, response_json=?, updated_at=?
+               WHERE user_id=? AND idempotency_key=?""",
+            (status, json.dumps(order, separators=(",", ":"), default=str),
+             int(time.time()), user_id, idempotency_key),
+        )
+
+
+def _safe_exchange_order(order: dict, previous: dict):
+    return {
+        **previous,
+        "exchange_order_id": str(order.get("id", previous.get("exchange_order_id", ""))),
+        "symbol": str(order.get("symbol", previous.get("symbol", ""))),
+        "side": str(order.get("side", previous.get("side", ""))),
+        "order_type": str(order.get("type", previous.get("order_type", ""))),
+        "amount": str(order.get("amount", previous.get("amount", "0"))),
+        "price": str(order.get("price")) if order.get("price") is not None else previous.get("price"),
+        "status": str(order.get("status", previous.get("status", "unknown"))),
+        "filled": str(order.get("filled", previous.get("filled", "0"))),
+        "remaining": str(order.get("remaining")) if order.get("remaining") is not None else previous.get("remaining"),
+        "cost": str(order.get("cost")) if order.get("cost") is not None else previous.get("cost"),
+        "fee": order.get("fee", previous.get("fee")),
+        "last_synced_at": int(time.time()),
+    }
+
+
+@app.get("/api/v1/user/orders")
+async def list_customer_orders(user=Depends(require_platform_user)):
+    return {"orders": _customer_order_records(user["id"], 100)}
+
+
+@app.post("/api/v1/user/orders/{exchange_order_id}/refresh")
+async def refresh_customer_order(exchange_order_id: str, user=Depends(require_platform_user)):
+    record = _find_customer_order(user["id"], exchange_order_id)
+    previous = record.get("order") or {}
+    if not previous.get("symbol") or not previous.get("exchange_order_id"):
+        raise HTTPException(409, "This order has no confirmed exchange order ID and cannot yet be synchronized.")
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT encrypted_credentials FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id="binance" AND status="connected" """,
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Connect the same Binance account to synchronize this order.")
+    credentials = _decrypt_customer_credentials(user["id"], row[0])
+    exchange = ccxt.binance({
+        "apiKey": credentials["api_key"], "secret": credentials["api_secret"],
+        "enableRateLimit": True, "options": {"defaultType": "spot"},
+    })
+    try:
+        current = await run_in_threadpool(exchange.fetch_order, exchange_order_id, previous["symbol"])
+        safe = _safe_exchange_order(current, previous)
+        _persist_customer_order_update(user["id"], record["idempotency_key"], "SUBMITTED", safe)
+        return safe
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(502, "Binance could not confirm this order status. Retry synchronization later.") from None
+    finally:
+        await run_in_threadpool(exchange.close)
+
+
+@app.delete("/api/v1/user/orders/{exchange_order_id}")
+async def cancel_customer_order(exchange_order_id: str, user=Depends(require_platform_user)):
+    record = _find_customer_order(user["id"], exchange_order_id)
+    previous = record.get("order") or {}
+    if not previous.get("symbol") or not previous.get("exchange_order_id"):
+        raise HTTPException(409, "This order has no confirmed exchange order ID and cannot be canceled.")
+    if str(previous.get("status", "")).lower() in {"closed", "canceled", "cancelled", "expired", "rejected"}:
+        raise HTTPException(409, "This order is already in a terminal state and cannot be canceled.")
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT encrypted_credentials FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id="binance" AND status="connected" """,
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Connect the same Binance account to cancel this order.")
+    credentials = _decrypt_customer_credentials(user["id"], row[0])
+    exchange = ccxt.binance({
+        "apiKey": credentials["api_key"], "secret": credentials["api_secret"],
+        "enableRateLimit": True, "options": {"defaultType": "spot"},
+    })
+    try:
+        canceled = await run_in_threadpool(exchange.cancel_order, exchange_order_id, previous["symbol"])
+        safe = _safe_exchange_order(canceled, previous)
+        _persist_customer_order_update(user["id"], record["idempotency_key"], "SUBMITTED", safe)
+        return safe
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(502, "Binance could not confirm cancellation. Synchronize the order before attempting another action.") from None
+    finally:
+        await run_in_threadpool(exchange.close)
+
 @app.get("/api/v1/user/exchange-connections")
 async def list_customer_exchange_connections(user=Depends(require_platform_user)):
     return {"connections": [_customer_connection(user["id"])]}
