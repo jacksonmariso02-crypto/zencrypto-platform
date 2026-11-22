@@ -34,6 +34,7 @@ API_SECRET = os.getenv("EXCHANGE_API_SECRET", "")
 ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
+LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", "false").lower() == "true"
 PLATFORM_API_BASE_URL = os.getenv("PLATFORM_API_BASE_URL", "https://zencrypto-api.onrender.com").rstrip("/")
 EXCHANGE_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EXCHANGE_CREDENTIAL_ENCRYPTION_KEY", "")
 CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT = Decimal(os.getenv("CUSTOMER_PREVIEW_MAX_NOTIONAL_USDT", "250"))
@@ -109,6 +110,24 @@ def _init_customer_credential_store():
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_customer_exchange_connections_user
             ON customer_exchange_connections(user_id, status)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS customer_order_requests (
+                user_id TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                request_hash TEXT NOT NULL,
+                exchange_client_order_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                response_json TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id, idempotency_key),
+                UNIQUE(exchange_client_order_id)
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_customer_order_requests_user_time
+            ON customer_order_requests(user_id, created_at DESC)
         """)
 
 
@@ -363,6 +382,132 @@ async def preview_customer_order(
     })
     try:
         return await run_in_threadpool(_calculate_customer_order_preview, exchange, body)
+    finally:
+        await run_in_threadpool(exchange.close)
+
+
+def _claim_customer_order_request(user_id: str, idempotency_key: str, request_hash: str):
+    """Atomically reserve an idempotency key before any exchange write."""
+    client_order_id = "zc" + hashlib.sha256((user_id + ":" + idempotency_key).encode()).hexdigest()[:32]
+    now = int(time.time())
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15, isolation_level=None) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            """SELECT request_hash, status, response_json
+               FROM customer_order_requests WHERE user_id=? AND idempotency_key=?""",
+            (user_id, idempotency_key),
+        ).fetchone()
+        if row:
+            db.execute("COMMIT")
+            if not hmac.compare_digest(row[0], request_hash):
+                raise HTTPException(409, "This idempotency key was already used for a different order request.")
+            if row[1] == "SUBMITTED" and row[2]:
+                response = json.loads(row[2])
+                response["idempotent_replay"] = True
+                return None, response
+            raise HTTPException(409, "An order with this idempotency key is already processing or requires exchange reconciliation. Do not retry with a new key.")
+        db.execute(
+            """INSERT INTO customer_order_requests
+               (user_id, idempotency_key, request_hash, exchange_client_order_id,
+                status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'SUBMITTING', ?, ?)""",
+            (user_id, idempotency_key, request_hash, client_order_id, now, now),
+        )
+        db.execute("COMMIT")
+    return client_order_id, None
+
+
+def _finish_customer_order_request(user_id: str, idempotency_key: str, status: str, response: dict | None):
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        db.execute(
+            """UPDATE customer_order_requests SET status=?, response_json=?, updated_at=?
+               WHERE user_id=? AND idempotency_key=?""",
+            (status, json.dumps(response, separators=(",", ":"), default=str) if response is not None else None,
+             int(time.time()), user_id, idempotency_key),
+        )
+
+
+class CustomerOrderSubmitRequest(CustomerOrderPreviewRequest):
+    pass
+
+
+@app.post("/api/v1/user/orders")
+async def submit_customer_order(
+    body: CustomerOrderSubmitRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user=Depends(require_platform_user),
+):
+    if not LIVE_CUSTOMER_ORDER_ROUTING_ENABLED or SANDBOX:
+        raise HTTPException(403, "Customer live order routing is disabled. Read-only order previews remain available.")
+    if not idempotency_key or not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
+        raise HTTPException(400, "A unique Idempotency-Key header (16-128 safe characters) is required.")
+
+    with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
+        row = db.execute(
+            """SELECT encrypted_credentials, permissions_json FROM customer_exchange_connections
+               WHERE user_id=? AND exchange_id='binance' AND status='connected'""",
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Connect a Binance account before submitting an order.")
+    permissions = json.loads(row[1])
+    if not permissions.get("read") or not permissions.get("spot_trading") or permissions.get("withdrawals"):
+        raise HTTPException(403, "The connected Binance key does not meet the required read/Spot/no-withdrawal permissions.")
+
+    credentials = _decrypt_customer_credentials(user["id"], row[0])
+    exchange = ccxt.binance({
+        "apiKey": credentials["api_key"],
+        "secret": credentials["api_secret"],
+        "enableRateLimit": True,
+        "options": {"defaultType": "spot"},
+    })
+    try:
+        preview = await run_in_threadpool(_calculate_customer_order_preview, exchange, body)
+        normalized_request = {
+            "symbol": preview["symbol"], "side": body.side, "type": body.order_type,
+            "amount": preview["amount"],
+            "price": preview["reference_price"] if body.order_type == "limit" else None,
+        }
+        request_hash = hashlib.sha256(
+            json.dumps(normalized_request, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        client_order_id, replay = _claim_customer_order_request(user["id"], idempotency_key, request_hash)
+        if replay is not None:
+            return replay
+
+        params = {"newClientOrderId": client_order_id}
+        price = preview["reference_price"] if body.order_type == "limit" else None
+        try:
+            order = await run_in_threadpool(
+                exchange.create_order,
+                preview["symbol"], body.order_type, body.side,
+                float(Decimal(preview["amount"])),
+                float(Decimal(price)) if price is not None else None,
+                params,
+            )
+        except Exception:
+            _finish_customer_order_request(user["id"], idempotency_key, "UNKNOWN", None)
+            raise HTTPException(502, "The exchange response was not conclusive. Order status requires reconciliation; do not resubmit.") from None
+
+        safe_order = {
+            "exchange": "binance",
+            "exchange_order_id": str(order.get("id", "")),
+            "client_order_id": client_order_id,
+            "symbol": preview["symbol"],
+            "side": body.side,
+            "order_type": body.order_type,
+            "amount": str(order.get("amount", preview["amount"])),
+            "price": str(order.get("price")) if order.get("price") is not None else None,
+            "status": str(order.get("status", "unknown")),
+            "filled": str(order.get("filled", "0")),
+            "remaining": str(order.get("remaining")) if order.get("remaining") is not None else None,
+            "cost": str(order.get("cost")) if order.get("cost") is not None else None,
+            "submitted_at": int(time.time()),
+            "execution_status": "SUBMITTED",
+            "idempotent_replay": False,
+        }
+        _finish_customer_order_request(user["id"], idempotency_key, "SUBMITTED", safe_order)
+        return safe_order
     finally:
         await run_in_threadpool(exchange.close)
 
