@@ -197,3 +197,26 @@ def test_order_funds_audit_detects_missing_ledger_reserve(engine):
     assert result["status"] == "attention_required"
     assert result["checks"]["order_reserves_match_ledger"] is False
     assert order["id"] in result["issues"]["missing_or_mismatched_reserves"]
+
+
+def test_order_funds_audit_matches_when_resting_maker_is_the_buyer(engine):
+    ledger = PaperLedger(engine.db_path)
+    ledger.create_account("maker_buyer")
+    ledger.create_account("taker_seller")
+    ledger.credit_paper_funds("maker_buyer", "USDT", "500", "maker-buyer-credit")
+    ledger.credit_paper_funds("taker_seller", "BTC", "2", "taker-seller-credit")
+
+    bid = engine.place_limit_order(
+        "BTC/USDT", "buy", "0.5", "110", "funds-maker-bid-0001", "maker_buyer"
+    )
+    ask = engine.place_limit_order(
+        "BTC/USDT", "sell", "0.5", "100", "funds-taker-ask-001", "taker_seller"
+    )
+
+    result = engine.audit_order_funds_integrity()
+    assert result["status"] == "ok", result["issues"]
+    assert all(result["checks"].values()), result["issues"]
+    assert result["counts"]["orders_checked"] == 2
+    assert result["counts"]["trades_checked"] == 1
+    assert bid["status"] == "open"
+    assert ask["status"] == "filled"
