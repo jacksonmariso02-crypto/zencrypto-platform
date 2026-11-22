@@ -209,3 +209,13 @@ Fee rounding to exchange-specific asset precision, fee tiers, rebates, discounts
 - Checks that open, partially filled, filled and cancelled order states agree with their remaining quantity and fill history.
 - Returns issue counts and capped order/trade references; it never modifies orders, fills, balances or ledger entries.
 - This endpoint is an operational consistency check for the simulated matching engine, not a financial statement or proof of funds.
+
+
+## Paper order-to-ledger funds reconciliation
+- Admin-only read endpoint: `GET /api/v1/paper/admin/orders/funds-reconciliation`.
+- Verifies every account-backed order has the exact initial available-to-locked reserve posting expected from its original quantity, limit price and side.
+- Verifies every account-backed trade has the corresponding settlement transaction with exact Decimal debit/credit lines, including maker/taker fees and buyer price-improvement refunds.
+- Verifies cancelled orders release the exact remaining reserve back to available balance.
+- Reports missing or mismatched ledger transactions without attempting automatic repair.
+- Requires the paper engine and paper ledger to share the same SQLite database. If the ledger schema is absent, the audit fails closed with `attention_required`.
+- This is a simulated trading integrity check, not proof of custody or real funds.
