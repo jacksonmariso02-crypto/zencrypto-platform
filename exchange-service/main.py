@@ -14,7 +14,7 @@ import ccxt
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import SecretStr
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
