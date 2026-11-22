@@ -836,3 +836,11 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
  .trade-app .zc-preview-form{grid-template-columns:1fr 1fr}
  .trade-app .zc-candle-svg{min-height:240px}
 }
+
+
+.trade-app .zc-side-control,.trade-app .zc-order-type-control{display:grid;gap:6px;color:#848e9c;font-size:11px}
+.trade-app .zc-side-switch,.trade-app .zc-order-type-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.trade-app .zc-side-switch button,.trade-app .zc-order-type-tabs button{height:34px;border:1px solid #3b424b;background:#1e2329;color:#cbd5e1;border-radius:3px;font-size:12px;font-weight:700}
+.trade-app .zc-side-switch button.buy-active{background:#0ecb81;color:#071a13;border-color:#0ecb81}
+.trade-app .zc-side-switch button.sell-active{background:#f6465d;color:#fff;border-color:#f6465d}
+.trade-app .zc-order-type-tabs button.active{background:#2b3139;border-color:#f0b90b;color:#f0b90b}
