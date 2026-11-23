@@ -2367,6 +2367,84 @@ async def owner_control_center(authorization: str | None = Header(default=None))
     }
 
 
+@app.get("/api/v1/owner/administration/users")
+async def owner_customer_directory(
+    limit: int = 50,
+    offset: int = 0,
+    search: str | None = None,
+    status: str = "all",
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only privacy-minimized customer directory; strictly read-only."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Customer administration is restricted to the Owner role.")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise HTTPException(400, "limit must be 1-100 and offset must be non-negative.")
+    if status not in ("all", "active", "disabled"):
+        raise HTTPException(400, "status must be all, active, or disabled.")
+    if search is not None and len(search) > 64:
+        raise HTTPException(400, "search must be 64 characters or fewer.")
+    try:
+        result = await run_in_threadpool(
+            lambda: AUTH_SERVICE.list_users(limit=limit, offset=offset, search=search, status=status)
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
+
+
+@app.get("/api/v1/owner/administration/staff-roles")
+async def owner_staff_role_inventory(authorization: str | None = Header(default=None)):
+    """Report configured application role slots, not an employee directory."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Staff role administration is restricted to the Owner role.")
+    return {
+        "mode": "CONFIGURED_ROLE_INVENTORY",
+        "roles": [{
+            "role": role_name,
+            "permissions": sorted(permissions),
+            "credential_configured": bool(OWNER_ROLE_TOKENS.get(role_name)),
+            "assignment_management": "environment_secret_manager_only",
+            "write_actions_enabled": False,
+        } for role_name, permissions in ROLE_PERMISSIONS.items()],
+        "legacy_admin_token_configured": bool(OWNER_ROLE_TOKENS.get("legacy_admin")),
+        "note": "This is not a staff roster. No employee identities or role assignments are stored in this application.",
+    }
+
+
+@app.get("/api/v1/owner/administration/system-configuration")
+async def owner_system_configuration(authorization: str | None = Header(default=None)):
+    """Expose an allow-listed configuration posture without returning secret values."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "System configuration inventory is restricted to the Owner role.")
+    return {
+        "mode": "SAFE_CONFIGURATION_INVENTORY",
+        "generated_at": int(time.time()),
+        "features": {
+            "sandbox_mode": bool(SANDBOX),
+            "live_trading_enabled": bool(LIVE_TRADING_ENABLED),
+            "customer_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED),
+            "deposits_enabled": bool(WALLET_DEPOSITS_ENABLED),
+            "withdrawals_enabled": bool(WALLET_WITHDRAWALS_ENABLED),
+            "customer_credential_vault_configured": bool(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY),
+            "auth_token_secret_configured": len(AUTH_TOKEN_SECRET.encode("utf-8")) >= 32,
+            "owner_token_configured": bool(OWNER_ROLE_TOKENS.get("owner")),
+            "finance_token_configured": bool(OWNER_ROLE_TOKENS.get("finance")),
+            "compliance_token_configured": bool(OWNER_ROLE_TOKENS.get("compliance")),
+            "execution_partner_configured": bool(EXCHANGE_API_KEY and API_SECRET),
+            "custody_provider_configured": bool(WALLET_CUSTODY_PROVIDER),
+            "custody_webhook_secret_configured": bool(BITGO_WEBHOOK_SECRET),
+        },
+        "configuration_sources": "host_environment_and_secret_manager",
+        "secret_values_returned": False,
+        "write_actions_enabled": False,
+        "note": "This is a safe allow-listed snapshot, not a complete environment dump or deployment attestation.",
+    }
+
+
 @app.get("/api/v1/owner/orders")
 async def owner_recent_orders(
     limit: int = 100,
