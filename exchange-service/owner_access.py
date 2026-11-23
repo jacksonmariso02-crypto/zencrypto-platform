@@ -20,16 +20,14 @@ def resolve_owner_role(authorization: str | None, tokens: Mapping[str, str]) -> 
     if not supplied:
         raise OwnerAuthorizationError("Owner authorization required.")
     configured = {
-        "owner": tokens.get("owner", ""),
-        "finance": tokens.get("finance", ""),
-        "compliance": tokens.get("compliance", ""),
+        "owner": (tokens.get("owner", ""), tokens.get("legacy_admin", "")),
+        "finance": (tokens.get("finance", ""),),
+        "compliance": (tokens.get("compliance", ""),),
     }
-    # Backward-compatible legacy admin token maps to the full Owner role only.
-    configured["owner"] = configured["owner"] or tokens.get("legacy_admin", "")
-    if not any(configured.values()):
+    if not any(secret for values in configured.values() for secret in values):
         raise RuntimeError("Configure at least one Owner Console role token.")
-    for role, expected in configured.items():
-        if expected and hmac.compare_digest(supplied, expected):
+    for role, secrets in configured.items():
+        if any(secret and hmac.compare_digest(supplied, secret) for secret in secrets):
             return role
     raise OwnerAuthorizationError("Unauthorized.")
 
