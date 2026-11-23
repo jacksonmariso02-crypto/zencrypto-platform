@@ -886,3 +886,34 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
  .app:not(.trade-app) .headerleft{min-width:0}
  .app:not(.trade-app) .headeractions{flex-wrap:wrap;justify-content:flex-end}
 }
+
+
+/* Owner Master Console: responsive read-only operations workspace. */
+.zc-owner-console{display:grid;gap:16px}
+.zc-owner-console .zc-account-panel,.zc-owner-console .zc-wallet-card{background:#151a21;border:1px solid #2b313a;border-radius:10px;padding:18px;min-width:0}
+.zc-owner-console .zc-account-panel h3,.zc-owner-console .zc-wallet-card h3{margin:0 0 12px;color:#eaecef;font-size:15px}
+.zc-owner-console .zc-account-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.zc-owner-console .zc-account-heading h2{margin:5px 0 8px}
+.zc-owner-console .zc-account-heading p,.zc-owner-console .fine{max-width:850px;line-height:1.55}
+.zc-owner-console .zc-owner-access .backtest-controls{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(260px,1.5fr) auto;align-items:end;gap:12px}
+.zc-owner-console .zc-owner-access label{display:grid;gap:7px;color:#aeb6c2;font-size:12px}
+.zc-owner-console .zc-owner-access input,.zc-owner-console .zc-owner-access select{width:100%;min-height:40px;padding:9px 11px;border:1px solid #3b424b;border-radius:6px;background:#0b0e11;color:#eaecef}
+.zc-owner-console .zc-home-status-card{background:#151a21;border:1px solid #2b313a;border-radius:9px;padding:16px;min-width:0}
+.zc-owner-console .zc-home-status-card strong{display:block;margin:8px 0;font-size:25px;color:#eaecef;overflow-wrap:anywhere}
+.zc-owner-console .zc-home-status-card small{color:#8b96a5;line-height:1.45}
+.zc-owner-console .zc-permission-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0 18px}
+.zc-owner-console .zc-permission-grid>div{display:grid;gap:7px;padding:12px;background:#0f141a;border:1px solid #2b313a;border-radius:7px;min-width:0}
+.zc-owner-console .zc-permission-grid span{font-size:11px;color:#8994a3;text-transform:capitalize}
+.zc-owner-console .zc-permission-grid b{font-size:13px;overflow-wrap:anywhere}
+.zc-owner-console .zc-wallet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.zc-owner-console .zc-wallet-card>strong{display:block;margin:8px 0;font-size:18px}
+.zc-owner-console .tablewrap{overflow:auto}
+.zc-owner-console table{min-width:680px}
+.zc-owner-console .zc-account-actions{display:flex;gap:10px;flex-wrap:wrap}
+.zc-owner-console li{margin:7px 0;color:#aeb6c2;line-height:1.5}
+@media(max-width:760px){
+ .zc-owner-console .zc-owner-access .backtest-controls,.zc-owner-console .zc-permission-grid,.zc-owner-console .zc-wallet-grid{grid-template-columns:1fr}
+ .zc-owner-console .zc-account-heading{display:grid}
+ .zc-owner-console .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .zc-owner-console .zc-account-panel,.zc-owner-console .zc-wallet-card{padding:13px}
+}
