@@ -1068,6 +1068,11 @@ async def connect_customer_binance(
             (user["id"], envelope, "••••" + api_key[-4:],
              json.dumps(permissions, separators=(",", ":")), now, now),
         )
+    _record_security_event(
+        request, action="customer.exchange_api_key.connected",
+        resource="binance_api_credential", outcome="success", user_id=user["id"],
+        metadata={"masked_api_key_suffix": api_key[-4:], "permissions": permissions},
+    )
     return {
         "connected": True,
         "exchange": "binance",
@@ -1117,12 +1122,17 @@ async def customer_binance_balances(user=Depends(require_platform_user)):
 
 
 @app.delete("/api/v1/user/exchange-connections/binance")
-async def disconnect_customer_binance(user=Depends(require_platform_user)):
+async def disconnect_customer_binance(request: Request, user=Depends(require_platform_user)):
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
         cursor = db.execute(
             "DELETE FROM customer_exchange_connections WHERE user_id=? AND exchange_id='binance'",
             (user["id"],),
         )
+    _record_security_event(
+        request, action="customer.exchange_api_key.disconnected",
+        resource="binance_api_credential", outcome="success" if cursor.rowcount > 0 else "no_change",
+        user_id=user["id"],
+    )
     return {"disconnected": cursor.rowcount > 0, "exchange": "binance",
             "message": "Stored Binance API authorization has been deleted."}
 
