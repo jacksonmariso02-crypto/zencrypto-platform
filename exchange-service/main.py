@@ -27,6 +27,7 @@ from auth_service import AuthService, AuthenticationError, UsernameTaken
 from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
 from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
+from owner_console import OwnerConsole
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -63,6 +64,7 @@ PAPER_ENGINE = PaperMatchingEngine(
     taker_fee_bps=PAPER_TAKER_FEE_BPS,
 )
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
+OWNER_CONSOLE = OwnerConsole(PAPER_ENGINE_DB_PATH)
 PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
     0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
 )
@@ -2207,3 +2209,52 @@ async def cancel_my_paper_order(
         raise HTTPException(404, "Paper order not found.") from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+# Owner Master Console — read-only operational and financial reporting.
+# The admin token remains server-side; never expose it to browser JavaScript.
+def _owner_partner_status():
+    return {
+        "provider": os.getenv("PARTNER_EXECUTION_PROVIDER") or None,
+        "provider_adapter_implemented": False,
+        "partner_api_documentation_received": False,
+        "live_order_routing_enabled": False,
+        "custody_provider": WALLET_CUSTODY_PROVIDER or None,
+        "custody_adapter_ready": bool(BITGO_TRANSFER_ADAPTER_READY),
+        "deposits_enabled": False,
+        "withdrawals_enabled": False,
+        "status": "PARTNER_NOT_SELECTED",
+    }
+
+
+@app.get("/api/v1/owner/overview")
+async def owner_overview(authorization: str | None = Header(default=None)):
+    """Read-only Owner dashboard summary. Requires server-side admin authorization."""
+    require_admin(authorization)
+    checks = await run_in_threadpool(_readiness_checks)
+    readiness = {"ready": all(checks.values()), "checks": checks}
+    return await run_in_threadpool(
+        lambda: OWNER_CONSOLE.overview(
+            partner_status=_owner_partner_status(), readiness=readiness
+        )
+    )
+
+
+@app.get("/api/v1/owner/orders")
+async def owner_recent_orders(
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only recent customer order requests with sensitive payload fields filtered."""
+    require_admin(authorization)
+    if not 1 <= limit <= 250:
+        raise HTTPException(400, "limit must be between 1 and 250.")
+    return await run_in_threadpool(OWNER_CONSOLE.recent_orders, limit)
+
+
+@app.get("/api/v1/owner/ledger/integrity")
+async def owner_wallet_ledger_integrity(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only global integrity scan of the internal wallet ledger."""
+    require_admin(authorization)
+    return await run_in_threadpool(OWNER_CONSOLE.ledger_integrity)
