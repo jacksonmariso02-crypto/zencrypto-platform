@@ -175,3 +175,44 @@ def test_master_control_center_is_owner_only_and_read_only(monkeypatch):
     assert finance.status_code == 403
 
 
+
+
+def test_owner_administration_endpoints_are_owner_only_and_read_only(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    monkeypatch.setattr(main.AUTH_SERVICE, "list_users", lambda **kwargs: {
+        "mode": "READ_ONLY_CUSTOMER_DIRECTORY", "total": 1, "limit": 50,
+        "offset": 0, "users": [{"user_id": "u-1", "username": "trader_1",
+        "account_id": "acct-1", "created_at": 123, "status": "active"}],
+        "write_actions_enabled": False,
+    })
+    owner_headers = auth("owner-token-for-test-000000000000000000")
+    users = client.get("/api/v1/owner/administration/users", headers=owner_headers)
+    staff = client.get("/api/v1/owner/administration/staff-roles", headers=owner_headers)
+    config = client.get("/api/v1/owner/administration/system-configuration", headers=owner_headers)
+    assert users.status_code == staff.status_code == config.status_code == 200
+    assert users.json()["write_actions_enabled"] is False
+    assert "password_hash" not in str(users.json())
+    assert "access_token" not in str(users.json())
+    assert staff.json()["mode"] == "CONFIGURED_ROLE_INVENTORY"
+    assert staff.json()["note"].startswith("This is not a staff roster")
+    assert config.json()["secret_values_returned"] is False
+    assert "AUTH_TOKEN_SECRET" not in str(config.json())
+    assert client.get(
+        "/api/v1/owner/administration/users",
+        headers=auth("finance-token-for-test-00000000000000"),
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/owner/administration/staff-roles",
+        headers=auth("compliance-token-for-test-000000000000"),
+    ).status_code == 403
+
+
+def test_owner_customer_directory_validates_filters(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    headers = auth("owner-token-for-test-000000000000000000")
+    assert client.get("/api/v1/owner/administration/users?limit=101", headers=headers).status_code == 400
+    assert client.get("/api/v1/owner/administration/users?status=suspended", headers=headers).status_code == 400
+    assert client.get("/api/v1/owner/administration/users?offset=-1", headers=headers).status_code == 400
+
