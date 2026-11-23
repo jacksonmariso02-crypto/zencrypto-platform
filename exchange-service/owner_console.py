@@ -189,7 +189,7 @@ class OwnerConsole:
                         if not notional.is_finite() or notional < 0:
                             continue
                         volume_by_quote[quote] = volume_by_quote.get(quote, Decimal("0")) + notional
-                        day = time.strftime("%Y-%m-%d", time.gmtime(int(row["created_at"])))
+                        day = time.strftime("%Y-%m-%d", time.gmtime(int(row["created_at"]) // 1_000_000_000))
                         daily_volume.setdefault(day, {})
                         daily_volume[day][quote] = daily_volume[day].get(quote, Decimal("0")) + notional
         days_out = sorted(set(daily_fees) | set(daily_volume))
