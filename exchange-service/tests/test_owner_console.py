@@ -47,11 +47,14 @@ class OwnerConsoleTests(unittest.TestCase):
             db.executescript("""
             CREATE TABLE ledger_transactions(id TEXT PRIMARY KEY,idempotency_key TEXT,kind TEXT,memo TEXT,created_at INTEGER);
             CREATE TABLE ledger_entries(id INTEGER PRIMARY KEY,transaction_id TEXT,account_code TEXT,asset TEXT,debit TEXT,credit TEXT);
-            CREATE TABLE paper_trades(id INTEGER PRIMARY KEY,symbol TEXT,price TEXT,quantity TEXT,created_at INTEGER);
+            ALTER TABLE paper_trades ADD COLUMN symbol TEXT;
+            ALTER TABLE paper_trades ADD COLUMN price TEXT;
+            ALTER TABLE paper_trades ADD COLUMN quantity TEXT;
+            ALTER TABLE paper_trades ADD COLUMN created_at INTEGER;
             """)
             db.execute("INSERT INTO ledger_transactions VALUES('tx1','key-12345678','paper_trade_settlement','simulated',?)",(now_ns,))
             db.execute("INSERT INTO ledger_entries(transaction_id,account_code,asset,debit,credit) VALUES('tx1','platform:fees','USDT','0','1.25')")
-            db.execute("INSERT INTO paper_trades(symbol,price,quantity,created_at) VALUES('BTC/USDT','50000','0.01',?)",(now_s,))
+            db.execute("INSERT INTO paper_trades(id,symbol,price,quantity,created_at) VALUES('test-trade','BTC/USDT','50000','0.01',?)",(now_s,))
             result = self.console.financial_summary(30)
         self.assertEqual(result["paper_trade_count"],1)
         self.assertEqual(result["paper_volume_by_quote_asset"]["USDT"],"500.00")
