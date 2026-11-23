@@ -29,12 +29,19 @@ from orderbook_depth import build_depth
 from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
 from owner_console import OwnerConsole
 from execution_reconciliation import ExecutionReconciliation
+from owner_access import OwnerAuthorizationError, require_owner_permission
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
 API_KEY = os.getenv("EXCHANGE_API_KEY", "")
 API_SECRET = os.getenv("EXCHANGE_API_SECRET", "")
 ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
+OWNER_ROLE_TOKENS = {
+    "owner": os.getenv("ZENCRYPTO_OWNER_TOKEN", ""),
+    "finance": os.getenv("ZENCRYPTO_FINANCE_TOKEN", ""),
+    "compliance": os.getenv("ZENCRYPTO_COMPLIANCE_TOKEN", ""),
+    "legacy_admin": ADMIN_TOKEN,
+}
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
 LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", "false").lower() == "true"
@@ -1269,6 +1276,16 @@ def require_admin(authorization: str | None):
     if not hmac.compare_digest(supplied, ADMIN_TOKEN):
         raise HTTPException(401, "Unauthorized.")
     
+
+def require_owner_permission_for(permission: str, authorization: str | None):
+    try:
+        return require_owner_permission(authorization, permission, OWNER_ROLE_TOKENS)
+    except OwnerAuthorizationError as exc:
+        raise HTTPException(401 if "Unauthorized" in str(exc) or "required" in str(exc) else 403, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
 def normalize_symbol(symbol: str) -> str:
     value = symbol.strip().upper().replace("-", "/")
     if "/" not in value and value.endswith("USDT"):
@@ -2231,7 +2248,7 @@ def _owner_partner_status():
 @app.get("/api/v1/owner/overview")
 async def owner_overview(authorization: str | None = Header(default=None)):
     """Read-only Owner dashboard summary. Requires server-side admin authorization."""
-    require_admin(authorization)
+    require_owner_permission_for("overview", authorization)
     checks = await run_in_threadpool(_readiness_checks)
     readiness = {"ready": all(checks.values()), "checks": checks}
     return await run_in_threadpool(
@@ -2247,7 +2264,7 @@ async def owner_recent_orders(
     authorization: str | None = Header(default=None),
 ):
     """Read-only recent customer order requests with sensitive payload fields filtered."""
-    require_admin(authorization)
+    require_owner_permission_for("orders", authorization)
     if not 1 <= limit <= 250:
         raise HTTPException(400, "limit must be between 1 and 250.")
     return await run_in_threadpool(OWNER_CONSOLE.recent_orders, limit)
@@ -2258,7 +2275,7 @@ async def owner_wallet_ledger_integrity(
     authorization: str | None = Header(default=None),
 ):
     """Read-only global integrity scan of the internal wallet ledger."""
-    require_admin(authorization)
+    require_owner_permission_for("ledger", authorization)
     return await run_in_threadpool(OWNER_CONSOLE.ledger_integrity)
 
 
@@ -2268,7 +2285,7 @@ async def owner_execution_reconciliation(
     authorization: str | None = Header(default=None),
 ):
     """Read-only comparison of normalized partner fills against local order snapshots."""
-    require_admin(authorization)
+    require_owner_permission_for("reconciliation", authorization)
     if not 1 <= limit <= 1000:
         raise HTTPException(400, "limit must be between 1 and 1000.")
     return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
