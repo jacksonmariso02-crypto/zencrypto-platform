@@ -1302,6 +1302,29 @@ def require_owner_permission_for(permission: str, authorization: str | None):
         raise HTTPException(503, "Audit log unavailable; Owner Console access is temporarily blocked.") from exc
 
 
+def _record_security_event(request: Request, *, action: str, resource: str,
+                           outcome: str, user_id: str | None = None,
+                           metadata: dict | None = None):
+    """Record security-relevant events without credentials or raw client IPs."""
+    client_ip = request.client.host if request.client else "unknown"
+    ip_fingerprint = hmac.new(
+        (AUTH_TOKEN_SECRET or "zencrypto-unconfigured").encode("utf-8"),
+        client_ip.encode("utf-8"), hashlib.sha256,
+    ).hexdigest()[:24]
+    safe_metadata = {
+        "user_id": str(user_id)[:64] if user_id else None,
+        "ip_fingerprint": ip_fingerprint,
+        "user_agent": (request.headers.get("user-agent") or "unknown")[:180],
+    }
+    if metadata:
+        # Callers may supply only explicitly safe, non-secret metadata.
+        safe_metadata.update(metadata)
+    AUDIT_LOG.append(
+        actor_role="customer", action=action, resource=resource,
+        outcome=outcome, metadata=safe_metadata,
+    )
+
+
 def normalize_symbol(symbol: str) -> str:
     value = symbol.strip().upper().replace("-", "/")
     if "/" not in value and value.endswith("USDT"):
@@ -2145,10 +2168,17 @@ class LoginRequest(BaseModel):
 async def register_user(body: RegisterRequest, request: Request):
     check_auth_attempt(request)
     try:
-        return await run_in_threadpool(AUTH_SERVICE.register, body.username, body.password)
+        result = await run_in_threadpool(AUTH_SERVICE.register, body.username, body.password)
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="success", user_id=result.get("user_id"))
+        return result
     except UsernameTaken as exc:
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="rejected", metadata={"reason": "username_taken"})
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="rejected", metadata={"reason": "validation_failed"})
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -2157,10 +2187,17 @@ async def register_user(body: RegisterRequest, request: Request):
 async def login_user(body: LoginRequest, request: Request):
     check_auth_attempt(request)
     try:
-        return await run_in_threadpool(AUTH_SERVICE.login, body.username, body.password)
+        result = await run_in_threadpool(AUTH_SERVICE.login, body.username, body.password)
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="success", user_id=result.get("user_id"))
+        return result
     except AuthenticationError as exc:
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="failed", metadata={"reason": "invalid_credentials"})
         raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
     except ValueError as exc:
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="rejected", metadata={"reason": "validation_failed"})
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
