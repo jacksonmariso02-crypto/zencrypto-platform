@@ -125,6 +125,62 @@ class AuditLog:
                 "storage_assurance": "SQLite append-only triggers and SHA-256 hash chain; not external WORM storage",
             }
 
+    def security_summary(self, *, hours: int = 24, limit: int = 50) -> dict:
+        """Summarize observed customer authentication and exchange-key lifecycle events."""
+        hours = max(1, min(int(hours), 168))
+        limit = max(1, min(int(limit), 100))
+        cutoff = int(time.time()) - hours * 3600
+        actions = (
+            "customer.auth.login", "customer.auth.register",
+            "customer.exchange_api_key.connected",
+            "customer.exchange_api_key.disconnected",
+        )
+        placeholders = ",".join("?" for _ in actions)
+        with self._connect() as db:
+            totals = db.execute(
+                f"SELECT action,outcome,COUNT(*) AS n FROM admin_audit_events "
+                f"WHERE occurred_at >= ? AND action IN ({placeholders}) "
+                "GROUP BY action,outcome ORDER BY action,outcome",
+                (cutoff, *actions),
+            ).fetchall()
+            rows = db.execute(
+                f"SELECT sequence,event_id,occurred_at,actor_role,action,resource,outcome,"
+                f"metadata_json,event_hash FROM admin_audit_events "
+                f"WHERE occurred_at >= ? AND action IN ({placeholders}) "
+                "ORDER BY sequence DESC LIMIT ?",
+                (cutoff, *actions, limit),
+            ).fetchall()
+        by_action = {}
+        for row in totals:
+            by_action.setdefault(row["action"], {})[row["outcome"]] = int(row["n"])
+        recent = [{
+            "sequence": row["sequence"], "event_id": row["event_id"],
+            "occurred_at": row["occurred_at"], "actor_role": row["actor_role"],
+            "action": row["action"], "resource": row["resource"],
+            "outcome": row["outcome"], "metadata": json.loads(row["metadata_json"]),
+            "event_hash": row["event_hash"],
+        } for row in rows]
+        login_failures = by_action.get("customer.auth.login", {}).get("failed", 0)
+        login_success = by_action.get("customer.auth.login", {}).get("success", 0)
+        return {
+            "mode": "OBSERVED_SECURITY_TELEMETRY",
+            "window_hours": hours,
+            "generated_at": int(time.time()),
+            "event_totals": by_action,
+            "login_successes": login_success,
+            "login_failures": login_failures,
+            "api_key_connections": by_action.get("customer.exchange_api_key.connected", {}).get("success", 0),
+            "api_key_disconnections": by_action.get("customer.exchange_api_key.disconnected", {}).get("success", 0),
+            "recent_events": recent,
+            "observability_limitations": [
+                "Failed authentication attempts blocked by the pre-authentication rate limiter are not included in this event stream.",
+                "IP values are represented by a keyed fingerprint, not a raw address; reverse proxy trust and geolocation are not configured here.",
+                "Device fingerprinting, impossible-travel detection, bot reputation and credential stuffing correlation are not implemented.",
+                "API key events record connect/revoke actions only; key values and secrets are never stored in audit metadata.",
+                "No automatic account lock, key revocation or fund movement is performed by this report.",
+            ],
+        }
+
     def verify_chain(self) -> dict:
         with self._connect() as db:
             rows = db.execute(
