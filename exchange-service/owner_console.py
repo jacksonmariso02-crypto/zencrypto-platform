@@ -135,6 +135,103 @@ class OwnerConsole:
             "checked_at": int(time.time()), "scope": "internal_wallet_ledger_only"}
 
 
+    def risk_alerts(self, *, readiness: dict[str, Any], reconciliation: dict[str, Any]) -> dict:
+        """Build read-only risk alerts from existing, observable platform evidence."""
+        alerts: list[dict[str, Any]] = []
+        now = int(time.time())
+
+        ledger = self.ledger_integrity()
+        if ledger.get("status") == "not_initialized":
+            alerts.append({
+                "id": "ledger_not_initialized", "severity": "high", "category": "ledger",
+                "title": "Wallet ledger integrity scan unavailable",
+                "description": "Required internal ledger tables are not initialized; integrity cannot be confirmed.",
+                "evidence": {"status": ledger.get("status")},
+            })
+        elif not ledger.get("healthy", False):
+            reasons: dict[str, int] = {}
+            for issue in ledger.get("issues", []):
+                reason = str(issue.get("reason", "unknown"))
+                reasons[reason] = reasons.get(reason, 0) + 1
+            alerts.append({
+                "id": "ledger_integrity_issues", "severity": "critical", "category": "ledger",
+                "title": "Wallet ledger integrity issues detected",
+                "description": "Internal journal postings require investigation before any financial reliance.",
+                "evidence": {"issue_count": ledger.get("issue_count", len(ledger.get("issues", []))),
+                             "reasons": dict(sorted(reasons.items()))},
+            })
+
+        checks = readiness.get("checks", {}) if isinstance(readiness, dict) else {}
+        failed_checks = sorted(str(k) for k, value in checks.items() if value is False)
+        if failed_checks:
+            alerts.append({
+                "id": "platform_readiness_failed", "severity": "high", "category": "platform",
+                "title": "Platform readiness checks are failing",
+                "description": "One or more required infrastructure or release checks are not passing.",
+                "evidence": {"failed_checks": failed_checks},
+            })
+
+        if self.database_path != ":memory:":
+            with self._connect() as db:
+                if self._table_exists(db, "customer_order_requests"):
+                    statuses: dict[str, int] = {}
+                    for row in db.execute(
+                        "SELECT status, COUNT(*) AS n FROM customer_order_requests GROUP BY status"
+                    ):
+                        statuses[str(row["status"]).upper()] = int(row["n"])
+                    pending_statuses = {"UNKNOWN", "SUBMITTING", "RECONCILIATION_REQUIRED", "PARTIALLY_RECONCILED"}
+                    pending = {k: v for k, v in sorted(statuses.items()) if k in pending_statuses and v > 0}
+                    pending_count = sum(pending.values())
+                    if pending_count:
+                        alerts.append({
+                            "id": "customer_orders_pending_reconciliation", "severity": "high",
+                            "category": "execution",
+                            "title": "Customer orders require reconciliation",
+                            "description": "Some customer order requests remain in an uncertain or partially reconciled state.",
+                            "evidence": {"count": pending_count, "by_status": pending},
+                        })
+
+        mismatch_count = int(reconciliation.get("mismatched_orders", 0) or 0)
+        unmatched_count = int(reconciliation.get("unmatched_provider_orders", 0) or 0)
+        if mismatch_count:
+            alerts.append({
+                "id": "execution_reconciliation_mismatch", "severity": "critical",
+                "category": "execution", "title": "Provider execution mismatches detected",
+                "description": "Provider fill totals differ from local order snapshots or local order data is invalid.",
+                "evidence": {"mismatched_orders": mismatch_count},
+            })
+        if unmatched_count:
+            alerts.append({
+                "id": "unmatched_provider_executions", "severity": "high",
+                "category": "execution", "title": "Unmatched provider executions detected",
+                "description": "Provider execution records do not currently map to a known local customer order.",
+                "evidence": {"unmatched_provider_orders": unmatched_count},
+            })
+
+        rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        alerts.sort(key=lambda item: (rank[item["severity"]], item["category"], item["id"]))
+        highest = alerts[0]["severity"] if alerts else "none"
+        return {
+            "generated_at": now,
+            "mode": "READ_ONLY_RISK_ALERTS",
+            "risk_level": highest,
+            "alert_count": len(alerts),
+            "critical_count": sum(1 for item in alerts if item["severity"] == "critical"),
+            "high_count": sum(1 for item in alerts if item["severity"] == "high"),
+            "alerts": alerts,
+            "monitoring_scope": [
+                "internal wallet ledger integrity",
+                "configured platform readiness checks",
+                "customer order reconciliation statuses",
+                "normalized provider execution reconciliation",
+            ],
+            "limitations": [
+                "No login-attempt, device, IP reputation or API-key activity telemetry is currently connected to this report.",
+                "An empty alert list means no issue was found in the monitored sources; it is not proof that the platform is secure.",
+                "Alerts are generated from read-only evidence and do not automatically freeze accounts, cancel orders or move funds.",
+            ],
+        }
+
     def financial_summary(self, days: int = 30) -> dict:
         """Read-only financial summary of simulated paper trading and fee postings."""
         days = max(1, min(int(days), 90))
