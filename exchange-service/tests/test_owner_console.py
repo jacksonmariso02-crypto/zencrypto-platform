@@ -55,7 +55,7 @@ class OwnerConsoleTests(unittest.TestCase):
             db.execute("INSERT INTO ledger_transactions VALUES('tx1','key-12345678','paper_trade_settlement','simulated',?)",(now_ns,))
             db.execute("INSERT INTO ledger_entries(transaction_id,account_code,asset,debit,credit) VALUES('tx1','platform:fees','USDT','0','1.25')")
             db.execute("INSERT INTO paper_trades(id,symbol,price,quantity,created_at) VALUES('test-trade','BTC/USDT','50000','0.01',?)",(now_s,))
-            result = self.console.financial_summary(30)
+        result = self.console.financial_summary(30)
         self.assertEqual(result["paper_trade_count"],1)
         self.assertEqual(result["paper_volume_by_quote_asset"]["USDT"],"500.00")
         self.assertEqual(result["simulated_fee_revenue_by_asset"]["USDT"],"1.25")
