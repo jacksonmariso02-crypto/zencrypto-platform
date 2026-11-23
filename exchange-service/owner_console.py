@@ -133,3 +133,79 @@ class OwnerConsole:
         return {"status": "healthy" if not issues else "review_required", "healthy": not issues,
             "checked_journals": checked, "issue_count": len(issues), "issues": issues[:100],
             "checked_at": int(time.time()), "scope": "internal_wallet_ledger_only"}
+
+
+    def financial_summary(self, days: int = 30) -> dict:
+        """Read-only financial summary of simulated paper trading and fee postings."""
+        days = max(1, min(int(days), 90))
+        now = int(time.time())
+        cutoff_seconds = now - days * 86400
+        cutoff_ns = cutoff_seconds * 1_000_000_000
+        fees_by_asset: dict[str, Decimal] = {}
+        daily_fees: dict[str, dict[str, Decimal]] = {}
+        volume_by_quote: dict[str, Decimal] = {}
+        daily_volume: dict[str, dict[str, Decimal]] = {}
+        transaction_kinds: dict[str, int] = {}
+        trade_count = 0
+        with self._connect() as db:
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "ledger_transactions" in tables and "ledger_entries" in tables:
+                rows = db.execute("""
+                    SELECT t.kind, t.created_at, e.asset, e.debit, e.credit
+                    FROM ledger_transactions t
+                    JOIN ledger_entries e ON e.transaction_id=t.id
+                    WHERE t.created_at >= ?
+                    ORDER BY t.created_at
+                """, (cutoff_ns,)).fetchall()
+                for row in rows:
+                    kind = str(row["kind"])
+                    transaction_kinds[kind] = transaction_kinds.get(kind, 0) + 1
+                    if row["account_code"] == "platform:fees":
+                        amount = Decimal(str(row["credit"])) - Decimal(str(row["debit"]))
+                        if amount:
+                            asset = str(row["asset"])
+                            fees_by_asset[asset] = fees_by_asset.get(asset, Decimal("0")) + amount
+                            day = time.strftime("%Y-%m-%d", time.gmtime(int(row["created_at"]) // 1_000_000_000))
+                            daily_fees.setdefault(day, {})
+                            daily_fees[day][asset] = daily_fees[day].get(asset, Decimal("0")) + amount
+            if "paper_trades" in tables:
+                columns = {r["name"] for r in db.execute("PRAGMA table_info(paper_trades)")}
+                needed = {"symbol", "price", "quantity", "created_at"}
+                if needed.issubset(columns):
+                    rows = db.execute(
+                        "SELECT symbol, price, quantity, created_at FROM paper_trades WHERE created_at >= ? ORDER BY created_at",
+                        (cutoff_seconds,),
+                    ).fetchall()
+                    trade_count = len(rows)
+                    for row in rows:
+                        symbol = str(row["symbol"])
+                        if "/" not in symbol:
+                            continue
+                        base, quote = symbol.split("/", 1)
+                        try:
+                            notional = Decimal(str(row["price"])) * Decimal(str(row["quantity"]))
+                        except (InvalidOperation, ValueError):
+                            continue
+                        if not notional.is_finite() or notional < 0:
+                            continue
+                        volume_by_quote[quote] = volume_by_quote.get(quote, Decimal("0")) + notional
+                        day = time.strftime("%Y-%m-%d", time.gmtime(int(row["created_at"])))
+                        daily_volume.setdefault(day, {})
+                        daily_volume[day][quote] = daily_volume[day].get(quote, Decimal("0")) + notional
+        days_out = sorted(set(daily_fees) | set(daily_volume))
+        return {
+            "generated_at": now,
+            "mode": "READ_ONLY_SIMULATED_PAPER_FINANCIALS",
+            "period_days": days,
+            "period_start": cutoff_seconds,
+            "paper_trade_count": trade_count,
+            "paper_volume_by_quote_asset": {a: format(v, "f") for a, v in sorted(volume_by_quote.items())},
+            "simulated_fee_revenue_by_asset": {a: format(v, "f") for a, v in sorted(fees_by_asset.items())},
+            "ledger_transaction_count_by_kind": dict(sorted(transaction_kinds.items())),
+            "daily": [{
+                "date": day,
+                "paper_volume_by_quote_asset": {a: format(v, "f") for a, v in sorted(daily_volume.get(day, {}).items())},
+                "simulated_fee_revenue_by_asset": {a: format(v, "f") for a, v in sorted(daily_fees.get(day, {}).items())},
+            } for day in days_out],
+            "classification": "SIMULATED_PAPER_TRADING_ONLY_NOT_REAL_CUSTOMER_REVENUE_OR_CUSTODIED_ASSETS",
+        }
