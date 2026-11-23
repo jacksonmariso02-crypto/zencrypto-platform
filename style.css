@@ -967,3 +967,14 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-owner-console .zc-master-control-center .zc-home-status-card strong{font-size:20px}
 .zc-owner-console .zc-master-control-center h4{margin:8px 0 0}
 @media(max-width:760px){.zc-owner-console .zc-master-control-center .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* V54.7 Owner Administration Registry */
+.zc-owner-console .zc-admin-registry{display:grid;gap:14px}
+.zc-owner-console .zc-admin-registry .zc-home-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.zc-owner-console .zc-admin-registry .zc-home-status-card{background:#0f141a;border:1px solid #303844;border-radius:8px;padding:13px;min-width:0}
+.zc-owner-console .zc-admin-registry .zc-home-status-card strong{font-size:20px}
+.zc-owner-console .zc-admin-registry .tablewrap{overflow-x:auto}
+.zc-owner-console .zc-admin-registry table{min-width:720px}
+.zc-owner-console .zc-admin-registry h4{margin:8px 0 0}
+@media(max-width:760px){.zc-owner-console .zc-admin-registry .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
