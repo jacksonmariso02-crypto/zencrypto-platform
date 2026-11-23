@@ -141,3 +141,37 @@ def test_security_overview_validates_window_and_limit(monkeypatch):
         headers=auth("owner-token-for-test-000000000000000000"),
     ).status_code == 400
 
+
+
+def test_master_control_center_is_owner_only_and_read_only(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main, "_readiness_checks", lambda: {"partner_selected": False})
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    monkeypatch.setattr(main.AUDIT_LOG, "verify_chain", lambda: {
+        "healthy": True, "status": "healthy", "events_checked": 3,
+        "issue_count": 0, "issues": [], "head_hash": "a" * 64,
+    })
+    owner = client.get(
+        "/api/v1/owner/control-center",
+        headers=auth("owner-token-for-test-000000000000000000"),
+    )
+    assert owner.status_code == 200
+    body = owner.json()
+    assert body["mode"] == "OWNER_MASTER_CONTROL_READ_ONLY"
+    assert body["write_actions_enabled"] is False
+    assert body["available_control_actions"] == []
+    assert body["platform_posture"]["customer_order_routing_enabled"] is False
+    assert "role_permissions" in body
+    assert not any("secret" in key.lower() or "token" in key.lower() for key in body)
+    compliance = client.get(
+        "/api/v1/owner/control-center",
+        headers=auth("compliance-token-for-test-000000000000"),
+    )
+    finance = client.get(
+        "/api/v1/owner/control-center",
+        headers=auth("finance-token-for-test-00000000000000"),
+    )
+    assert compliance.status_code == 403
+    assert finance.status_code == 403
+
+
