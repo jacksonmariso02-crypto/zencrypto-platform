@@ -1,0 +1,135 @@
+"""Read-only Owner Master Console data access."""
+from __future__ import annotations
+import sqlite3, time, json
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+class OwnerConsole:
+    def __init__(self, database_path: str):
+        self.database_path = str(database_path)
+
+    def _connect(self):
+        path = Path(self.database_path).resolve()
+        if not path.exists():
+            raise RuntimeError("Owner console database is not available.")
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only=ON")
+        return connection
+
+    @staticmethod
+    def _table_exists(db, table: str) -> bool:
+        return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+    def overview(self, *, partner_status: dict[str, Any], readiness: dict[str, Any]) -> dict:
+        with self._connect() as db:
+            def count(table: str, where: str = "", args: tuple = ()) -> int:
+                if not self._table_exists(db, table):
+                    return 0
+                return int(db.execute(f"SELECT COUNT(*) FROM {table} {where}", args).fetchone()[0])
+            order_status = {}
+            if self._table_exists(db, "customer_order_requests"):
+                for row in db.execute("SELECT status, COUNT(*) AS n FROM customer_order_requests GROUP BY status"):
+                    order_status[str(row["status"])] = int(row["n"])
+            wallet_assets = {}
+            if self._table_exists(db, "wallet_ledger_entries"):
+                rows = db.execute("SELECT asset, account_code, direction, amount FROM wallet_ledger_entries ORDER BY id").fetchall()
+                for row in rows:
+                    if row["account_code"] != "customer_available":
+                        continue
+                    try:
+                        amount = Decimal(str(row["amount"]))
+                        if not amount.is_finite() or amount < 0:
+                            continue
+                    except (InvalidOperation, ValueError):
+                        continue
+                    asset = str(row["asset"])
+                    wallet_assets[asset] = wallet_assets.get(asset, Decimal("0")) + (amount if row["direction"] == "credit" else -amount)
+            statuses_requiring_reconciliation = {"UNKNOWN", "SUBMITTING", "RECONCILIATION_REQUIRED", "PARTIALLY_RECONCILED"}
+            pending = sum(n for status, n in order_status.items() if status.upper() in statuses_requiring_reconciliation)
+            return {
+                "generated_at": int(time.time()), "mode": "READ_ONLY_OWNER_OVERVIEW",
+                "live_customer_order_routing_enabled": False, "partner": partner_status, "readiness": readiness,
+                "customers_with_connected_exchange": count("customer_exchange_connections", "WHERE status='connected'"),
+                "customer_order_requests": {"total": sum(order_status.values()), "by_status": order_status, "requiring_reconciliation": pending},
+                "wallet_ledger": {
+                    "journals": count("wallet_journals"), "entries": count("wallet_ledger_entries"),
+                    "customer_available_net_by_asset": {a: format(v, "f") for a, v in sorted(wallet_assets.items())},
+                    "classification": "internal_ledger_records_not_proof_of_custodied_reserves"
+                },
+                "paper_trading": {"orders": count("paper_orders"), "trades": count("paper_trades"), "accounts": count("paper_accounts")},
+                "warnings": [
+                    "This console is operational reporting, not a bank or custodian balance confirmation.",
+                    "Do not enable live customer trading, deposits or withdrawals before partner, legal, compliance, security and reconciliation approvals."
+                ]
+            }
+
+    def recent_orders(self, limit: int = 100) -> dict:
+        limit = max(1, min(int(limit), 250))
+        with self._connect() as db:
+            if not self._table_exists(db, "customer_order_requests"):
+                return {"orders": [], "count": 0}
+            rows = db.execute("""SELECT user_id, idempotency_key, exchange_client_order_id, status,
+                response_json, created_at, updated_at FROM customer_order_requests
+                ORDER BY created_at DESC LIMIT ?""", (limit,)).fetchall()
+            orders = []
+            for row in rows:
+                payload = json.loads(row["response_json"]) if row["response_json"] else None
+                allowed = {"exchange", "exchange_order_id", "client_order_id", "symbol", "side", "order_type",
+                    "amount", "price", "status", "filled", "remaining", "cost", "submitted_at",
+                    "last_synced_at", "execution_status", "idempotent_replay"}
+                safe = {k: v for k, v in payload.items() if k in allowed} if isinstance(payload, dict) else None
+                orders.append({"customer_reference": str(row["user_id"]), "idempotency_key": row["idempotency_key"],
+                    "client_order_id": row["exchange_client_order_id"], "request_status": row["status"],
+                    "order": safe, "created_at": row["created_at"], "updated_at": row["updated_at"]})
+            return {"orders": orders, "count": len(orders)}
+
+    def ledger_integrity(self) -> dict:
+        issues, checked = [], 0
+        with self._connect() as db:
+            if not self._table_exists(db, "wallet_journals") or not self._table_exists(db, "wallet_ledger_entries"):
+                return {"status": "not_initialized", "healthy": False, "checked_journals": 0, "issues": []}
+            journals = db.execute("SELECT journal_id, user_id, asset FROM wallet_journals ORDER BY created_at").fetchall()
+            known_ids = {r["journal_id"] for r in journals}
+            for journal in journals:
+                checked += 1
+                entries = db.execute("SELECT user_id, asset, direction, amount FROM wallet_ledger_entries WHERE journal_id=?", (journal["journal_id"],)).fetchall()
+                debit, credit = Decimal("0"), Decimal("0")
+                invalid = len(entries) < 2
+                for entry in entries:
+                    try:
+                        amount = Decimal(str(entry["amount"]))
+                    except (InvalidOperation, ValueError):
+                        invalid = True
+                        continue
+                    if entry["user_id"] != journal["user_id"] or entry["asset"] != journal["asset"] or not amount.is_finite() or amount <= 0:
+                        invalid = True
+                    elif entry["direction"] == "debit":
+                        debit += amount
+                    elif entry["direction"] == "credit":
+                        credit += amount
+                    else:
+                        invalid = True
+                if invalid:
+                    issues.append({"journal_id": journal["journal_id"], "reason": "invalid_or_incomplete_postings"})
+                elif debit != credit:
+                    issues.append({"journal_id": journal["journal_id"], "reason": "unbalanced"})
+            for row in db.execute("SELECT DISTINCT journal_id FROM wallet_ledger_entries"):
+                if row["journal_id"] not in known_ids:
+                    issues.append({"journal_id": row["journal_id"], "reason": "orphaned_postings"})
+            balances = {}
+            for row in db.execute("SELECT user_id, asset, direction, amount FROM wallet_ledger_entries WHERE account_code='customer_available'"):
+                try:
+                    amount = Decimal(str(row["amount"]))
+                except (InvalidOperation, ValueError):
+                    issues.append({"reason": "invalid_customer_balance_amount"})
+                    continue
+                key = (row["user_id"], row["asset"])
+                balances[key] = balances.get(key, Decimal("0")) + (amount if row["direction"] == "credit" else -amount)
+            for (uid, asset), balance in balances.items():
+                if balance < 0:
+                    issues.append({"customer_reference": str(uid), "asset": asset, "reason": "negative_available_balance"})
+        return {"status": "healthy" if not issues else "review_required", "healthy": not issues,
+            "checked_journals": checked, "issue_count": len(issues), "issues": issues[:100],
+            "checked_at": int(time.time()), "scope": "internal_wallet_ledger_only"}
