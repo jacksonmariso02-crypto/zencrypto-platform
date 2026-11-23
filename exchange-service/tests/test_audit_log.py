@@ -49,6 +49,29 @@ class AuditLogTests(unittest.TestCase):
         self.assertFalse(report["healthy"])
         self.assertEqual(report["issues"][0]["reason"], "hash_chain_mismatch")
 
+    def test_security_summary_counts_auth_and_api_key_lifecycle_without_secrets(self):
+        self.audit.append(
+            actor_role="customer", action="customer.auth.login",
+            resource="customer_session", outcome="failed",
+            metadata={"user_id": "user-123", "ip_fingerprint": "abc123"},
+        )
+        self.audit.append(
+            actor_role="customer", action="customer.auth.login",
+            resource="customer_session", outcome="success",
+            metadata={"user_id": "user-456"},
+        )
+        self.audit.append(
+            actor_role="customer", action="customer.exchange_api_key.connected",
+            resource="binance_api_credential", outcome="success",
+            metadata={"masked_api_key_suffix": "1234"},
+        )
+        report = self.audit.security_summary(hours=24, limit=10)
+        self.assertEqual(report["login_failures"], 1)
+        self.assertEqual(report["login_successes"], 1)
+        self.assertEqual(report["api_key_connections"], 1)
+        self.assertEqual(len(report["recent_events"]), 3)
+        self.assertIn("Device fingerprinting", " ".join(report["observability_limitations"]))
+
     def test_pagination_and_action_filter(self):
         self.audit.append(actor_role="owner", action="one", resource="a")
         self.audit.append(actor_role="owner", action="two", resource="b")
