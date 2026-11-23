@@ -926,3 +926,17 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-owner-console .zc-finance-center .zc-home-status-card strong{font-size:18px;line-height:1.45;overflow-wrap:anywhere}
 .zc-owner-console .zc-finance-center .tablewrap{max-width:100%;overflow:auto}
 @media(max-width:760px){.zc-owner-console .zc-finance-center .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* V54.3 Risk & Alert Center */
+.zc-owner-console .zc-risk-center{display:grid;gap:14px}
+.zc-owner-console .zc-risk-center .zc-home-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.zc-owner-console .zc-risk-center .zc-home-status-card{background:#0f141a;border:1px solid #303844;border-radius:8px;padding:13px;min-width:0}
+.zc-owner-console .zc-risk-center .zc-home-status-card strong{font-size:20px}
+.zc-owner-console .zc-risk-alert-list{display:grid;gap:9px}
+.zc-owner-console .zc-risk-alert{border:1px solid #3a414d;border-left:3px solid #d69a38;border-radius:8px;padding:12px;background:#111821}
+.zc-owner-console .zc-risk-alert-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.zc-owner-console .zc-risk-alert p{margin:7px 0;color:#c2cbd6}
+.zc-owner-console .zc-risk-alert small{color:#8d9aaa;overflow-wrap:anywhere}
+.zc-owner-console .zc-status-danger{color:#ff7777}
+@media(max-width:760px){.zc-owner-console .zc-risk-center .zc-home-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-owner-console .zc-risk-alert-head{align-items:flex-start;flex-direction:column}}
