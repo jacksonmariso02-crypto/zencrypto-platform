@@ -5,7 +5,7 @@ from typing import Mapping
 
 
 ROLE_PERMISSIONS = {
-    "owner": frozenset({"overview", "orders", "ledger", "reconciliation", "risk"}),
+    "owner": frozenset({"overview", "orders", "ledger", "reconciliation", "risk", "audit"}),
     "finance": frozenset({"overview", "ledger", "reconciliation"}),
     "compliance": frozenset({"overview", "orders", "ledger", "reconciliation", "risk"}),
 }
