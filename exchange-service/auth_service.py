@@ -188,6 +188,43 @@ class AuthService:
         # Fixed valid-format hash; its digest need not match any real password.
         return "scrypt$16384$8$1$" + _b64encode(b"zencrypto-dummy-salt") + "$" + _b64encode(b"0" * 32)
 
+    def list_users(self, *, limit=50, offset=0, search=None, status="all"):
+        """Return privacy-minimized customer account records; never expose password hashes or tokens."""
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+        if status not in ("all", "active", "disabled"):
+            raise ValueError("status must be all, active, or disabled.")
+        clauses, args = [], []
+        if status == "active":
+            clauses.append("disabled=0")
+        elif status == "disabled":
+            clauses.append("disabled=1")
+        if search:
+            term = str(search).strip().lower()[:64]
+            if term:
+                clauses.append("(lower(username) LIKE ? OR lower(user_id) LIKE ?)")
+                args.extend([f"%{term}%", f"%{term}%"])
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with closing(self._connect()) as db:
+            total = db.execute("SELECT COUNT(*) FROM paper_users" + where, args).fetchone()[0]
+            rows = db.execute(
+                "SELECT user_id,username,account_id,created_at,disabled "
+                "FROM paper_users" + where +
+                " ORDER BY created_at DESC,user_id LIMIT ? OFFSET ?",
+                (*args, limit, offset),
+            ).fetchall()
+        return {
+            "mode": "READ_ONLY_CUSTOMER_DIRECTORY",
+            "total": int(total), "limit": limit, "offset": offset,
+            "users": [{
+                "user_id": row["user_id"], "username": row["username"],
+                "account_id": row["account_id"], "created_at": row["created_at"],
+                "status": "disabled" if row["disabled"] else "active",
+            } for row in rows],
+            "write_actions_enabled": False,
+            "privacy": "Password hashes, access tokens, email addresses and exchange credentials are not returned.",
+        }
+
     def authenticate(self, token):
         if not token or len(token) > 4096 or len(self.token_secret.encode("utf-8")) < 32:
             raise AuthenticationError("Invalid or expired access token.")
