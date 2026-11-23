@@ -2291,6 +2291,20 @@ async def owner_execution_reconciliation(
     return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
 
 
+@app.get("/api/v1/owner/risk/alerts")
+async def owner_risk_alerts(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only operational risk alerts for Owner and Compliance roles."""
+    require_owner_permission_for("risk", authorization)
+    checks = await run_in_threadpool(_readiness_checks)
+    readiness = {"ready": all(checks.values()), "checks": checks}
+    reconciliation = await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, 1000)
+    return await run_in_threadpool(
+        lambda: OWNER_CONSOLE.risk_alerts(readiness=readiness, reconciliation=reconciliation)
+    )
+
+
 @app.get("/api/v1/owner/finance/summary")
 async def owner_financial_summary(
     days: int = 30,
