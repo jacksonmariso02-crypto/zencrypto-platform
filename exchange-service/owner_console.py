@@ -34,7 +34,7 @@ class OwnerConsole:
                     order_status[str(row["status"])] = int(row["n"])
             wallet_assets = {}
             if self._table_exists(db, "wallet_ledger_entries"):
-                rows = db.execute("SELECT asset, account_code, direction, amount FROM wallet_ledger_entries ORDER BY id").fetchall()
+                rows = db.execute("SELECT asset, account_code, direction, amount FROM wallet_ledger_entries ORDER BY entry_id").fetchall()
                 for row in rows:
                     if row["account_code"] != "customer_available":
                         continue
