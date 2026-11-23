@@ -51,3 +51,23 @@ def test_finance_cannot_access_customer_order_details_but_owner_can(monkeypatch)
     allowed=client.get("/api/v1/owner/orders",headers=auth("owner-token-for-test-000000000000000000"))
     assert denied.status_code==403
     assert allowed.status_code==200
+
+
+def test_finance_role_can_read_financial_summary(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.OWNER_CONSOLE, "financial_summary", lambda days: {
+        "period_days": days,
+        "classification": "SIMULATED_PAPER_TRADING_ONLY_NOT_REAL_CUSTOMER_REVENUE_OR_CUSTODIED_ASSETS",
+    })
+    response = client.get(
+        "/api/v1/owner/finance/summary?days=14",
+        headers=auth("finance-token-for-test-00000000000000"),
+    )
+    assert response.status_code == 200
+    assert response.json()["period_days"] == 14
+
+def test_financial_summary_rejects_invalid_period_and_missing_auth(monkeypatch):
+    setup_roles(monkeypatch)
+    assert client.get("/api/v1/owner/finance/summary?days=0",
+        headers=auth("owner-token-for-test-000000000000000000")).status_code == 400
+    assert client.get("/api/v1/owner/finance/summary?days=30").status_code == 401
