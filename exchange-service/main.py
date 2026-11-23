@@ -30,7 +30,7 @@ from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
 from owner_console import OwnerConsole
 from audit_log import AuditLog
 from execution_reconciliation import ExecutionReconciliation
-from owner_access import OwnerAuthorizationError, require_owner_permission
+from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -2319,6 +2319,52 @@ async def owner_overview(authorization: str | None = Header(default=None)):
             partner_status=_owner_partner_status(), readiness=readiness
         )
     )
+
+
+@app.get("/api/v1/owner/control-center")
+async def owner_control_center(authorization: str | None = Header(default=None)):
+    """Owner-only read-only control plane summary; exposes no secrets or write actions."""
+    role = require_owner_permission_for("overview", authorization)
+    if role != "owner":
+        raise HTTPException(403, "The Owner Master Control Center is restricted to the Owner role.")
+    checks = await run_in_threadpool(_readiness_checks)
+    partner = _owner_partner_status()
+    audit = await run_in_threadpool(AUDIT_LOG.verify_chain)
+    return {
+        "mode": "OWNER_MASTER_CONTROL_READ_ONLY",
+        "generated_at": int(time.time()),
+        "current_role": role,
+        "role_permissions": {
+            name: sorted(permissions) for name, permissions in ROLE_PERMISSIONS.items()
+        },
+        "platform_posture": {
+            "live_trading_enabled": bool(LIVE_TRADING_ENABLED),
+            "customer_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED),
+            "sandbox_mode": bool(SANDBOX),
+            "deposits_enabled": bool(WALLET_DEPOSITS_ENABLED),
+            "withdrawals_enabled": bool(WALLET_WITHDRAWALS_ENABLED),
+            "custody_provider_configured": bool(WALLET_CUSTODY_PROVIDER),
+            "partner_selected": bool(partner.get("provider")),
+            "partner_api_documentation_received": bool(partner.get("partner_api_documentation_received")),
+        },
+        "module_status": {
+            "exchange_operations": "read_only",
+            "customer_accounts": "read_only",
+            "asset_ledger": "read_only",
+            "risk_and_compliance": "read_only",
+            "security_operations": "read_only",
+            "system_configuration": "view_only",
+        },
+        "release_readiness": {"ready": all(checks.values()), "checks": checks},
+        "audit_integrity": audit,
+        "available_control_actions": [],
+        "write_actions_enabled": False,
+        "limitations": [
+            "This endpoint is an operational overview, not a production approval or regulatory certification.",
+            "No staff, customer, trading, custody, deposit, withdrawal or system configuration mutations are exposed.",
+            "Role permissions shown here are application authorization scopes; production identity governance and MFA enforcement require separate deployment controls.",
+        ],
+    }
 
 
 @app.get("/api/v1/owner/orders")
