@@ -39,6 +39,30 @@ class OwnerConsoleTests(unittest.TestCase):
             db.execute("UPDATE wallet_ledger_entries SET amount='9' WHERE account_code='clearing'")
         self.assertEqual(self.console.ledger_integrity()["issues"][0]["reason"],"unbalanced")
 
+    def test_risk_alerts_report_pending_orders_and_failed_readiness(self):
+        report = self.console.risk_alerts(
+            readiness={"ready": False, "checks": {"database": True, "provider": False}},
+            reconciliation={"mismatched_orders": 0, "unmatched_provider_orders": 0},
+        )
+        self.assertEqual(report["risk_level"], "high")
+        by_id = {alert["id"]: alert for alert in report["alerts"]}
+        self.assertEqual(by_id["customer_orders_pending_reconciliation"]["evidence"]["count"], 1)
+        self.assertEqual(by_id["platform_readiness_failed"]["evidence"]["failed_checks"], ["provider"])
+        self.assertIn("No login-attempt", " ".join(report["limitations"]))
+
+    def test_risk_alerts_escalate_ledger_and_execution_mismatches(self):
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE wallet_ledger_entries SET amount='9' WHERE account_code='clearing'")
+        report = self.console.risk_alerts(
+            readiness={"ready": True, "checks": {"database": True}},
+            reconciliation={"mismatched_orders": 2, "unmatched_provider_orders": 1},
+        )
+        self.assertEqual(report["risk_level"], "critical")
+        by_id = {alert["id"]: alert for alert in report["alerts"]}
+        self.assertEqual(by_id["ledger_integrity_issues"]["severity"], "critical")
+        self.assertEqual(by_id["execution_reconciliation_mismatch"]["evidence"]["mismatched_orders"], 2)
+        self.assertIn("unmatched_provider_executions", by_id)
+
     def test_financial_summary_reports_only_simulated_fees_and_volume(self):
         import time
         now_ns = time.time_ns()
