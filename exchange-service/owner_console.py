@@ -150,16 +150,19 @@ class OwnerConsole:
         with self._connect() as db:
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if "ledger_transactions" in tables and "ledger_entries" in tables:
+                for row in db.execute(
+                    "SELECT kind, COUNT(*) AS n FROM ledger_transactions WHERE created_at >= ? GROUP BY kind",
+                    (cutoff_ns,),
+                ):
+                    transaction_kinds[str(row["kind"])] = int(row["n"])
                 rows = db.execute("""
-                    SELECT t.kind, t.created_at, e.account_code, e.asset, e.debit, e.credit
+                    SELECT t.created_at, e.account_code, e.asset, e.debit, e.credit
                     FROM ledger_transactions t
                     JOIN ledger_entries e ON e.transaction_id=t.id
                     WHERE t.created_at >= ?
                     ORDER BY t.created_at
                 """, (cutoff_ns,)).fetchall()
                 for row in rows:
-                    kind = str(row["kind"])
-                    transaction_kinds[kind] = transaction_kinds.get(kind, 0) + 1
                     if row["account_code"] == "platform:fees":
                         amount = Decimal(str(row["credit"])) - Decimal(str(row["debit"]))
                         if amount:
