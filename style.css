@@ -917,3 +917,12 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
  .zc-owner-console .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .zc-owner-console .zc-account-panel,.zc-owner-console .zc-wallet-card{padding:13px}
 }
+
+
+/* V54.2 Financial Center — clearly separated simulated finance reporting. */
+.zc-owner-console .zc-finance-center{display:grid;gap:14px}
+.zc-owner-console .zc-finance-center .zc-home-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.zc-owner-console .zc-finance-center .zc-home-status-card{background:#0f141a;border:1px solid #303844;border-radius:8px;padding:13px;min-width:0}
+.zc-owner-console .zc-finance-center .zc-home-status-card strong{font-size:18px;line-height:1.45;overflow-wrap:anywhere}
+.zc-owner-console .zc-finance-center .tablewrap{max-width:100%;overflow:auto}
+@media(max-width:760px){.zc-owner-console .zc-finance-center .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
