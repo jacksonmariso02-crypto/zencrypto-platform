@@ -28,6 +28,7 @@ from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
 from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
 from owner_console import OwnerConsole
+from audit_log import AuditLog
 from execution_reconciliation import ExecutionReconciliation
 from owner_access import OwnerAuthorizationError, require_owner_permission
 
@@ -73,6 +74,7 @@ PAPER_ENGINE = PaperMatchingEngine(
 )
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
 OWNER_CONSOLE = OwnerConsole(PAPER_ENGINE_DB_PATH)
+AUDIT_LOG = AuditLog(PAPER_ENGINE_DB_PATH)
 EXECUTION_RECONCILIATION = ExecutionReconciliation(PAPER_ENGINE_DB_PATH)
 PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
     0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
@@ -1279,11 +1281,25 @@ def require_admin(authorization: str | None):
 
 def require_owner_permission_for(permission: str, authorization: str | None):
     try:
-        return require_owner_permission(authorization, permission, OWNER_ROLE_TOKENS)
+        role = require_owner_permission(authorization, permission, OWNER_ROLE_TOKENS)
+        AUDIT_LOG.append(
+            actor_role=role, action="owner_console.read",
+            resource=permission, outcome="success",
+        )
+        return role
     except OwnerAuthorizationError as exc:
+        try:
+            AUDIT_LOG.append(
+                actor_role="unknown", action="owner_console.access_denied",
+                resource=permission, outcome="denied",
+            )
+        except Exception:
+            pass
         raise HTTPException(401 if "Unauthorized" in str(exc) or "required" in str(exc) else 403, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Audit log unavailable; Owner Console access is temporarily blocked.") from exc
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -2289,6 +2305,35 @@ async def owner_execution_reconciliation(
     if not 1 <= limit <= 1000:
         raise HTTPException(400, "limit must be between 1 and 1000.")
     return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
+
+
+@app.get("/api/v1/owner/audit/events")
+async def owner_audit_events(
+    limit: int = 100,
+    before_sequence: int | None = None,
+    action: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only paginated administrative audit events for Owner and Compliance."""
+    require_owner_permission_for("audit", authorization)
+    if not 1 <= limit <= 250:
+        raise HTTPException(400, "limit must be between 1 and 250.")
+    if before_sequence is not None and before_sequence < 1:
+        raise HTTPException(400, "before_sequence must be positive.")
+    if action is not None and len(action) > 96:
+        raise HTTPException(400, "action filter is too long.")
+    return await run_in_threadpool(
+        lambda: AUDIT_LOG.list_events(limit=limit, before_sequence=before_sequence, action=action)
+    )
+
+
+@app.get("/api/v1/owner/audit/verify")
+async def owner_audit_verify(
+    authorization: str | None = Header(default=None),
+):
+    """Verify the append-only audit event hash chain."""
+    require_owner_permission_for("audit", authorization)
+    return await run_in_threadpool(AUDIT_LOG.verify_chain)
 
 
 @app.get("/api/v1/owner/risk/alerts")
