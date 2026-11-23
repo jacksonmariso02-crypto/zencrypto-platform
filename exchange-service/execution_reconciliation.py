@@ -7,6 +7,7 @@ import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from contextlib import closing
 from typing import Any
 
 
@@ -36,7 +37,7 @@ class ExecutionReconciliation:
         self.database_path = str(database_path)
         if self.database_path != ":memory:":
             Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             db.execute("""
                 CREATE TABLE IF NOT EXISTS partner_execution_events (
                     provider TEXT NOT NULL,
@@ -187,8 +188,17 @@ class ExecutionReconciliation:
                     })
                     continue
                 row, payload = local
-                local_filled = _decimal(payload.get("filled", "0"), "local filled", allow_zero=True)
-                local_cost = _decimal(payload.get("cost", "0"), "local cost", allow_zero=True)
+                try:
+                    local_filled = _decimal(payload.get("filled") or "0", "local filled", allow_zero=True)
+                    local_cost = _decimal(payload.get("cost") if payload.get("cost") is not None else "0", "local cost", allow_zero=True)
+                except ValueError:
+                    matched.append({
+                        "customer_reference": str(row["user_id"]),
+                        "idempotency_key": row["idempotency_key"],
+                        "provider": item["provider"], "partner_order_id": item["partner_order_id"],
+                        "status": "local_order_data_invalid",
+                    })
+                    continue
                 quantity_delta = item["filled_quantity"] - local_filled
                 cost_delta = item["gross_value"] - local_cost
                 status = "matched"
