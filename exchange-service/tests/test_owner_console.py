@@ -42,7 +42,7 @@ class OwnerConsoleTests(unittest.TestCase):
     def test_financial_summary_reports_only_simulated_fees_and_volume(self):
         import time
         now_ns = time.time_ns()
-        now_s = int(time.time())
+        now_s = time.time_ns()
         with sqlite3.connect(self.db_path) as db:
             db.executescript("""
             CREATE TABLE ledger_transactions(id TEXT PRIMARY KEY,idempotency_key TEXT,kind TEXT,memo TEXT,created_at INTEGER);
