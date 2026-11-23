@@ -40,3 +40,27 @@ class OwnerConsoleTests(unittest.TestCase):
         self.assertEqual(self.console.ledger_integrity()["issues"][0]["reason"],"unbalanced")
 
 if __name__=="__main__": unittest.main()
+
+
+    def test_financial_summary_reports_only_simulated_fees_and_volume(self):
+        import time
+        now_ns = time.time_ns()
+        now_s = int(time.time())
+        with sqlite3.connect(self.db_path) as db:
+            db.executescript("""
+            CREATE TABLE ledger_transactions(id TEXT PRIMARY KEY,idempotency_key TEXT,kind TEXT,memo TEXT,created_at INTEGER);
+            CREATE TABLE ledger_entries(id INTEGER PRIMARY KEY,transaction_id TEXT,account_code TEXT,asset TEXT,debit TEXT,credit TEXT);
+            CREATE TABLE paper_trades(id INTEGER PRIMARY KEY,symbol TEXT,price TEXT,quantity TEXT,created_at INTEGER);
+            """)
+            db.execute("INSERT INTO ledger_transactions VALUES('tx1','key-12345678','paper_trade_settlement','simulated',?)",(now_ns,))
+            db.execute("INSERT INTO ledger_entries(transaction_id,account_code,asset,debit,credit) VALUES('tx1','platform:fees','USDT','0','1.25')")
+            db.execute("INSERT INTO paper_trades(symbol,price,quantity,created_at) VALUES('BTC/USDT','50000','0.01',?)",(now_s,))
+            result = self.console.financial_summary(30)
+        self.assertEqual(result["paper_trade_count"],1)
+        self.assertEqual(result["paper_volume_by_quote_asset"]["USDT"],"500.00")
+        self.assertEqual(result["simulated_fee_revenue_by_asset"]["USDT"],"1.25")
+        self.assertEqual(result["classification"],"SIMULATED_PAPER_TRADING_ONLY_NOT_REAL_CUSTOMER_REVENUE_OR_CUSTODIED_ASSETS")
+
+    def test_financial_summary_bounds_period(self):
+        result = self.console.financial_summary(999)
+        self.assertEqual(result["period_days"],90)
