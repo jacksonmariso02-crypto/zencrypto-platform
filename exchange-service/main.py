@@ -28,6 +28,7 @@ from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
 from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
 from owner_console import OwnerConsole
+from execution_reconciliation import ExecutionReconciliation
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -65,6 +66,7 @@ PAPER_ENGINE = PaperMatchingEngine(
 )
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
 OWNER_CONSOLE = OwnerConsole(PAPER_ENGINE_DB_PATH)
+EXECUTION_RECONCILIATION = ExecutionReconciliation(PAPER_ENGINE_DB_PATH)
 PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
     0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
 )
@@ -2258,3 +2260,15 @@ async def owner_wallet_ledger_integrity(
     """Read-only global integrity scan of the internal wallet ledger."""
     require_admin(authorization)
     return await run_in_threadpool(OWNER_CONSOLE.ledger_integrity)
+
+
+@app.get("/api/v1/owner/executions/reconciliation")
+async def owner_execution_reconciliation(
+    limit: int = 250,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only comparison of normalized partner fills against local order snapshots."""
+    require_admin(authorization)
+    if not 1 <= limit <= 1000:
+        raise HTTPException(400, "limit must be between 1 and 1000.")
+    return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
