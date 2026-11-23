@@ -2434,7 +2434,7 @@ async def owner_system_configuration(authorization: str | None = Header(default=
             "owner_token_configured": bool(OWNER_ROLE_TOKENS.get("owner")),
             "finance_token_configured": bool(OWNER_ROLE_TOKENS.get("finance")),
             "compliance_token_configured": bool(OWNER_ROLE_TOKENS.get("compliance")),
-            "execution_partner_configured": bool(EXCHANGE_API_KEY and API_SECRET),
+            "execution_partner_configured": bool(API_KEY and API_SECRET),
             "custody_provider_configured": bool(WALLET_CUSTODY_PROVIDER),
             "custody_webhook_secret_configured": bool(BITGO_WEBHOOK_SECRET),
         },
