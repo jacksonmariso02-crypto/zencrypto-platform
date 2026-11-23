@@ -116,3 +116,28 @@ def test_audit_event_endpoint_validates_pagination(monkeypatch):
         headers=auth("owner-token-for-test-000000000000000000"),
     ).status_code == 400
 
+
+
+def test_security_overview_is_owner_and_compliance_only(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    monkeypatch.setattr(main.AUDIT_LOG, "security_summary", lambda **kwargs: {
+        "mode": "OBSERVED_SECURITY_TELEMETRY", "login_failures": 2,
+        "login_successes": 4, "recent_events": [],
+    })
+    owner = client.get("/api/v1/owner/security/overview", headers=auth("owner-token-for-test-000000000000000000"))
+    compliance = client.get("/api/v1/owner/security/overview", headers=auth("compliance-token-for-test-000000000000"))
+    finance = client.get("/api/v1/owner/security/overview", headers=auth("finance-token-for-test-00000000000000"))
+    assert owner.status_code == 200
+    assert compliance.status_code == 200
+    assert finance.status_code == 403
+
+
+def test_security_overview_validates_window_and_limit(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    assert client.get(
+        "/api/v1/owner/security/overview?hours=200",
+        headers=auth("owner-token-for-test-000000000000000000"),
+    ).status_code == 400
+
