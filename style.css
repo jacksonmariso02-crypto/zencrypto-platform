@@ -940,3 +940,13 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-owner-console .zc-risk-alert small{color:#8d9aaa;overflow-wrap:anywhere}
 .zc-owner-console .zc-status-danger{color:#ff7777}
 @media(max-width:760px){.zc-owner-console .zc-risk-center .zc-home-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.zc-owner-console .zc-risk-alert-head{align-items:flex-start;flex-direction:column}}
+
+
+/* V54.4 Audit & Compliance Center */
+.zc-owner-console .zc-audit-center{display:grid;gap:14px}
+.zc-owner-console .zc-audit-center .zc-home-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.zc-owner-console .zc-audit-center .zc-home-status-card{background:#0f141a;border:1px solid #303844;border-radius:8px;padding:13px;min-width:0}
+.zc-owner-console .zc-audit-center .zc-home-status-card strong{font-size:20px}
+.zc-owner-console .zc-audit-center .tablewrap{overflow-x:auto}
+.zc-owner-console .zc-audit-center table{min-width:760px}
+@media(max-width:760px){.zc-owner-console .zc-audit-center .zc-home-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
