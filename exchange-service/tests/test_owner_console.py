@@ -11,7 +11,7 @@ class OwnerConsoleTests(unittest.TestCase):
             CREATE TABLE customer_order_requests(user_id TEXT,idempotency_key TEXT,exchange_client_order_id TEXT,status TEXT,response_json TEXT,created_at INTEGER,updated_at INTEGER);
             CREATE TABLE customer_exchange_connections(user_id TEXT,status TEXT);
             CREATE TABLE wallet_journals(journal_id TEXT,user_id TEXT,asset TEXT,event_type TEXT,status TEXT,idempotency_key TEXT,provider_reference TEXT,created_at INTEGER);
-            CREATE TABLE wallet_ledger_entries(id INTEGER PRIMARY KEY,journal_id TEXT,user_id TEXT,asset TEXT,account_code TEXT,direction TEXT,amount TEXT,created_at INTEGER);
+            CREATE TABLE wallet_ledger_entries(entry_id INTEGER PRIMARY KEY,journal_id TEXT,user_id TEXT,asset TEXT,account_code TEXT,direction TEXT,amount TEXT,created_at INTEGER);
             CREATE TABLE paper_orders(id TEXT); CREATE TABLE paper_trades(id TEXT); CREATE TABLE paper_accounts(id TEXT);
             INSERT INTO customer_order_requests VALUES('u1','idem-1','client-1','UNKNOWN',NULL,100,110);
             INSERT INTO customer_exchange_connections VALUES('u1','connected');
