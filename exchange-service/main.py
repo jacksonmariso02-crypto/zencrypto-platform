@@ -2354,6 +2354,23 @@ async def owner_execution_reconciliation(
     return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
 
 
+@app.get("/api/v1/owner/security/overview")
+async def owner_security_overview(
+    hours: int = 24,
+    limit: int = 50,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only security operations summary for Owner and Compliance."""
+    require_owner_permission_for("security", authorization)
+    if not 1 <= hours <= 168:
+        raise HTTPException(400, "hours must be between 1 and 168.")
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 1 and 100.")
+    return await run_in_threadpool(
+        lambda: AUDIT_LOG.security_summary(hours=hours, limit=limit)
+    )
+
+
 @app.get("/api/v1/owner/audit/events")
 async def owner_audit_events(
     limit: int = 100,
