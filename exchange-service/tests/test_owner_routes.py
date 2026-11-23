@@ -89,3 +89,30 @@ def test_risk_alerts_are_available_to_owner_and_compliance_only(monkeypatch):
     assert compliance.status_code == 200
     assert finance.status_code == 403
 
+
+
+def test_audit_endpoints_are_available_to_owner_and_compliance_only(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    monkeypatch.setattr(main.AUDIT_LOG, "list_events", lambda **kwargs: {
+        "mode": "READ_ONLY_APPEND_ONLY_AUDIT_LOG", "count": 0, "events": [],
+    })
+    monkeypatch.setattr(main.AUDIT_LOG, "verify_chain", lambda: {
+        "healthy": True, "events_checked": 0, "issue_count": 0,
+    })
+    owner = client.get("/api/v1/owner/audit/events", headers=auth("owner-token-for-test-000000000000000000"))
+    compliance = client.get("/api/v1/owner/audit/verify", headers=auth("compliance-token-for-test-000000000000"))
+    finance = client.get("/api/v1/owner/audit/events", headers=auth("finance-token-for-test-00000000000000"))
+    assert owner.status_code == 200
+    assert compliance.status_code == 200
+    assert finance.status_code == 403
+
+
+def test_audit_event_endpoint_validates_pagination(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    assert client.get(
+        "/api/v1/owner/audit/events?limit=0",
+        headers=auth("owner-token-for-test-000000000000000000"),
+    ).status_code == 400
+
