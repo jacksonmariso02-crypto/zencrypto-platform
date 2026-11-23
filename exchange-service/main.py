@@ -2289,3 +2289,15 @@ async def owner_execution_reconciliation(
     if not 1 <= limit <= 1000:
         raise HTTPException(400, "limit must be between 1 and 1000.")
     return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
+
+
+@app.get("/api/v1/owner/finance/summary")
+async def owner_financial_summary(
+    days: int = 30,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only simulated paper trading finance summary; never represents live customer revenue."""
+    require_owner_permission_for("ledger", authorization)
+    if not 1 <= days <= 90:
+        raise HTTPException(400, "days must be between 1 and 90.")
+    return await run_in_threadpool(OWNER_CONSOLE.financial_summary, days)
