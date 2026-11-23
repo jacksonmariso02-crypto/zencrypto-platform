@@ -151,7 +151,7 @@ class OwnerConsole:
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if "ledger_transactions" in tables and "ledger_entries" in tables:
                 rows = db.execute("""
-                    SELECT t.kind, t.created_at, e.asset, e.debit, e.credit
+                    SELECT t.kind, t.created_at, e.account_code, e.asset, e.debit, e.credit
                     FROM ledger_transactions t
                     JOIN ledger_entries e ON e.transaction_id=t.id
                     WHERE t.created_at >= ?
