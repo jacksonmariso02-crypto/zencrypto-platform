@@ -174,7 +174,7 @@ class OwnerConsole:
                 if needed.issubset(columns):
                     rows = db.execute(
                         "SELECT symbol, price, quantity, created_at FROM paper_trades WHERE created_at >= ? ORDER BY created_at",
-                        (cutoff_seconds,),
+                        (cutoff_ns,),
                     ).fetchall()
                     trade_count = len(rows)
                     for row in rows:
