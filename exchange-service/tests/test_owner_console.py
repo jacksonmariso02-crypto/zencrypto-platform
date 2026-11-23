@@ -39,9 +39,6 @@ class OwnerConsoleTests(unittest.TestCase):
             db.execute("UPDATE wallet_ledger_entries SET amount='9' WHERE account_code='clearing'")
         self.assertEqual(self.console.ledger_integrity()["issues"][0]["reason"],"unbalanced")
 
-if __name__=="__main__": unittest.main()
-
-
     def test_financial_summary_reports_only_simulated_fees_and_volume(self):
         import time
         now_ns = time.time_ns()
@@ -64,3 +61,8 @@ if __name__=="__main__": unittest.main()
     def test_financial_summary_bounds_period(self):
         result = self.console.financial_summary(999)
         self.assertEqual(result["period_days"],90)
+
+
+if __name__=="__main__": unittest.main()
+
+
