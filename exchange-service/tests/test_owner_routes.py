@@ -71,3 +71,21 @@ def test_financial_summary_rejects_invalid_period_and_missing_auth(monkeypatch):
     assert client.get("/api/v1/owner/finance/summary?days=0",
         headers=auth("owner-token-for-test-000000000000000000")).status_code == 400
     assert client.get("/api/v1/owner/finance/summary?days=30").status_code == 401
+
+
+def test_risk_alerts_are_available_to_owner_and_compliance_only(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main, "_readiness_checks", lambda: {"database": True})
+    monkeypatch.setattr(main.EXECUTION_RECONCILIATION, "reconciliation_report", lambda limit: {
+        "mismatched_orders": 0, "unmatched_provider_orders": 0,
+    })
+    monkeypatch.setattr(main.OWNER_CONSOLE, "risk_alerts", lambda **kwargs: {
+        "mode": "READ_ONLY_RISK_ALERTS", "alert_count": 0,
+    })
+    owner = client.get("/api/v1/owner/risk/alerts", headers=auth("owner-token-for-test-000000000000000000"))
+    compliance = client.get("/api/v1/owner/risk/alerts", headers=auth("compliance-token-for-test-000000000000"))
+    finance = client.get("/api/v1/owner/risk/alerts", headers=auth("finance-token-for-test-00000000000000"))
+    assert owner.status_code == 200
+    assert compliance.status_code == 200
+    assert finance.status_code == 403
+
