@@ -444,11 +444,11 @@ function App(){
  <div className="zc-account-heading"><div><div className="zc-eyebrow">PRIVATE PLATFORM OPERATIONS</div><h2>Owner Master Console</h2><p>Read-only operational, financial-integrity and execution-reconciliation reports. This is not a custodian balance statement.</p></div><span className="zc-account-provider">SERVER AUTHORIZED</span></div>
  <section className="zc-account-panel zc-owner-access"><h3>Secure administrator access</h3>
   <div className="backtest-controls">
-   <label>Role<select value={ownerRole} onChange={e=>{setOwnerRole(e.target.value);setOwnerData(null);setOwnerOrders(null);setOwnerLedger(null);setOwnerReconciliation(null);}}><option value="owner">Owner</option><option value="finance">Finance</option><option value="compliance">Compliance</option></select></label>
+   <label>Expected access profile (server validates token)<select value={ownerRole} onChange={e=>{setOwnerRole(e.target.value);setOwnerData(null);setOwnerOrders(null);setOwnerLedger(null);setOwnerReconciliation(null);}}><option value="owner">Owner</option><option value="finance">Finance</option><option value="compliance">Compliance</option></select></label>
    <label>Server-issued role token<input type="password" autoComplete="off" spellCheck="false" value={ownerSecret} onChange={e=>setOwnerSecret(e.target.value)} placeholder="Paste token from secure secret manager"/></label>
    <button type="button" className="zc-btn zc-btn-primary" onClick={loadOwnerConsole} disabled={ownerBusy||!ownerSecret.trim()||!EXCHANGE_API}>{ownerBusy?"Loading secure reports…":"Authenticate & load reports"}</button>
   </div>
-  <p className="fine">Token is held in this page's memory only and is not saved to local storage or sent to the public platform API. Clear it when finished or close this page. The backend remains the authority for role permissions.</p>
+  <p className="fine">Token is held in this page's memory only and is not saved to local storage or sent to the public platform API. The profile selector is informational; the server determines the actual role from the token. Clear it when finished or close this page.</p>
   {ownerError&&<div className="zc-account-message zc-preview-error" role="alert">{ownerError}</div>}
   {ownerLoadedAt&&<p className="fine">Last successful overview: {new Date(ownerLoadedAt).toLocaleString()} · Role: {ownerRole.toUpperCase()}</p>}
  </section>
