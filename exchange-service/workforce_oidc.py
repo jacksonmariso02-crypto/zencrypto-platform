@@ -107,7 +107,10 @@ def verify_workforce_token(token, config, *, now=None, required_nonce=None):
         raise WorkforceIdentityError("Invalid identity audience.")
     if isinstance(audience, list) and len(audience) > 1 and claims.get("azp") != config.audience:
         raise WorkforceIdentityError("Unverified authorized party.")
-    if required_nonce is not None:\n        if not isinstance(required_nonce, str) or not isinstance(claims.get("nonce"), str) or not hmac.compare_digest(claims["nonce"], required_nonce):\n            raise WorkforceIdentityError("Invalid OIDC nonce.")\n    sub = claims.get("sub")
+    if required_nonce is not None:
+        if not isinstance(required_nonce, str) or not isinstance(claims.get("nonce"), str) or not hmac.compare_digest(claims["nonce"], required_nonce):
+            raise WorkforceIdentityError("Invalid OIDC nonce.")
+    sub = claims.get("sub")
     if not isinstance(sub, str) or not 1 <= len(sub) <= 256:
         raise WorkforceIdentityError("Invalid workforce subject.")
     exp, iat = claims.get("exp"), claims.get("iat")
