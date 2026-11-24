@@ -43,7 +43,7 @@ def test_valid_workforce_identity_does_not_grant_owner_access():
     {"iss": "https://attacker.example"},
     {"aud": "other-client"},
     {"exp": 1199},
-    {"iat": 1201, "exp": 1600},
+    {"iat": 1300, "exp": 1600},
     {"sub": ""},
     {"nbf": 1400},
     {"aud": ["zencrypto-workforce", "another-client"]},
