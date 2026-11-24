@@ -32,7 +32,7 @@ async def test_code_exchange_verifies_nonce_and_never_issues_session():
     result = await exchange_authorization_code(
         code="short-lived-code", transaction=transaction(),
         token_endpoint="https://id.example.test/token", oidc_config=config,
-        client_secret="long-confidential-secret", http_client=client,
+        client_secret="long-confidential-secret", http_client=client, now=1200,
     )
     assert result["identity"]["cryptographic_identity_verified"] is True
     assert result["session_issued"] is False
@@ -50,7 +50,7 @@ async def test_code_exchange_rejects_nonce_mismatch():
             code="short-lived-code", transaction=transaction(),
             token_endpoint="https://id.example.test/token", oidc_config=config,
             client_secret="long-confidential-secret",
-            http_client=FakeClient(httpx.Response(200, json={"id_token": token})),
+            http_client=FakeClient(httpx.Response(200, json={"id_token": token})), now=1200,
         )
 
 
