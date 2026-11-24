@@ -23,7 +23,7 @@ def validate_token_endpoint(endpoint, issuer):
 
 async def exchange_authorization_code(
     *, code, transaction, token_endpoint, oidc_config, client_secret,
-    http_client=None,
+    http_client=None, now=None,
 ):
     """Back-channel confidential-client code exchange, returning identity inspection only."""
     if not isinstance(code, str) or not 1 <= len(code) <= 2048:
@@ -61,7 +61,7 @@ async def exchange_authorization_code(
         raise WorkforceIdentityError("OIDC code exchange failed.") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("id_token"), str):
         raise WorkforceIdentityError("OIDC token response missing ID token.")
-    result = verify_workforce_token(payload["id_token"], oidc_config, required_nonce=transaction["nonce"])
+    result = verify_workforce_token(payload["id_token"], oidc_config, required_nonce=transaction["nonce"], now=now)
     return {
         "identity": result,
         "session_issued": False,
