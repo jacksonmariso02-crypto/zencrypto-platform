@@ -251,3 +251,22 @@ def test_owner_change_requests_create_and_list_without_execution(monkeypatch, tm
         json={**payload, "request_type": "enable_live_trading"},
     ).status_code == 422
 
+
+def test_review_policy_is_owner_only_and_fail_closed(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    owner = client.get("/api/v1/owner/review-policy", headers=auth("owner-token-for-test-000000000000000000"))
+    assert owner.status_code == 200
+    body = owner.json()
+    assert body["execution_enabled"] is False
+    assert body["independent_approval_available"] is False
+    assert len(body["categories"]) == 5
+    assert all(not entry["approval_granted"] for entry in body["categories"].values())
+    assert client.get(
+        "/api/v1/owner/review-policy",
+        headers=auth("compliance-token-for-test-000000000000"),
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/owner/review-policy",
+        headers=auth("finance-token-for-test-00000000000000"),
+    ).status_code == 403
