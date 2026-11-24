@@ -270,3 +270,16 @@ def test_review_policy_is_owner_only_and_fail_closed(monkeypatch):
         "/api/v1/owner/review-policy",
         headers=auth("finance-token-for-test-00000000000000"),
     ).status_code == 403
+
+def test_owner_identity_preflight_is_owner_only_and_never_authorizes(monkeypatch):
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    owner = client.get("/api/v1/owner/identity-preflight", headers=auth("owner-token-for-test-000000000000000000"))
+    assert owner.status_code == 200
+    data = owner.json()
+    assert data["production_ready"] is False
+    assert data["execution_authorized"] is False
+    assert data["dual_approval_supported"] is False
+    assert data["verified_controls"] == 0
+    for token in ("finance-token-for-test-00000000000000", "compliance-token-for-test-000000000000"):
+        assert client.get("/api/v1/owner/identity-preflight", headers=auth(token)).status_code == 403
