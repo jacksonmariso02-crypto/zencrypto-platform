@@ -14,7 +14,7 @@ def test_identity_preflight_fails_closed_even_with_all_role_tokens():
     assert all(not role["individual_identity_verified"] for role in result["roles"].values())
     assert all(not role["mfa_verified"] for role in result["roles"].values())
     assert all(not control["verified"] for control in result["controls"])
-    assert "configured" not in str(result["warnings"])
+    assert "configured" not in str(result["controls"])
 
 
 def test_identity_preflight_detects_unsafe_flags_without_authorizing():
