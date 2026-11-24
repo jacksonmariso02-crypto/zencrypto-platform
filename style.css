@@ -978,3 +978,14 @@ footer{color:#626b77;border-top:1px solid #242a31;margin-top:24px}
 .zc-owner-console .zc-admin-registry table{min-width:720px}
 .zc-owner-console .zc-admin-registry h4{margin:8px 0 0}
 @media(max-width:760px){.zc-owner-console .zc-admin-registry .zc-home-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* V54.8 Owner proposal-only registry */
+.zc-owner-console .zc-owner-proposals{display:grid;gap:14px}
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields{display:grid;gap:10px;max-width:720px}
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields label{display:grid;gap:5px;font-size:13px}
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields input,
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields select,
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields textarea{width:100%;min-width:0;background:#101820;color:inherit;border:1px solid #3a4450;border-radius:8px;padding:10px;font:inherit}
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields button{width:max-content;max-width:100%;padding:10px 15px;border-radius:8px}
+.zc-owner-console .zc-owner-proposals .zc-proposal-fields button:disabled{opacity:.45;cursor:not-allowed}
