@@ -116,7 +116,7 @@ function StrategyBacktest({candles,symbol,timeframe}){
 
 function App(){
  const[lang,setLang]=useState("en"),[tab,setTab]=useState("dashboard"),[mobile,setMobile]=useState(false),[token,setToken]=useState(localStorage.getItem("zencrypto_token")||""),[user,setUser]=useState(null),[exchangeConnection,setExchangeConnection]=useState(null),[exchangeConnectionLoading,setExchangeConnectionLoading]=useState(false),[exchangeApiKey,setExchangeApiKey]=useState(""),[exchangeApiSecret,setExchangeApiSecret]=useState(""),[exchangeConnectBusy,setExchangeConnectBusy]=useState(false),[exchangeConnectMessage,setExchangeConnectMessage]=useState(""),[exchangeBalances,setExchangeBalances]=useState([]),[exchangeBalancesLoading,setExchangeBalancesLoading]=useState(false),[walletSummary,setWalletSummary]=useState(null),[walletLoading,setWalletLoading]=useState(false),[walletMessage,setWalletMessage]=useState(""),[authOpen,setAuthOpen]=useState(false),[authMode,setAuthMode]=useState("login"),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[authMessage,setAuthMessage]=useState(""),[authBusy,setAuthBusy]=useState(false),[authChecking,setAuthChecking]=useState(Boolean(localStorage.getItem("zencrypto_token"))),[markets,setMarkets]=useState(SEED),[tickerStatus,setTickerStatus]=useState("connecting"),[tickerUpdatedAt,setTickerUpdatedAt]=useState(null),[exchangeStatus,setExchangeStatus]=useState(null),[exchangeStatusLoading,setExchangeStatusLoading]=useState(true),[exchangeStatusError,setExchangeStatusError]=useState(""),[symbol,setSymbol]=useState("BTC"),[marketInfo,setMarketInfo]=useState(null),[marketInfoStatus,setMarketInfoStatus]=useState("unconfigured"),[timeframe,setTimeframe]=useState("1h"),[candles,setCandles]=useState([]),[chartRefresh,setChartRefresh]=useState(0),[chartLoading,setChartLoading]=useState(false),[chartError,setChartError]=useState(""),[side,setSide]=useState("buy"),[amount,setAmount]=useState("100"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[balances,setBalances]=useState([]),[orders,setOrders]=useState([]),[limitOrders,setLimitOrders]=useState([]),[limitTrades,setLimitTrades]=useState([]),[paperBook,setPaperBook]=useState({bids:[],asks:[]}),[paperBookUpdatedAt,setPaperBookUpdatedAt]=useState(null),[limitQty,setLimitQty]=useState("0.001"),[limitPrice,setLimitPrice]=useState(""),[limitBusy,setLimitBusy]=useState(false),[limitError,setLimitError]=useState(""),[tradeSummary,setTradeSummary]=useState(null),[orderOffset,setOrderOffset]=useState(0),[orderTotal,setOrderTotal]=useState(0),[orderSideFilter,setOrderSideFilter]=useState(""),[orderSymbolFilter,setOrderSymbolFilter]=useState(""),[orderStatusFilter,setOrderStatusFilter]=useState(""),[orderLoading,setOrderLoading]=useState(false),[orderExporting,setOrderExporting]=useState(false),[ledger,setLedger]=useState([]),[ledgerTotal,setLedgerTotal]=useState(0),[ledgerOffset,setLedgerOffset]=useState(0),[ledgerCurrency,setLedgerCurrency]=useState(""),[ledgerLoading,setLedgerLoading]=useState(false),[ledgerError,setLedgerError]=useState(""),[search,setSearch]=useState(""),[orderBook,setOrderBook]=useState(null),[recentTrades,setRecentTrades]=useState([]),[depthError,setDepthError]=useState(""),[depthUpdated,setDepthUpdated]=useState(null),[riskPercent,setRiskPercent]=useState("1"),[stopPrice,setStopPrice]=useState(""),[targetPrice,setTargetPrice]=useState(""),[customerOrderSide,setPreviewSide]=useState("buy"),[customerOrderType,setPreviewType]=useState("market"),[orderPreviewQty,setOrderPreviewQty]=useState("0.001"),[customerOrderPrice,setPreviewPrice]=useState(""),[customerOrderBusy,setPreviewBusy]=useState(false),[customerOrderResult,setPreviewResult]=useState(null),[customerOrderError,setPreviewError]=useState(""),[customerOrders,setCustomerOrders]=useState([]),[customerOrdersLoading,setCustomerOrdersLoading]=useState(false),[customerOrderActionId,setCustomerOrderActionId]=useState(""),[customerOrderSubmitBusy,setCustomerOrderSubmitBusy]=useState(false),[customerOrderSubmitResult,setCustomerOrderSubmitResult]=useState(null),[customerOrderIdempotencyKey,setCustomerOrderIdempotencyKey]=useState("");
- const [ownerRole,setOwnerRole]=useState("owner"),[ownerSecret,setOwnerSecret]=useState(""),[ownerData,setOwnerData]=useState(null),[ownerOrders,setOwnerOrders]=useState(null),[ownerLedger,setOwnerLedger]=useState(null),[ownerReconciliation,setOwnerReconciliation]=useState(null),[ownerFinance,setOwnerFinance]=useState(null),[ownerRisk,setOwnerRisk]=useState(null),[ownerAudit,setOwnerAudit]=useState(null),[ownerAuditVerify,setOwnerAuditVerify]=useState(null),[ownerSecurity,setOwnerSecurity]=useState(null),[ownerControl,setOwnerControl]=useState(null),[ownerDirectory,setOwnerDirectory]=useState(null),[ownerStaffRoles,setOwnerStaffRoles]=useState(null),[ownerSystemConfig,setOwnerSystemConfig]=useState(null),[ownerBusy,setOwnerBusy]=useState(false),[ownerError,setOwnerError]=useState(""),[ownerLoadedAt,setOwnerLoadedAt]=useState(null);
+ const [ownerRole,setOwnerRole]=useState("owner"),[ownerSecret,setOwnerSecret]=useState(""),[ownerData,setOwnerData]=useState(null),[ownerOrders,setOwnerOrders]=useState(null),[ownerLedger,setOwnerLedger]=useState(null),[ownerReconciliation,setOwnerReconciliation]=useState(null),[ownerFinance,setOwnerFinance]=useState(null),[ownerRisk,setOwnerRisk]=useState(null),[ownerAudit,setOwnerAudit]=useState(null),[ownerAuditVerify,setOwnerAuditVerify]=useState(null),[ownerSecurity,setOwnerSecurity]=useState(null),[ownerControl,setOwnerControl]=useState(null),[ownerDirectory,setOwnerDirectory]=useState(null),[ownerStaffRoles,setOwnerStaffRoles]=useState(null),[ownerSystemConfig,setOwnerSystemConfig]=useState(null),[ownerChangeRequests,setOwnerChangeRequests]=useState(null),[ownerProposalType,setOwnerProposalType]=useState('customer_account_review'),[ownerProposalSummary,setOwnerProposalSummary]=useState(''),[ownerProposalRationale,setOwnerProposalRationale]=useState(''),[ownerProposalBusy,setOwnerProposalBusy]=useState(false),[ownerProposalMessage,setOwnerProposalMessage]=useState(''),[ownerBusy,setOwnerBusy]=useState(false),[ownerError,setOwnerError]=useState(""),[ownerLoadedAt,setOwnerLoadedAt]=useState(null);
  async function ownerRequest(path){
   if(!EXCHANGE_API)throw Error("Owner API URL is not configured.");
   if(!ownerSecret.trim())throw Error("Enter the server-issued Owner Console role token.");
@@ -125,11 +125,29 @@ function App(){
   if(!response.ok)throw Error(data.detail||"Owner authorization failed.");
   return data;
  }
+ async function submitOwnerProposal(){
+  if(ownerRole!=="owner")return;
+  setOwnerProposalBusy(true);setOwnerProposalMessage("");
+  try{
+   if(!EXCHANGE_API||!ownerSecret.trim())throw Error("Owner API and role token are required.");
+   const response=await requestJson(EXCHANGE_API+"/api/v1/owner/change-requests",{
+    method:"POST",headers:{"Authorization":"Bearer "+ownerSecret.trim(),"Content-Type":"application/json"},
+    body:JSON.stringify({request_type:ownerProposalType,summary:ownerProposalSummary.trim(),rationale:ownerProposalRationale.trim()})
+   },15000,"Owner change request");
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(typeof data.detail==="string"?data.detail:"Unable to submit proposal.");
+   setOwnerProposalSummary("");setOwnerProposalRationale("");
+   setOwnerProposalMessage("Proposal recorded for review. No approval or operational change was performed.");
+   const list=await ownerRequest("/api/v1/owner/change-requests?limit=50");
+   setOwnerChangeRequests(list);
+  }catch(e){setOwnerProposalMessage(e.message||"Unable to record proposal.");}
+  finally{setOwnerProposalBusy(false);}
+ }
  async function loadOwnerConsole(){
   setOwnerBusy(true);setOwnerError("");
   try{
    const overview=await ownerRequest("/api/v1/owner/overview");setOwnerData(overview);
-   const [orders,ledger,reconciliation,finance,risk,audit,auditVerify,security,control,directory,staffRoles,systemConfig]=await Promise.allSettled([
+   const [orders,ledger,reconciliation,finance,risk,audit,auditVerify,security,control,directory,staffRoles,systemConfig,changeRequests]=await Promise.allSettled([
     ownerRequest("/api/v1/owner/orders?limit=100"),ownerRequest("/api/v1/owner/ledger/integrity"),
     ownerRequest("/api/v1/owner/executions/reconciliation?limit=250"),ownerRequest("/api/v1/owner/finance/summary?days=30"),
     ownerRole==="finance"?Promise.resolve(null):ownerRequest("/api/v1/owner/risk/alerts"),
@@ -139,15 +157,16 @@ function App(){
     ownerRole==="owner"?ownerRequest("/api/v1/owner/control-center"):Promise.resolve(null),
     ownerRole==="owner"?ownerRequest("/api/v1/owner/administration/users?limit=50&offset=0"):Promise.resolve(null),
     ownerRole==="owner"?ownerRequest("/api/v1/owner/administration/staff-roles"):Promise.resolve(null),
-    ownerRole==="owner"?ownerRequest("/api/v1/owner/administration/system-configuration"):Promise.resolve(null)
+    ownerRole==="owner"?ownerRequest("/api/v1/owner/administration/system-configuration"):Promise.resolve(null),
+    ownerRole==="owner"?ownerRequest("/api/v1/owner/change-requests?limit=50"):Promise.resolve(null)
    ]);
    setOwnerOrders(orders.status==="fulfilled"?orders.value:null);setOwnerLedger(ledger.status==="fulfilled"?ledger.value:null);
    setOwnerReconciliation(reconciliation.status==="fulfilled"?reconciliation.value:null);setOwnerFinance(finance.status==="fulfilled"?finance.value:null);
-   setOwnerRisk(risk.status==="fulfilled"?risk.value:null);setOwnerAudit(audit.status==="fulfilled"?audit.value:null);setOwnerAuditVerify(auditVerify.status==="fulfilled"?auditVerify.value:null);setOwnerSecurity(security.status==="fulfilled"?security.value:null);setOwnerControl(control.status==="fulfilled"?control.value:null);setOwnerDirectory(directory.status==="fulfilled"?directory.value:null);setOwnerStaffRoles(staffRoles.status==="fulfilled"?staffRoles.value:null);setOwnerSystemConfig(systemConfig.status==="fulfilled"?systemConfig.value:null);
-   const failed=[orders,ledger,reconciliation,finance,risk,audit,auditVerify,security,control,directory,staffRoles,systemConfig].filter(x=>x.status==="rejected");
+   setOwnerRisk(risk.status==="fulfilled"?risk.value:null);setOwnerAudit(audit.status==="fulfilled"?audit.value:null);setOwnerAuditVerify(auditVerify.status==="fulfilled"?auditVerify.value:null);setOwnerSecurity(security.status==="fulfilled"?security.value:null);setOwnerControl(control.status==="fulfilled"?control.value:null);setOwnerDirectory(directory.status==="fulfilled"?directory.value:null);setOwnerStaffRoles(staffRoles.status==="fulfilled"?staffRoles.value:null);setOwnerSystemConfig(systemConfig.status==="fulfilled"?systemConfig.value:null);setOwnerChangeRequests(changeRequests.status==="fulfilled"?changeRequests.value:null);
+   const failed=[orders,ledger,reconciliation,finance,risk,audit,auditVerify,security,control,directory,staffRoles,systemConfig,changeRequests].filter(x=>x.status==="rejected");
    if(failed.length)setOwnerError(failed.length+" report(s) could not be loaded: "+failed.map(x=>x.reason?.message||"Unknown error").join(" · "));
    setOwnerLoadedAt(Date.now());
-  }catch(e){setOwnerData(null);setOwnerOrders(null);setOwnerLedger(null);setOwnerReconciliation(null);setOwnerFinance(null);setOwnerRisk(null);setOwnerAudit(null);setOwnerAuditVerify(null);setOwnerSecurity(null);setOwnerControl(null);setOwnerDirectory(null);setOwnerStaffRoles(null);setOwnerSystemConfig(null);setOwnerError(e.message||"Unable to load Owner Console.");}
+  }catch(e){setOwnerData(null);setOwnerOrders(null);setOwnerLedger(null);setOwnerReconciliation(null);setOwnerFinance(null);setOwnerRisk(null);setOwnerAudit(null);setOwnerAuditVerify(null);setOwnerSecurity(null);setOwnerControl(null);setOwnerDirectory(null);setOwnerStaffRoles(null);setOwnerSystemConfig(null);setOwnerChangeRequests(null);setOwnerError(e.message||"Unable to load Owner Console.");}
   finally{setOwnerBusy(false);}
  }
  const t=lang==="en"?{overview:"Overview",trade:"Trade",assets:"Assets",deposit:"Deposit",withdraw:"Withdraw",admin:"Admin",buy:"Buy",sell:"Sell",amount:"Order value (USD)",history:"Trade history",empty:"No trades yet",paper:"PAPER TRADING — Simulated funds only",disclaimer:"All balances and trades are simulated. Real deposits, withdrawals, custody and live execution are disabled."}:{overview:"总览",trade:"交易",assets:"资产",deposit:"充值",withdraw:"提现",admin:"管理",buy:"买入",sell:"卖出",amount:"订单金额（USD）",history:"成交记录",empty:"暂无成交记录",paper:"模拟交易模式 — 仅使用模拟资金",disclaimer:"所有余额和交易均为模拟数据。真实充值、提现、托管及实盘交易均已关闭。"};
@@ -517,6 +536,19 @@ function App(){
    <h4>System configuration posture</h4>
    <div className="zc-permission-grid">{Object.entries(ownerSystemConfig?.features||{}).map(([name,enabled])=><div key={name}><span>{name.replaceAll("_"," ")}</span><b className={enabled?"zc-status-good":"zc-status-warning"}>{enabled?"CONFIGURED / ENABLED":"NOT CONFIGURED / DISABLED"}</b></div>)}</div>
    <p className="fine">{ownerSystemConfig?.note||"Safe configuration snapshot unavailable."} No secret values are returned. All modules are read-only; no account, staff or system changes can be performed here.</p>
+  </section>}
+  {ownerRole==="owner"&&<section className="zc-account-panel zc-owner-proposals">
+   <div className="panelhead"><div><h3>Owner Change Request Register</h3><p className="muted">Submit review proposals only. No approval, account action, fund movement or configuration change is executed.</p></div><span className="zc-status-warning">PROPOSAL ONLY</span></div>
+   <div className="zc-proposal-fields">
+    <label>Review category<select value={ownerProposalType} onChange={e=>setOwnerProposalType(e.target.value)}><option value="customer_account_review">Customer account review</option><option value="staff_access_review">Staff access review</option><option value="configuration_change_review">Configuration change review</option><option value="kyc_policy_review">KYC policy review</option><option value="security_incident_review">Security incident review</option></select></label>
+    <label>Proposal summary<input value={ownerProposalSummary} maxLength={160} placeholder="8–160 characters" onChange={e=>setOwnerProposalSummary(e.target.value)}/></label>
+    <label>Reason for review<textarea value={ownerProposalRationale} maxLength={1000} rows={3} placeholder="16–1000 characters; do not include personal data or secrets" onChange={e=>setOwnerProposalRationale(e.target.value)}/></label>
+    <button type="button" disabled={ownerProposalBusy||ownerProposalSummary.trim().length<8||ownerProposalRationale.trim().length<16} onClick={submitOwnerProposal}>{ownerProposalBusy?"Submitting…":"Record review proposal"}</button>
+    {ownerProposalMessage&&<p className="fine" role="status">{ownerProposalMessage}</p>}
+   </div>
+   <h4>Pending review proposals ({ownerChangeRequests?.total??"—"})</h4>
+   {ownerChangeRequests?.requests?.length?<div className="zc-risk-alert-list">{ownerChangeRequests.requests.map(item=><article className="zc-risk-alert" key={item.request_id}><div className="zc-risk-alert-head"><strong>{item.summary}</strong><span className="zc-status-warning">PENDING REVIEW</span></div><p>{item.rationale}</p><small>{item.request_type.replaceAll("_"," ")} · {new Date(item.created_at*1000).toLocaleString()} · Ref: {item.request_id}</small></article>)}</div>:<p className="fine">{ownerChangeRequests?"No review proposals recorded.":"Proposal registry unavailable."}</p>}
+   <p className="fine">This is not a dual-approval workflow. Proposal submission never changes trading permissions, KYC status, customer accounts or system configuration.</p>
   </section>}
   <div className="zc-home-status-grid">
    <div className="zc-home-status-card"><span className="zc-status-kicker">CONNECTED EXCHANGE ACCOUNTS</span><strong>{ownerData.customers_with_connected_exchange??"—"}</strong><small>Customer connections reported by platform database</small></div>
