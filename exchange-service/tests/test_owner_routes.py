@@ -216,3 +216,38 @@ def test_owner_customer_directory_validates_filters(monkeypatch):
     assert client.get("/api/v1/owner/administration/users?status=suspended", headers=headers).status_code == 400
     assert client.get("/api/v1/owner/administration/users?offset=-1", headers=headers).status_code == 400
 
+
+
+def test_owner_change_requests_create_and_list_without_execution(monkeypatch, tmp_path):
+    from change_requests import ChangeRequestRegistry
+    setup_roles(monkeypatch)
+    monkeypatch.setattr(main, "CHANGE_REQUESTS", ChangeRequestRegistry(str(tmp_path / "requests.sqlite3")))
+    monkeypatch.setattr(main.AUDIT_LOG, "append", lambda **kwargs: {"sequence": 1})
+    owner = auth("owner-token-for-test-000000000000000000")
+    payload = {
+        "request_type": "customer_account_review",
+        "summary": "Review customer account",
+        "rationale": "Request an independent review before any customer account changes.",
+    }
+    created = client.post("/api/v1/owner/change-requests", headers=owner, json=payload)
+    assert created.status_code == 201
+    assert created.json()["approval_granted"] is False
+    assert created.json()["execution_performed"] is False
+    listed = client.get("/api/v1/owner/change-requests", headers=owner)
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["execution_enabled"] is False
+    assert client.post(
+        "/api/v1/owner/change-requests",
+        headers=auth("compliance-token-for-test-000000000000"),
+        json=payload,
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/owner/change-requests",
+        headers=auth("finance-token-for-test-00000000000000"),
+    ).status_code == 403
+    assert client.post(
+        "/api/v1/owner/change-requests", headers=owner,
+        json={**payload, "request_type": "enable_live_trading"},
+    ).status_code == 422
+
