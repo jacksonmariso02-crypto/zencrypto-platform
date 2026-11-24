@@ -31,7 +31,7 @@ from owner_console import OwnerConsole
 from audit_log import AuditLog
 from execution_reconciliation import ExecutionReconciliation
 from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
-from change_requests import ChangeRequestRegistry, ALLOWED_TYPES
+from change_requests import ChangeRequestRegistry, ALLOWED_TYPES, REVIEW_EVIDENCE_REQUIREMENTS, review_readiness
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -2377,6 +2377,22 @@ class OwnerChangeRequestProposal(BaseModel):
     ]
     summary: str = Field(min_length=8, max_length=160)
     rationale: str = Field(min_length=16, max_length=1000)
+
+
+@app.get("/api/v1/owner/review-policy")
+async def owner_review_policy(authorization: str | None = Header(default=None)):
+    """Fail-closed review policy catalog. This is not an approval authority."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may view review policies.")
+    return {
+        "mode": "REVIEW_POLICY_DESIGN_ONLY",
+        "categories": {kind: review_readiness(kind) for kind in sorted(REVIEW_EVIDENCE_REQUIREMENTS)},
+        "independent_approval_available": False,
+        "per_person_mfa_verified": False,
+        "execution_enabled": False,
+        "limitations": "Policy requirements are informational until a verified workforce identity provider, independent approver, signed decision storage and separate execution gates are implemented.",
+    }
 
 
 @app.get("/api/v1/owner/change-requests")
