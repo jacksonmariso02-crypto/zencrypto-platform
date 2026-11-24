@@ -63,3 +63,12 @@ def test_algorithm_confusion_and_tampering_are_rejected():
         verify_workforce_token(token[:-5] + "AAAAA", config, now=1200)
     with pytest.raises(WorkforceIdentityError):
         verify_workforce_token(token, WorkforceOIDCConfig("", "", ""), now=1200)
+
+def test_required_nonce_must_match():
+    token, config = token_fixture(claims_override={"nonce": "expected-random-nonce"})
+    assert verify_workforce_token(token, config, now=1200, required_nonce="expected-random-nonce")["cryptographic_identity_verified"]
+    with pytest.raises(WorkforceIdentityError):
+        verify_workforce_token(token, config, now=1200, required_nonce="different-nonce")
+    token_without_nonce, config = token_fixture()
+    with pytest.raises(WorkforceIdentityError):
+        verify_workforce_token(token_without_nonce, config, now=1200, required_nonce="expected-random-nonce")
