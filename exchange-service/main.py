@@ -31,6 +31,7 @@ from owner_console import OwnerConsole
 from audit_log import AuditLog
 from execution_reconciliation import ExecutionReconciliation
 from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
+from change_requests import ChangeRequestRegistry, ALLOWED_TYPES
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -75,6 +76,7 @@ PAPER_ENGINE = PaperMatchingEngine(
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
 OWNER_CONSOLE = OwnerConsole(PAPER_ENGINE_DB_PATH)
 AUDIT_LOG = AuditLog(PAPER_ENGINE_DB_PATH)
+CHANGE_REQUESTS = ChangeRequestRegistry(PAPER_ENGINE_DB_PATH)
 EXECUTION_RECONCILIATION = ExecutionReconciliation(PAPER_ENGINE_DB_PATH)
 PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
     0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
@@ -2365,6 +2367,57 @@ async def owner_control_center(authorization: str | None = Header(default=None))
             "Role permissions shown here are application authorization scopes; production identity governance and MFA enforcement require separate deployment controls.",
         ],
     }
+
+
+class OwnerChangeRequestProposal(BaseModel):
+    request_type: Literal[
+        "customer_account_review", "staff_access_review",
+        "configuration_change_review", "kyc_policy_review",
+        "security_incident_review",
+    ]
+    summary: str = Field(min_length=8, max_length=160)
+    rationale: str = Field(min_length=16, max_length=1000)
+
+
+@app.get("/api/v1/owner/change-requests")
+async def owner_list_change_requests(
+    limit: int = 50, offset: int = 0,
+    authorization: str | None = Header(default=None),
+):
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may access change requests.")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise HTTPException(400, "Invalid pagination parameters.")
+    return await run_in_threadpool(
+        lambda: CHANGE_REQUESTS.list_requests(limit=limit, offset=offset)
+    )
+
+
+@app.post("/api/v1/owner/change-requests", status_code=201)
+async def owner_create_change_request(
+    body: OwnerChangeRequestProposal,
+    authorization: str | None = Header(default=None),
+):
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may create change requests.")
+    try:
+        result = await run_in_threadpool(
+            lambda: CHANGE_REQUESTS.create(body.request_type, body.summary, body.rationale)
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await run_in_threadpool(
+        lambda: AUDIT_LOG.append(
+            actor_role="owner",
+            action="owner.change_request.proposed",
+            resource="owner_change_request",
+            outcome="success",
+            metadata={"request_id": result["request_id"], "request_type": result["request_type"]},
+        )
+    )
+    return result
 
 
 @app.get("/api/v1/owner/administration/users")
