@@ -33,6 +33,7 @@ from execution_reconciliation import ExecutionReconciliation
 from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
 from change_requests import ChangeRequestRegistry, ALLOWED_TYPES, REVIEW_EVIDENCE_REQUIREMENTS, review_readiness
 from identity_preflight import identity_preflight
+from workforce_oidc import WorkforceOIDCConfig, WorkforceIdentityError, verify_workforce_token
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -2378,6 +2379,22 @@ class OwnerChangeRequestProposal(BaseModel):
     ]
     summary: str = Field(min_length=8, max_length=160)
     rationale: str = Field(min_length=16, max_length=1000)
+
+
+@app.get("/api/v1/workforce/identity-session")
+async def workforce_identity_session(authorization: str | None = Header(default=None)):
+    """Opt-in OIDC signature inspection only. No Owner permissions are granted."""
+    config = WorkforceOIDCConfig.from_env()
+    if not config.configured:
+        raise HTTPException(503, "Workforce OIDC verification is not configured.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Workforce identity token required.")
+    try:
+        return await run_in_threadpool(
+            verify_workforce_token, authorization[len("Bearer "):], config
+        )
+    except WorkforceIdentityError as exc:
+        raise HTTPException(401, str(exc)) from exc
 
 
 @app.get("/api/v1/owner/identity-preflight")
