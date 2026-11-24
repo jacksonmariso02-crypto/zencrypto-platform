@@ -27,12 +27,25 @@ from auth_service import AuthService, AuthenticationError, UsernameTaken
 from market_stream import MarketStreamHub
 from orderbook_depth import build_depth
 from paper_orderbook_stream import PaperOrderBookHub, build_depth_delta
+from owner_console import OwnerConsole
+from audit_log import AuditLog
+from execution_reconciliation import ExecutionReconciliation
+from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
+from change_requests import ChangeRequestRegistry, ALLOWED_TYPES, REVIEW_EVIDENCE_REQUIREMENTS, review_readiness
+from identity_preflight import identity_preflight
+from workforce_oidc import WorkforceOIDCConfig, WorkforceIdentityError, verify_workforce_token
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
 API_KEY = os.getenv("EXCHANGE_API_KEY", "")
 API_SECRET = os.getenv("EXCHANGE_API_SECRET", "")
 ADMIN_TOKEN = os.getenv("ZENCRYPTO_ADMIN_TOKEN", "")
+OWNER_ROLE_TOKENS = {
+    "owner": os.getenv("ZENCRYPTO_OWNER_TOKEN", ""),
+    "finance": os.getenv("ZENCRYPTO_FINANCE_TOKEN", ""),
+    "compliance": os.getenv("ZENCRYPTO_COMPLIANCE_TOKEN", ""),
+    "legacy_admin": ADMIN_TOKEN,
+}
 SANDBOX = os.getenv("EXCHANGE_SANDBOX", "true").lower() == "true"
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true"
 LIVE_CUSTOMER_ORDER_ROUTING_ENABLED = os.getenv("LIVE_CUSTOMER_ORDER_ROUTING_ENABLED", "false").lower() == "true"
@@ -63,6 +76,10 @@ PAPER_ENGINE = PaperMatchingEngine(
     taker_fee_bps=PAPER_TAKER_FEE_BPS,
 )
 PAPER_LEDGER = PaperLedger(PAPER_ENGINE_DB_PATH)
+OWNER_CONSOLE = OwnerConsole(PAPER_ENGINE_DB_PATH)
+AUDIT_LOG = AuditLog(PAPER_ENGINE_DB_PATH)
+CHANGE_REQUESTS = ChangeRequestRegistry(PAPER_ENGINE_DB_PATH)
+EXECUTION_RECONCILIATION = ExecutionReconciliation(PAPER_ENGINE_DB_PATH)
 PAPER_BOOK_STREAM_INTERVAL_SECONDS = max(
     0.25, float(os.getenv("PAPER_BOOK_STREAM_INTERVAL_SECONDS", "0.5"))
 )
@@ -1055,6 +1072,11 @@ async def connect_customer_binance(
             (user["id"], envelope, "••••" + api_key[-4:],
              json.dumps(permissions, separators=(",", ":")), now, now),
         )
+    _record_security_event(
+        request, action="customer.exchange_api_key.connected",
+        resource="binance_api_credential", outcome="success", user_id=user["id"],
+        metadata={"masked_api_key_suffix": api_key[-4:], "permissions": permissions},
+    )
     return {
         "connected": True,
         "exchange": "binance",
@@ -1104,12 +1126,17 @@ async def customer_binance_balances(user=Depends(require_platform_user)):
 
 
 @app.delete("/api/v1/user/exchange-connections/binance")
-async def disconnect_customer_binance(user=Depends(require_platform_user)):
+async def disconnect_customer_binance(request: Request, user=Depends(require_platform_user)):
     with sqlite3.connect(PAPER_ENGINE_DB_PATH, timeout=15) as db:
         cursor = db.execute(
             "DELETE FROM customer_exchange_connections WHERE user_id=? AND exchange_id='binance'",
             (user["id"],),
         )
+    _record_security_event(
+        request, action="customer.exchange_api_key.disconnected",
+        resource="binance_api_credential", outcome="success" if cursor.rowcount > 0 else "no_change",
+        user_id=user["id"],
+    )
     return {"disconnected": cursor.rowcount > 0, "exchange": "binance",
             "message": "Stored Binance API authorization has been deleted."}
 
@@ -1265,6 +1292,53 @@ def require_admin(authorization: str | None):
     if not hmac.compare_digest(supplied, ADMIN_TOKEN):
         raise HTTPException(401, "Unauthorized.")
     
+
+def require_owner_permission_for(permission: str, authorization: str | None):
+    try:
+        role = require_owner_permission(authorization, permission, OWNER_ROLE_TOKENS)
+        AUDIT_LOG.append(
+            actor_role=role, action="owner_console.read",
+            resource=permission, outcome="success",
+        )
+        return role
+    except OwnerAuthorizationError as exc:
+        try:
+            AUDIT_LOG.append(
+                actor_role="unknown", action="owner_console.access_denied",
+                resource=permission, outcome="denied",
+            )
+        except Exception:
+            pass
+        raise HTTPException(401 if "Unauthorized" in str(exc) or "required" in str(exc) else 403, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Audit log unavailable; Owner Console access is temporarily blocked.") from exc
+
+
+def _record_security_event(request: Request, *, action: str, resource: str,
+                           outcome: str, user_id: str | None = None,
+                           metadata: dict | None = None):
+    """Record security-relevant events without credentials or raw client IPs."""
+    client_ip = request.client.host if request.client else "unknown"
+    ip_fingerprint = hmac.new(
+        (AUTH_TOKEN_SECRET or "zencrypto-unconfigured").encode("utf-8"),
+        client_ip.encode("utf-8"), hashlib.sha256,
+    ).hexdigest()[:24]
+    safe_metadata = {
+        "user_id": str(user_id)[:64] if user_id else None,
+        "ip_fingerprint": ip_fingerprint,
+        "user_agent": (request.headers.get("user-agent") or "unknown")[:180],
+    }
+    if metadata:
+        # Callers may supply only explicitly safe, non-secret metadata.
+        safe_metadata.update(metadata)
+    AUDIT_LOG.append(
+        actor_role="customer", action=action, resource=resource,
+        outcome=outcome, metadata=safe_metadata,
+    )
+
+
 def normalize_symbol(symbol: str) -> str:
     value = symbol.strip().upper().replace("-", "/")
     if "/" not in value and value.endswith("USDT"):
@@ -2108,10 +2182,17 @@ class LoginRequest(BaseModel):
 async def register_user(body: RegisterRequest, request: Request):
     check_auth_attempt(request)
     try:
-        return await run_in_threadpool(AUTH_SERVICE.register, body.username, body.password)
+        result = await run_in_threadpool(AUTH_SERVICE.register, body.username, body.password)
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="success", user_id=result.get("user_id"))
+        return result
     except UsernameTaken as exc:
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="rejected", metadata={"reason": "username_taken"})
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
+        _record_security_event(request, action="customer.auth.register", resource="customer_account",
+                               outcome="rejected", metadata={"reason": "validation_failed"})
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -2120,10 +2201,17 @@ async def register_user(body: RegisterRequest, request: Request):
 async def login_user(body: LoginRequest, request: Request):
     check_auth_attempt(request)
     try:
-        return await run_in_threadpool(AUTH_SERVICE.login, body.username, body.password)
+        result = await run_in_threadpool(AUTH_SERVICE.login, body.username, body.password)
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="success", user_id=result.get("user_id"))
+        return result
     except AuthenticationError as exc:
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="failed", metadata={"reason": "invalid_credentials"})
         raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
     except ValueError as exc:
+        _record_security_event(request, action="customer.auth.login", resource="customer_session",
+                               outcome="rejected", metadata={"reason": "validation_failed"})
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -2207,3 +2295,359 @@ async def cancel_my_paper_order(
         raise HTTPException(404, "Paper order not found.") from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+# Owner Master Console — read-only operational and financial reporting.
+# The admin token remains server-side; never expose it to browser JavaScript.
+def _owner_partner_status():
+    return {
+        "provider": os.getenv("PARTNER_EXECUTION_PROVIDER") or None,
+        "provider_adapter_implemented": False,
+        "partner_api_documentation_received": False,
+        "live_order_routing_enabled": False,
+        "custody_provider": WALLET_CUSTODY_PROVIDER or None,
+        "custody_adapter_ready": bool(BITGO_TRANSFER_ADAPTER_READY),
+        "deposits_enabled": False,
+        "withdrawals_enabled": False,
+        "status": "PARTNER_NOT_SELECTED",
+    }
+
+
+@app.get("/api/v1/owner/overview")
+async def owner_overview(authorization: str | None = Header(default=None)):
+    """Read-only Owner dashboard summary. Requires server-side admin authorization."""
+    require_owner_permission_for("overview", authorization)
+    checks = await run_in_threadpool(_readiness_checks)
+    readiness = {"ready": all(checks.values()), "checks": checks}
+    return await run_in_threadpool(
+        lambda: OWNER_CONSOLE.overview(
+            partner_status=_owner_partner_status(), readiness=readiness
+        )
+    )
+
+
+@app.get("/api/v1/owner/control-center")
+async def owner_control_center(authorization: str | None = Header(default=None)):
+    """Owner-only read-only control plane summary; exposes no secrets or write actions."""
+    role = require_owner_permission_for("overview", authorization)
+    if role != "owner":
+        raise HTTPException(403, "The Owner Master Control Center is restricted to the Owner role.")
+    checks = await run_in_threadpool(_readiness_checks)
+    partner = _owner_partner_status()
+    audit = await run_in_threadpool(AUDIT_LOG.verify_chain)
+    return {
+        "mode": "OWNER_MASTER_CONTROL_READ_ONLY",
+        "generated_at": int(time.time()),
+        "current_role": role,
+        "role_permissions": {
+            name: sorted(permissions) for name, permissions in ROLE_PERMISSIONS.items()
+        },
+        "platform_posture": {
+            "live_trading_enabled": bool(LIVE_TRADING_ENABLED),
+            "customer_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED),
+            "sandbox_mode": bool(SANDBOX),
+            "deposits_enabled": bool(WALLET_DEPOSITS_ENABLED),
+            "withdrawals_enabled": bool(WALLET_WITHDRAWALS_ENABLED),
+            "custody_provider_configured": bool(WALLET_CUSTODY_PROVIDER),
+            "partner_selected": bool(partner.get("provider")),
+            "partner_api_documentation_received": bool(partner.get("partner_api_documentation_received")),
+        },
+        "module_status": {
+            "exchange_operations": "read_only",
+            "customer_accounts": "read_only",
+            "asset_ledger": "read_only",
+            "risk_and_compliance": "read_only",
+            "security_operations": "read_only",
+            "system_configuration": "view_only",
+        },
+        "release_readiness": {"ready": all(checks.values()), "checks": checks},
+        "audit_integrity": audit,
+        "available_control_actions": [],
+        "write_actions_enabled": False,
+        "limitations": [
+            "This endpoint is an operational overview, not a production approval or regulatory certification.",
+            "No staff, customer, trading, custody, deposit, withdrawal or system configuration mutations are exposed.",
+            "Role permissions shown here are application authorization scopes; production identity governance and MFA enforcement require separate deployment controls.",
+        ],
+    }
+
+
+class OwnerChangeRequestProposal(BaseModel):
+    request_type: Literal[
+        "customer_account_review", "staff_access_review",
+        "configuration_change_review", "kyc_policy_review",
+        "security_incident_review",
+    ]
+    summary: str = Field(min_length=8, max_length=160)
+    rationale: str = Field(min_length=16, max_length=1000)
+
+
+@app.get("/api/v1/workforce/identity-session")
+async def workforce_identity_session(authorization: str | None = Header(default=None)):
+    """Opt-in OIDC signature inspection only. No Owner permissions are granted."""
+    config = WorkforceOIDCConfig.from_env()
+    if not config.configured:
+        raise HTTPException(503, "Workforce OIDC verification is not configured.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Workforce identity token required.")
+    try:
+        return await run_in_threadpool(
+            verify_workforce_token, authorization[len("Bearer "):], config
+        )
+    except WorkforceIdentityError as exc:
+        raise HTTPException(401, str(exc)) from exc
+
+
+@app.get("/api/v1/owner/identity-preflight")
+async def owner_identity_preflight(authorization: str | None = Header(default=None)):
+    """Owner-only status; never asserts MFA, per-person identity or approval."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may inspect identity readiness.")
+    return identity_preflight(
+        OWNER_ROLE_TOKENS,
+        sandbox=SANDBOX,
+        live_trading=LIVE_TRADING_ENABLED,
+        routing=LIVE_CUSTOMER_ORDER_ROUTING_ENABLED,
+        deposits=WALLET_DEPOSITS_ENABLED,
+        withdrawals=WALLET_WITHDRAWALS_ENABLED,
+    )
+
+
+@app.get("/api/v1/owner/review-policy")
+async def owner_review_policy(authorization: str | None = Header(default=None)):
+    """Fail-closed review policy catalog. This is not an approval authority."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may view review policies.")
+    return {
+        "mode": "REVIEW_POLICY_DESIGN_ONLY",
+        "categories": {kind: review_readiness(kind) for kind in sorted(REVIEW_EVIDENCE_REQUIREMENTS)},
+        "independent_approval_available": False,
+        "per_person_mfa_verified": False,
+        "execution_enabled": False,
+        "limitations": "Policy requirements are informational until a verified workforce identity provider, independent approver, signed decision storage and separate execution gates are implemented.",
+    }
+
+
+@app.get("/api/v1/owner/change-requests")
+async def owner_list_change_requests(
+    limit: int = 50, offset: int = 0,
+    authorization: str | None = Header(default=None),
+):
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may access change requests.")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise HTTPException(400, "Invalid pagination parameters.")
+    return await run_in_threadpool(
+        lambda: CHANGE_REQUESTS.list_requests(limit=limit, offset=offset)
+    )
+
+
+@app.post("/api/v1/owner/change-requests", status_code=201)
+async def owner_create_change_request(
+    body: OwnerChangeRequestProposal,
+    authorization: str | None = Header(default=None),
+):
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may create change requests.")
+    try:
+        result = await run_in_threadpool(
+            lambda: CHANGE_REQUESTS.create(body.request_type, body.summary, body.rationale)
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await run_in_threadpool(
+        lambda: AUDIT_LOG.append(
+            actor_role="owner",
+            action="owner.change_request.proposed",
+            resource="owner_change_request",
+            outcome="success",
+            metadata={"request_id": result["request_id"], "request_type": result["request_type"]},
+        )
+    )
+    return result
+
+
+@app.get("/api/v1/owner/administration/users")
+async def owner_customer_directory(
+    limit: int = 50,
+    offset: int = 0,
+    search: str | None = None,
+    status: str = "all",
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only privacy-minimized customer directory; strictly read-only."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Customer administration is restricted to the Owner role.")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise HTTPException(400, "limit must be 1-100 and offset must be non-negative.")
+    if status not in ("all", "active", "disabled"):
+        raise HTTPException(400, "status must be all, active, or disabled.")
+    if search is not None and len(search) > 64:
+        raise HTTPException(400, "search must be 64 characters or fewer.")
+    try:
+        result = await run_in_threadpool(
+            lambda: AUTH_SERVICE.list_users(limit=limit, offset=offset, search=search, status=status)
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
+
+
+@app.get("/api/v1/owner/administration/staff-roles")
+async def owner_staff_role_inventory(authorization: str | None = Header(default=None)):
+    """Report configured application role slots, not an employee directory."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Staff role administration is restricted to the Owner role.")
+    return {
+        "mode": "CONFIGURED_ROLE_INVENTORY",
+        "roles": [{
+            "role": role_name,
+            "permissions": sorted(permissions),
+            "credential_configured": bool(OWNER_ROLE_TOKENS.get(role_name)),
+            "assignment_management": "environment_secret_manager_only",
+            "write_actions_enabled": False,
+        } for role_name, permissions in ROLE_PERMISSIONS.items()],
+        "legacy_admin_token_configured": bool(OWNER_ROLE_TOKENS.get("legacy_admin")),
+        "note": "This is not a staff roster. No employee identities or role assignments are stored in this application.",
+    }
+
+
+@app.get("/api/v1/owner/administration/system-configuration")
+async def owner_system_configuration(authorization: str | None = Header(default=None)):
+    """Expose an allow-listed configuration posture without returning secret values."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "System configuration inventory is restricted to the Owner role.")
+    return {
+        "mode": "SAFE_CONFIGURATION_INVENTORY",
+        "generated_at": int(time.time()),
+        "features": {
+            "sandbox_mode": bool(SANDBOX),
+            "live_trading_enabled": bool(LIVE_TRADING_ENABLED),
+            "customer_order_routing_enabled": bool(LIVE_CUSTOMER_ORDER_ROUTING_ENABLED),
+            "deposits_enabled": bool(WALLET_DEPOSITS_ENABLED),
+            "withdrawals_enabled": bool(WALLET_WITHDRAWALS_ENABLED),
+            "customer_credential_vault_configured": bool(EXCHANGE_CREDENTIAL_ENCRYPTION_KEY),
+            "auth_token_secret_configured": len(AUTH_TOKEN_SECRET.encode("utf-8")) >= 32,
+            "owner_token_configured": bool(OWNER_ROLE_TOKENS.get("owner")),
+            "finance_token_configured": bool(OWNER_ROLE_TOKENS.get("finance")),
+            "compliance_token_configured": bool(OWNER_ROLE_TOKENS.get("compliance")),
+            "execution_partner_configured": bool(API_KEY and API_SECRET),
+            "custody_provider_configured": bool(WALLET_CUSTODY_PROVIDER),
+            "custody_webhook_secret_configured": bool(BITGO_WEBHOOK_SECRET),
+        },
+        "configuration_sources": "host_environment_and_secret_manager",
+        "secret_values_returned": False,
+        "write_actions_enabled": False,
+        "note": "This is a safe allow-listed snapshot, not a complete environment dump or deployment attestation.",
+    }
+
+
+@app.get("/api/v1/owner/orders")
+async def owner_recent_orders(
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only recent customer order requests with sensitive payload fields filtered."""
+    require_owner_permission_for("orders", authorization)
+    if not 1 <= limit <= 250:
+        raise HTTPException(400, "limit must be between 1 and 250.")
+    return await run_in_threadpool(OWNER_CONSOLE.recent_orders, limit)
+
+
+@app.get("/api/v1/owner/ledger/integrity")
+async def owner_wallet_ledger_integrity(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only global integrity scan of the internal wallet ledger."""
+    require_owner_permission_for("ledger", authorization)
+    return await run_in_threadpool(OWNER_CONSOLE.ledger_integrity)
+
+
+@app.get("/api/v1/owner/executions/reconciliation")
+async def owner_execution_reconciliation(
+    limit: int = 250,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only comparison of normalized partner fills against local order snapshots."""
+    require_owner_permission_for("reconciliation", authorization)
+    if not 1 <= limit <= 1000:
+        raise HTTPException(400, "limit must be between 1 and 1000.")
+    return await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, limit)
+
+
+@app.get("/api/v1/owner/security/overview")
+async def owner_security_overview(
+    hours: int = 24,
+    limit: int = 50,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only security operations summary for Owner and Compliance."""
+    require_owner_permission_for("security", authorization)
+    if not 1 <= hours <= 168:
+        raise HTTPException(400, "hours must be between 1 and 168.")
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 1 and 100.")
+    return await run_in_threadpool(
+        lambda: AUDIT_LOG.security_summary(hours=hours, limit=limit)
+    )
+
+
+@app.get("/api/v1/owner/audit/events")
+async def owner_audit_events(
+    limit: int = 100,
+    before_sequence: int | None = None,
+    action: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only paginated administrative audit events for Owner and Compliance."""
+    require_owner_permission_for("audit", authorization)
+    if not 1 <= limit <= 250:
+        raise HTTPException(400, "limit must be between 1 and 250.")
+    if before_sequence is not None and before_sequence < 1:
+        raise HTTPException(400, "before_sequence must be positive.")
+    if action is not None and len(action) > 96:
+        raise HTTPException(400, "action filter is too long.")
+    return await run_in_threadpool(
+        lambda: AUDIT_LOG.list_events(limit=limit, before_sequence=before_sequence, action=action)
+    )
+
+
+@app.get("/api/v1/owner/audit/verify")
+async def owner_audit_verify(
+    authorization: str | None = Header(default=None),
+):
+    """Verify the append-only audit event hash chain."""
+    require_owner_permission_for("audit", authorization)
+    return await run_in_threadpool(AUDIT_LOG.verify_chain)
+
+
+@app.get("/api/v1/owner/risk/alerts")
+async def owner_risk_alerts(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only operational risk alerts for Owner and Compliance roles."""
+    require_owner_permission_for("risk", authorization)
+    checks = await run_in_threadpool(_readiness_checks)
+    readiness = {"ready": all(checks.values()), "checks": checks}
+    reconciliation = await run_in_threadpool(EXECUTION_RECONCILIATION.reconciliation_report, 1000)
+    return await run_in_threadpool(
+        lambda: OWNER_CONSOLE.risk_alerts(readiness=readiness, reconciliation=reconciliation)
+    )
+
+
+@app.get("/api/v1/owner/finance/summary")
+async def owner_financial_summary(
+    days: int = 30,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only simulated paper trading finance summary; never represents live customer revenue."""
+    require_owner_permission_for("ledger", authorization)
+    if not 1 <= days <= 90:
+        raise HTTPException(400, "days must be between 1 and 90.")
+    return await run_in_threadpool(OWNER_CONSOLE.financial_summary, days)

@@ -139,3 +139,22 @@ def test_self_service_paper_api_enforces_account_ownership(monkeypatch, tmp_path
         {"asset": "BTC", "available": "1", "locked": "0"},
         {"asset": "USDT", "available": "400", "locked": "0"},
     ]
+
+
+def test_list_users_is_paginated_searchable_and_excludes_credentials(tmp_path):
+    service = AuthService(str(tmp_path / "directory.sqlite3"), "s" * 48)
+    alice = service.register("alice_user", "alice strong password 123")
+    service.register("bob_user", "bob strong password 123")
+    result = service.list_users(limit=1, offset=0)
+    assert result["total"] == 2
+    assert len(result["users"]) == 1
+    assert "password_hash" not in result["users"][0]
+    assert "access_token" not in result["users"][0]
+    assert result["write_actions_enabled"] is False
+    found = service.list_users(search="ALICE", status="active")
+    assert found["total"] == 1
+    assert found["users"][0]["user_id"] == alice["user_id"]
+    assert service.list_users(status="disabled")["total"] == 0
+    with pytest.raises(ValueError):
+        service.list_users(status="suspended")
+
