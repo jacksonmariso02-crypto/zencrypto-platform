@@ -8,6 +8,7 @@ from test_workforce_oidc import token_fixture
 
 class FakeClient:
     def __init__(self, response):
+        response._request = httpx.Request('POST', 'https://id.example.test/token')
         self.response = response
         self.calls = []
 
