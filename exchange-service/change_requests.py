@@ -18,6 +18,60 @@ ALLOWED_TYPES = frozenset({
 })
 
 
+
+REVIEW_EVIDENCE_REQUIREMENTS = {
+    "customer_account_review": (
+        "Verified customer identity and authorization",
+        "Documented account risk assessment",
+        "Independent reviewer identity with MFA",
+        "Signed and retained review decision",
+    ),
+    "staff_access_review": (
+        "Verified workforce identity and MFA",
+        "Least-privilege access justification",
+        "Independent approver distinct from requester",
+        "Access expiration and revocation plan",
+    ),
+    "configuration_change_review": (
+        "Proposed change diff and rollback plan",
+        "Security and operational impact assessment",
+        "Independent change approval with signed evidence",
+        "Test environment verification and release gate",
+    ),
+    "kyc_policy_review": (
+        "Regulatory counsel and compliance sign-off",
+        "Documented KYC/AML policy version",
+        "Independent reviewer with individual identity",
+        "Evidence retention and customer privacy assessment",
+    ),
+    "security_incident_review": (
+        "Incident reference and scope assessment",
+        "Evidence handling and access controls",
+        "Independent incident reviewer identity",
+        "Containment and recovery plan",
+    ),
+}
+
+
+def review_readiness(request_type):
+    """Policy design checklist only. Never infer approval from a proposal."""
+    if request_type not in REVIEW_EVIDENCE_REQUIREMENTS:
+        raise ValueError("Unsupported request type.")
+    return {
+        "request_type": request_type,
+        "required_evidence": list(REVIEW_EVIDENCE_REQUIREMENTS[request_type]),
+        "verified_evidence_count": 0,
+        "review_ready": False,
+        "approval_granted": False,
+        "execution_permitted": False,
+        "blocking_reasons": [
+            "No per-person reviewer identity or MFA verification is integrated.",
+            "No independent signed decision evidence is collected.",
+            "No executable approval or operational action is implemented.",
+        ],
+    }
+
+
 class ChangeRequestRegistry:
     def __init__(self, db_path):
         self.db_path = str(db_path)
@@ -85,7 +139,7 @@ class ChangeRequestRegistry:
         return {
             "mode": "PROPOSAL_ONLY_NO_EXECUTION",
             "total": total, "limit": limit, "offset": offset,
-            "requests": [dict(row) for row in rows],
+            "requests": [{**dict(row), "review_readiness": review_readiness(row["request_type"])} for row in rows],
             "approvals_enabled": False,
             "execution_enabled": False,
             "limitations": "This is a review-request register, not a KYC, dual-approval, account-control or configuration-execution system.",
