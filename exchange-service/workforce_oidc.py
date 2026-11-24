@@ -6,6 +6,7 @@ key lookup occurs. A verified identity is only a session-inspection result.
 """
 import base64
 import json
+import hmac
 import os
 import time
 from dataclasses import dataclass
@@ -55,7 +56,7 @@ class WorkforceOIDCConfig:
         return bool(self.issuer and self.audience and self.jwks_json)
 
 
-def verify_workforce_token(token, config, *, now=None):
+def verify_workforce_token(token, config, *, now=None, required_nonce=None):
     """Verify RS256 identity and expiry; does not authorize privileged operations."""
     if not config.configured:
         raise WorkforceIdentityError("Workforce identity verification is not configured.")
@@ -106,7 +107,7 @@ def verify_workforce_token(token, config, *, now=None):
         raise WorkforceIdentityError("Invalid identity audience.")
     if isinstance(audience, list) and len(audience) > 1 and claims.get("azp") != config.audience:
         raise WorkforceIdentityError("Unverified authorized party.")
-    sub = claims.get("sub")
+    if required_nonce is not None:\n        if not isinstance(required_nonce, str) or not isinstance(claims.get("nonce"), str) or not hmac.compare_digest(claims["nonce"], required_nonce):\n            raise WorkforceIdentityError("Invalid OIDC nonce.")\n    sub = claims.get("sub")
     if not isinstance(sub, str) or not 1 <= len(sub) <= 256:
         raise WorkforceIdentityError("Invalid workforce subject.")
     exp, iat = claims.get("exp"), claims.get("iat")
