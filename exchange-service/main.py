@@ -32,6 +32,7 @@ from audit_log import AuditLog
 from execution_reconciliation import ExecutionReconciliation
 from owner_access import OwnerAuthorizationError, ROLE_PERMISSIONS, require_owner_permission
 from change_requests import ChangeRequestRegistry, ALLOWED_TYPES, REVIEW_EVIDENCE_REQUIREMENTS, review_readiness
+from identity_preflight import identity_preflight
 
 APP_NAME = "ZenCrypto Exchange Connector"
 EXCHANGE_ID = os.getenv("EXCHANGE_ID", "binance").lower()
@@ -2377,6 +2378,22 @@ class OwnerChangeRequestProposal(BaseModel):
     ]
     summary: str = Field(min_length=8, max_length=160)
     rationale: str = Field(min_length=16, max_length=1000)
+
+
+@app.get("/api/v1/owner/identity-preflight")
+async def owner_identity_preflight(authorization: str | None = Header(default=None)):
+    """Owner-only status; never asserts MFA, per-person identity or approval."""
+    role = require_owner_permission_for("administration", authorization)
+    if role != "owner":
+        raise HTTPException(403, "Only the Owner may inspect identity readiness.")
+    return identity_preflight(
+        OWNER_ROLE_TOKENS,
+        sandbox=SANDBOX,
+        live_trading=LIVE_TRADING_ENABLED,
+        routing=LIVE_CUSTOMER_ORDER_ROUTING_ENABLED,
+        deposits=WALLET_DEPOSITS_ENABLED,
+        withdrawals=WALLET_WITHDRAWALS_ENABLED,
+    )
 
 
 @app.get("/api/v1/owner/review-policy")
