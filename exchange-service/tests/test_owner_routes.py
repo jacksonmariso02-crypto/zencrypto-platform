@@ -283,3 +283,11 @@ def test_owner_identity_preflight_is_owner_only_and_never_authorizes(monkeypatch
     assert data["verified_controls"] == 0
     for token in ("finance-token-for-test-00000000000000", "compliance-token-for-test-000000000000"):
         assert client.get("/api/v1/owner/identity-preflight", headers=auth(token)).status_code == 403
+
+def test_workforce_identity_session_requires_configuration_and_never_grants_owner(monkeypatch):
+    from workforce_oidc import WorkforceOIDCConfig
+    monkeypatch.setattr(main.WorkforceOIDCConfig, "from_env", classmethod(lambda cls: WorkforceOIDCConfig("", "", "")))
+    assert client.get("/api/v1/workforce/identity-session").status_code == 503
+    monkeypatch.setattr(main.WorkforceOIDCConfig, "from_env", classmethod(lambda cls: WorkforceOIDCConfig("https://id.example.test", "aud", '{"keys":[]}')))
+    assert client.get("/api/v1/workforce/identity-session").status_code == 401
+    assert client.get("/api/v1/workforce/identity-session", headers={"Authorization": "Bearer not-a-jwt"}).status_code == 401
